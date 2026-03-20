@@ -34,7 +34,8 @@ export default function NewAnalysis() {
   const [, navigate] = useLocation();
 
   const [projectName, setProjectName] = useState("");
-  const [specText, setSpecText] = useState("");
+  const [specText, setSpecText] = useState("");       // local preview only
+  const [specKey, setSpecKey] = useState("");          // S3 key after upload
   const [specFileName, setSpecFileName] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [inputMode, setInputMode] = useState<"paste" | "github">("paste");
@@ -51,6 +52,8 @@ export default function NewAnalysis() {
     },
   });
 
+  const [fileLoading, setFileLoading] = useState(false);
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -61,9 +64,27 @@ export default function NewAnalysis() {
       return;
     }
 
-    setSpecFileName(file.name);
-    const text = await file.text();
-    setSpecText(text);
+    // All files go through the server endpoint (handles PDF extraction + S3 storage)
+    setFileLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const resp = await fetch("/api/upload-spec", { method: "POST", body: formData });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Upload failed" }));
+        setFileError(err.error || "Could not extract text from file");
+        return;
+      }
+      const data = await resp.json();
+      setSpecFileName(file.name);
+      setSpecText(data.text);      // for local preview
+      setSpecKey(data.specKey);    // S3 key for submission
+      toast.success(`Extracted ${data.chars.toLocaleString()} characters from ${file.name}`);
+    } catch (err: any) {
+      setFileError("Upload failed: " + (err.message || "Unknown error"));
+    } finally {
+      setFileLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,12 +92,42 @@ export default function NewAnalysis() {
     if (!projectName.trim()) { toast.error("Project name is required"); return; }
     if (!specText.trim() || specText.length < 100) { toast.error("Spec content is too short (minimum 100 characters)"); return; }
 
-    createMutation.mutate({
-      projectName: projectName.trim(),
-      specText: specText.trim(),
-      specFileName: specFileName || undefined,
-      githubUrl: githubUrl.trim() || undefined,
-    });
+    // If we have a specKey already (from file upload), use it directly
+    if (specKey) {
+      createMutation.mutate({
+        projectName: projectName.trim(),
+        specKey,
+        specFileName: specFileName || undefined,
+        githubUrl: githubUrl.trim() || undefined,
+      });
+      return;
+    }
+
+    // Pasted text: upload to S3 first, then submit
+    setFileLoading(true);
+    try {
+      const resp = await fetch("/api/upload-spec-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: specText.trim(), filename: specFileName || "spec.txt" }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Upload failed" }));
+        toast.error(err.error || "Failed to upload spec");
+        return;
+      }
+      const data = await resp.json();
+      createMutation.mutate({
+        projectName: projectName.trim(),
+        specKey: data.specKey,
+        specFileName: specFileName || undefined,
+        githubUrl: githubUrl.trim() || undefined,
+      });
+    } catch (err: any) {
+      toast.error("Upload failed: " + (err.message || "Unknown error"));
+    } finally {
+      setFileLoading(false);
+    }
   };
 
   if (authLoading) {
@@ -181,10 +232,17 @@ export default function NewAnalysis() {
                     Drop your spec here or <span className="text-primary">click to browse</span>
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">PDF, Markdown, Word, TXT — max 5MB</p>
-                  {specFileName && (
+                  {fileLoading && (
+                    <div className="flex items-center justify-center gap-1.5 mt-3 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Extracting text...</span>
+                    </div>
+                  )}
+                  {specFileName && !fileLoading && (
                     <div className="flex items-center justify-center gap-1.5 mt-3 text-sm">
                       <CheckCircle2 className="w-4 h-4 text-[var(--tf-green)]" />
                       <span className="font-mono text-foreground">{specFileName}</span>
+                      {specText && <span className="text-muted-foreground">({specText.length.toLocaleString()} chars)</span>}
                     </div>
                   )}
                   {fileError && (
@@ -278,7 +336,7 @@ export default function NewAnalysis() {
             type="submit"
             className="w-full gap-2"
             size="lg"
-            disabled={createMutation.isPending || !projectName || !specText}
+            disabled={createMutation.isPending || fileLoading || !projectName || !specText}
           >
             {createMutation.isPending ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Starting Analysis...</>

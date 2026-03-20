@@ -11,19 +11,23 @@ import {
   updateAnalysis,
 } from "./db";
 import { runAnalysisJob } from "./analyzer";
-import { storagePut } from "./storage";
+import { storagePut, storageGet } from "./storage";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
 const runningJobs = new Set<number>();
 
-async function startAnalysisJob(analysisId: number, specText: string, projectName: string) {
+async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string) {
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
 
-  // Run async without blocking the request
   setImmediate(async () => {
     try {
       await updateAnalysis(analysisId, { status: "running" });
+      // Fetch spec text from S3
+      const { url } = await storageGet(specKey);
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Failed to fetch spec from S3: ${resp.status}`);
+      const specText = await resp.text();
 
       const result = await runAnalysisJob(specText, projectName);
 
@@ -148,7 +152,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({
         projectName: z.string().min(1).max(255),
-        specText: z.string().min(100),
+        specKey: z.string().min(1),   // S3 key from /api/upload-spec or /api/upload-spec-text
         specFileName: z.string().optional(),
         githubUrl: z.string().url().optional(),
       }))
@@ -161,8 +165,8 @@ export const appRouter = router({
           githubUrl: input.githubUrl,
         });
 
-        // Start async job
-        startAnalysisJob(analysisId, input.specText, input.projectName);
+        // Start async job — fetch spec text from S3 inside the job
+        startAnalysisJobFromKey(analysisId, input.specKey, input.projectName);
 
         return { id: analysisId };
       }),

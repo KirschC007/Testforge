@@ -27,5 +27,6 @@
 ## Phase 4: Polish & Testing
 - [x] Vitest tests: 22 unit tests for Schicht 2 (buildRiskModel) and Schicht 4 (validateProofs) and generateReport — all passing
 - [x] Error handling: failed jobs, unsupported file types, LLM errors
+- [x] BUG: Analyse kann nach Spec-Upload nicht gestartet werden — Fix: Spec-Text wird jetzt via /api/upload-spec (Datei) oder /api/upload-spec-text (Paste) in S3 gespeichert, analyses.create bekommt nur den specKey (kein 214KB-Body mehr im tRPC-Call)
 - [ ] Live demo with hey-listen spec (manual test after deploy)
 - [ ] Empty states, loading skeletons (basic implemented)
