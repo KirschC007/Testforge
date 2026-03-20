@@ -132,17 +132,11 @@ export interface AnalysisJobResult {
 
 // ─── Schicht 1: LLM Spec Parser ───────────────────────────────────────────────
 
-export async function parseSpec(specText: string): Promise<AnalysisResult> {
-  // Truncate to ~120k chars to stay within LLM context limits (~90k tokens)
-  const MAX_CHARS = 120000;
-  const truncated = specText.length > MAX_CHARS ? specText.slice(0, MAX_CHARS) + "\n\n[... truncated — spec too large, first 120k chars analyzed ...]" : specText;
+const CHUNK_SIZE = 40000; // ~30k tokens per chunk — safe for json_object mode
 
-  const response = await invokeLLM({
-    messages: [
-      {
-        role: "system",
-        content: `You are TestForge Schicht 1 — a precision spec analyzer for SaaS systems.
-Your job: extract EVERY testable behavior from a specification document.
+async function parseSpecChunk(chunk: string, chunkIndex: number, totalChunks: number): Promise<Partial<AnalysisIR> & { qualityScore?: number; specType?: string }> {
+  const systemPrompt = `You are TestForge Schicht 1 — a precision spec analyzer for SaaS systems.
+Your job: extract EVERY testable behavior from this specification chunk (chunk ${chunkIndex + 1} of ${totalChunks}).
 
 Rules:
 1. Extract behaviors as Subject-Verb-Object triples (e.g., "System rejects booking when guest is blocked")
@@ -152,130 +146,107 @@ Rules:
 5. Identify the tenant model if multi-tenant SaaS (what isolates tenants?)
 6. Identify resources with PII (phone, email, name, address)
 
-Output ONLY valid JSON matching the schema exactly. No markdown, no explanation.`,
-      },
-      {
-        role: "user",
-        content: `Analyze this specification and extract all testable behaviors:\n\n${truncated}`,
-      },
+Return a JSON object with these exact keys:
+- behaviors: array of {id, title, subject, action, object, preconditions, postconditions, errorCases, tags, riskHints, chapter}
+- invariants: array of {id, description, alwaysTrue, violationConsequence}
+- ambiguities: array of {behaviorId, problem, question, impact}
+- contradictions: array of {ids, description}
+- tenantModel: {tenantEntity, tenantIdField} or null
+- resources: array of {name, table, tenantKey, operations, hasPII}
+- qualityScore: number 0-10
+- specType: string
+
+Output ONLY valid JSON. No markdown, no explanation.`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Analyze this specification chunk and extract all testable behaviors:\n\n${chunk}` },
     ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "analysis_result",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            behaviors: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                  title: { type: "string" },
-                  subject: { type: "string" },
-                  action: { type: "string" },
-                  object: { type: "string" },
-                  preconditions: { type: "array", items: { type: "string" } },
-                  postconditions: { type: "array", items: { type: "string" } },
-                  errorCases: { type: "array", items: { type: "string" } },
-                  tags: { type: "array", items: { type: "string" } },
-                  riskHints: { type: "array", items: { type: "string" } },
-                  chapter: { type: "string" },
-                },
-                required: ["id", "title", "subject", "action", "object", "preconditions", "postconditions", "errorCases", "tags", "riskHints", "chapter"],
-                additionalProperties: false,
-              },
-            },
-            invariants: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                  description: { type: "string" },
-                  alwaysTrue: { type: "string" },
-                  violationConsequence: { type: "string" },
-                },
-                required: ["id", "description", "alwaysTrue", "violationConsequence"],
-                additionalProperties: false,
-              },
-            },
-            ambiguities: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  behaviorId: { type: "string" },
-                  problem: { type: "string" },
-                  question: { type: "string" },
-                  impact: { type: "string", enum: ["blocks_test", "reduces_confidence"] },
-                },
-                required: ["behaviorId", "problem", "question", "impact"],
-                additionalProperties: false,
-              },
-            },
-            contradictions: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  ids: { type: "array", items: { type: "string" } },
-                  description: { type: "string" },
-                },
-                required: ["ids", "description"],
-                additionalProperties: false,
-              },
-            },
-            tenantModel: {
-              type: "object",
-              properties: {
-                tenantEntity: { type: "string" },
-                tenantIdField: { type: "string" },
-              },
-              required: ["tenantEntity", "tenantIdField"],
-              additionalProperties: false,
-              nullable: true,
-            },
-            resources: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  table: { type: "string" },
-                  tenantKey: { type: "string" },
-                  operations: { type: "array", items: { type: "string" } },
-                  hasPII: { type: "boolean" },
-                },
-                required: ["name", "table", "tenantKey", "operations", "hasPII"],
-                additionalProperties: false,
-              },
-            },
-            qualityScore: { type: "number" },
-            specType: { type: "string" },
-          },
-          required: ["behaviors", "invariants", "ambiguities", "contradictions", "tenantModel", "resources", "qualityScore", "specType"],
-          additionalProperties: false,
-        },
-      },
-    },
+    response_format: { type: "json_object" },
   });
 
-  const raw = JSON.parse(response.choices[0].message.content as string);
+  const content = response.choices[0].message.content as string;
+  // Strip markdown code blocks if present
+  const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  return JSON.parse(cleaned);
+}
+
+export async function parseSpec(specText: string): Promise<AnalysisResult> {
+  // Split into chunks of CHUNK_SIZE chars, respecting line boundaries
+  const chunks: string[] = [];
+  let offset = 0;
+  while (offset < specText.length) {
+    let end = Math.min(offset + CHUNK_SIZE, specText.length);
+    // Try to break at a newline
+    if (end < specText.length) {
+      const newline = specText.lastIndexOf("\n", end);
+      if (newline > offset + CHUNK_SIZE * 0.7) end = newline + 1;
+    }
+    chunks.push(specText.slice(offset, end));
+    offset = end;
+  }
+
+  console.log(`[TestForge] Parsing spec in ${chunks.length} chunk(s), total ${specText.length} chars`);
+
+  // Process chunks sequentially to avoid rate limits
+  const results: Array<Partial<AnalysisIR> & { qualityScore?: number; specType?: string }> = [];
+  for (let i = 0; i < chunks.length; i++) {
+    let attempt = 0;
+    while (attempt < 2) {
+      try {
+        const result = await parseSpecChunk(chunks[i], i, chunks.length);
+        results.push(result);
+        break;
+      } catch (err: unknown) {
+        attempt++;
+        if (attempt >= 2) {
+          console.error(`[TestForge] Chunk ${i} failed after 2 attempts:`, err);
+          // Push empty result for this chunk rather than failing the whole job
+          results.push({ behaviors: [], invariants: [], ambiguities: [], contradictions: [], resources: [] });
+        } else {
+          console.warn(`[TestForge] Chunk ${i} attempt ${attempt} failed, retrying...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    }
+  }
+
+  // Merge all chunk results
+  const merged: AnalysisIR = {
+    behaviors: [],
+    invariants: [],
+    ambiguities: [],
+    contradictions: [],
+    tenantModel: null,
+    resources: [],
+  };
+  let totalQuality = 0;
+  let specType = "generic";
+
+  for (const r of results) {
+    if (r.behaviors) merged.behaviors.push(...r.behaviors);
+    if (r.invariants) merged.invariants.push(...r.invariants);
+    if (r.ambiguities) merged.ambiguities.push(...r.ambiguities);
+    if (r.contradictions) merged.contradictions.push(...r.contradictions);
+    if (r.resources) merged.resources.push(...r.resources);
+    if (!merged.tenantModel && r.tenantModel) merged.tenantModel = r.tenantModel;
+    if (r.qualityScore) totalQuality += r.qualityScore;
+    if (r.specType && r.specType !== "generic") specType = r.specType;
+  }
+
+  // Deduplicate behaviors by id
+  const seenIds = new Set<string>();
+  merged.behaviors = merged.behaviors.filter(b => {
+    if (seenIds.has(b.id)) return false;
+    seenIds.add(b.id);
+    return true;
+  });
 
   return {
-    ir: {
-      behaviors: raw.behaviors || [],
-      invariants: raw.invariants || [],
-      ambiguities: raw.ambiguities || [],
-      contradictions: raw.contradictions || [],
-      tenantModel: raw.tenantModel || null,
-      resources: raw.resources || [],
-    },
-    qualityScore: raw.qualityScore || 5.0,
-    specType: raw.specType || "generic",
+    ir: merged,
+    qualityScore: results.length > 0 ? totalQuality / results.length : 5.0,
+    specType,
   };
 }
 
