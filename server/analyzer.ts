@@ -132,7 +132,17 @@ export interface AnalysisJobResult {
 
 // ─── Schicht 1: LLM Spec Parser ───────────────────────────────────────────────
 
-const CHUNK_SIZE = 40000; // ~30k tokens per chunk — safe for json_object mode
+const CHUNK_SIZE = 30000; // ~22k tokens per chunk — faster response
+const MAX_CHUNKS = 3; // Max 3 chunks = max 90k chars analyzed
+const LLM_TIMEOUT_MS = 55000; // 55s timeout per LLM call
+
+// Timeout wrapper for LLM calls
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
 
 async function parseSpecChunk(chunk: string, chunkIndex: number, totalChunks: number): Promise<Partial<AnalysisIR> & { qualityScore?: number; specType?: string }> {
   const systemPrompt = `You are TestForge Schicht 1 — a precision spec analyzer for SaaS systems.
@@ -187,32 +197,26 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     offset = end;
   }
 
-  console.log(`[TestForge] Parsing spec in ${chunks.length} chunk(s), total ${specText.length} chars`);
-
+  // Limit to MAX_CHUNKS to keep job under 3 minutes
+  const chunksToProcess = chunks.slice(0, MAX_CHUNKS);
+  console.log(`[TestForge] Parsing spec: ${chunksToProcess.length}/${chunks.length} chunk(s), ${specText.length} total chars`);
   // Process chunks sequentially to avoid rate limits
   const results: Array<Partial<AnalysisIR> & { qualityScore?: number; specType?: string }> = [];
-  for (let i = 0; i < chunks.length; i++) {
-    let attempt = 0;
-    while (attempt < 2) {
-      try {
-        const result = await parseSpecChunk(chunks[i], i, chunks.length);
-        results.push(result);
-        break;
-      } catch (err: unknown) {
-        attempt++;
-        if (attempt >= 2) {
-          console.error(`[TestForge] Chunk ${i} failed after 2 attempts:`, err);
-          // Push empty result for this chunk rather than failing the whole job
-          results.push({ behaviors: [], invariants: [], ambiguities: [], contradictions: [], resources: [] });
-        } else {
-          console.warn(`[TestForge] Chunk ${i} attempt ${attempt} failed, retrying...`);
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
+  const emptyChunk = { behaviors: [], invariants: [], ambiguities: [], contradictions: [], resources: [] };
+  for (let i = 0; i < chunksToProcess.length; i++) {
+    try {
+      const result = await withTimeout(
+        parseSpecChunk(chunksToProcess[i], i, chunksToProcess.length),
+        LLM_TIMEOUT_MS,
+        emptyChunk
+      );
+      results.push(result);
+    } catch (err: unknown) {
+      console.error(`[TestForge] Chunk ${i} failed:`, err);
+      results.push(emptyChunk);
     }
   }
-
-  // Merge all chunk results
+  // Merge all chunk resultss
   const merged: AnalysisIR = {
     behaviors: [],
     invariants: [],
@@ -391,7 +395,7 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
 
 // ─── Schicht 33: Proof Generator ───────────────────────────────────────────────
 
-const MAX_LLM_TESTS = 8; // Max LLM-generated tests to keep job under 3 minutes
+const MAX_LLM_TESTS = 3; // Max 3 LLM-generated tests — ~55s each = ~3min total
 
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const proofs: RawProof[] = [];
