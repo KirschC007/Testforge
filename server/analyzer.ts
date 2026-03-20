@@ -133,8 +133,9 @@ export interface AnalysisJobResult {
 // ─── Schicht 1: LLM Spec Parser ───────────────────────────────────────────────
 
 export async function parseSpec(specText: string): Promise<AnalysisResult> {
-  // Truncate to ~60k chars to stay within LLM context limits
-  const truncated = specText.length > 60000 ? specText.slice(0, 60000) + "\n\n[... truncated ...]" : specText;
+  // Truncate to ~120k chars to stay within LLM context limits (~90k tokens)
+  const MAX_CHARS = 120000;
+  const truncated = specText.length > MAX_CHARS ? specText.slice(0, MAX_CHARS) + "\n\n[... truncated — spec too large, first 120k chars analyzed ...]" : specText;
 
   const response = await invokeLLM({
     messages: [

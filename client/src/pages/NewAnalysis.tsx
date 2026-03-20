@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
   "application/pdf",
   "text/markdown",
@@ -231,7 +231,7 @@ export default function NewAnalysis() {
                   <p className="text-sm text-muted-foreground">
                     Drop your spec here or <span className="text-primary">click to browse</span>
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">PDF, Markdown, Word, TXT — max 5MB</p>
+                  <p className="text-xs text-muted-foreground mt-1">PDF, Markdown, Word, TXT — max 10MB · LLM analyzes up to 120k chars</p>
                   {fileLoading && (
                     <div className="flex items-center justify-center gap-1.5 mt-3 text-sm text-muted-foreground">
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -336,7 +336,7 @@ export default function NewAnalysis() {
             type="submit"
             className="w-full gap-2"
             size="lg"
-            disabled={createMutation.isPending || fileLoading || !projectName || !specText}
+            disabled={createMutation.isPending || fileLoading || !projectName.trim() || (!specKey && specText.trim().length < 100)}
           >
             {createMutation.isPending ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Starting Analysis...</>
