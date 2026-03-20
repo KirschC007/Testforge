@@ -32,5 +32,9 @@
 - [x] BUG: LLM 500 Internal Server Error bei großen Specs — Fix: Spec-Chunking (40k chars/Chunk), json_object statt json_schema, Retry-Logik (2 Versuche pro Chunk)
 - [x] BUG: Schicht 3 macht zu viele LLM-Calls — Fix: max. 8 LLM-Calls (kritischste Targets zuerst), Rest bekommt Template-Tests mit TODO-Kommentaren
 - [x] BUG: Job läuft 350s+ — Fix: CHUNK_SIZE 30k, MAX_CHUNKS 3, MAX_LLM_TESTS 3, LLM_TIMEOUT_MS 55000, withTimeout() wrapper
+- [x] Performance: Chunks parallel statt sequenziell (Layer 1: 3×55s → 55s)
+- [x] Performance: Layer 3 LLM-Tests parallel statt sequenziell (3×55s → 55s)
+- [x] Timing-Logs: console.log mit Millisekunden pro Schicht für Debugging
+- [ ] Job-Timeout: Nach 8 Minuten automatisch auf failed setzen
 - [ ] Live demo with hey-listen spec (manual test after deploy)
 - [ ] Empty states, loading skeletons (basic implemented)

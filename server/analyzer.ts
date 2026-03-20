@@ -199,23 +199,27 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
 
   // Limit to MAX_CHUNKS to keep job under 3 minutes
   const chunksToProcess = chunks.slice(0, MAX_CHUNKS);
-  console.log(`[TestForge] Parsing spec: ${chunksToProcess.length}/${chunks.length} chunk(s), ${specText.length} total chars`);
-  // Process chunks sequentially to avoid rate limits
-  const results: Array<Partial<AnalysisIR> & { qualityScore?: number; specType?: string }> = [];
-  const emptyChunk = { behaviors: [], invariants: [], ambiguities: [], contradictions: [], resources: [] };
-  for (let i = 0; i < chunksToProcess.length; i++) {
-    try {
-      const result = await withTimeout(
-        parseSpecChunk(chunksToProcess[i], i, chunksToProcess.length),
-        LLM_TIMEOUT_MS,
-        emptyChunk
-      );
-      results.push(result);
-    } catch (err: unknown) {
-      console.error(`[TestForge] Chunk ${i} failed:`, err);
-      results.push(emptyChunk);
-    }
-  }
+  const t0 = Date.now();
+  console.log(`[TestForge] Parsing spec: ${chunksToProcess.length}/${chunks.length} chunk(s), ${specText.length} total chars — PARALLEL`);
+  // Process chunks in PARALLEL — all chunks start simultaneously, saving 2x time
+  const emptyChunk: Partial<AnalysisIR> & { qualityScore?: number; specType?: string } = { behaviors: [], invariants: [], ambiguities: [], contradictions: [], resources: [] };
+  const results = await Promise.all(
+    chunksToProcess.map(async (chunk, i) => {
+      try {
+        const result = await withTimeout(
+          parseSpecChunk(chunk, i, chunksToProcess.length),
+          LLM_TIMEOUT_MS,
+          emptyChunk
+        );
+        console.log(`[TestForge] Chunk ${i} done in ${Date.now() - t0}ms`);
+        return result;
+      } catch (err: unknown) {
+        console.error(`[TestForge] Chunk ${i} failed:`, err);
+        return emptyChunk;
+      }
+    })
+  );
+  console.log(`[TestForge] All ${chunksToProcess.length} chunks done in ${Date.now() - t0}ms`);
   // Merge all chunk resultss
   const merged: AnalysisIR = {
     behaviors: [],
@@ -398,8 +402,7 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
 const MAX_LLM_TESTS = 3; // Max 3 LLM-generated tests — ~55s each = ~3min total
 
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
-  const proofs: RawProof[] = [];
-  let llmCallCount = 0;
+  const t0 = Date.now();
 
   // Sort targets: template-based first (idor, csrf, risk_scoring), then by risk level
   const sorted = [...riskModel.proofTargets].sort((a, b) => {
@@ -411,40 +414,50 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     return (riskOrder[a.riskLevel] ?? 3) - (riskOrder[b.riskLevel] ?? 3);
   });
 
-  for (const target of sorted) {
-    let code = "";
-    if (target.proofType === "idor") {
-      code = generateIDORTest(target, analysis);
-    } else if (target.proofType === "csrf") {
-      code = generateCSRFTest(target, analysis);
-    } else if (target.proofType === "risk_scoring") {
-      code = generateRiskScoringTest(target, analysis);
-    } else if (llmCallCount < MAX_LLM_TESTS) {
-      // Use LLM only for the top MAX_LLM_TESTS business logic tests
+  // Separate template targets from LLM targets
+  const templateTypes = ["idor", "csrf", "risk_scoring"];
+  const templateTargets = sorted.filter(t => templateTypes.includes(t.proofType));
+  const llmTargets = sorted.filter(t => !templateTypes.includes(t.proofType)).slice(0, MAX_LLM_TESTS);
+  const remainingTargets = sorted.filter(t => !templateTypes.includes(t.proofType)).slice(MAX_LLM_TESTS);
+
+  console.log(`[TestForge] Layer 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests (parallel), ${remainingTargets.length} template fallbacks`);
+
+  // Template tests (instant, no LLM)
+  const templateProofs: RawProof[] = templateTargets.map(target => ({
+    id: target.id,
+    behaviorId: target.behaviorId,
+    proofType: target.proofType,
+    riskLevel: target.riskLevel,
+    filename: getFilename(target.proofType),
+    code: target.proofType === "idor" ? generateIDORTest(target, analysis)
+      : target.proofType === "csrf" ? generateCSRFTest(target, analysis)
+      : generateRiskScoringTest(target, analysis),
+    mutationTargets: target.mutationTargets,
+  })).filter(p => p.code);
+
+  // LLM tests in PARALLEL — all start simultaneously
+  const llmProofs: RawProof[] = (await Promise.all(
+    llmTargets.map(async (target) => {
       try {
-        code = await generateLLMTest(target, analysis);
-        llmCallCount++;
+        const code = await withTimeout(generateLLMTest(target, analysis), LLM_TIMEOUT_MS, "");
+        console.log(`[TestForge] LLM test for ${target.id} done in ${Date.now() - t0}ms`);
+        return code ? { id: target.id, behaviorId: target.behaviorId, proofType: target.proofType, riskLevel: target.riskLevel, filename: getFilename(target.proofType), code, mutationTargets: target.mutationTargets } : null;
       } catch (err) {
-        console.warn(`[TestForge] LLM test generation failed for ${target.id}, using template fallback`);
-        code = generateBusinessLogicTemplate(target);
+        console.warn(`[TestForge] LLM test failed for ${target.id}, using template fallback`);
+        const code = generateBusinessLogicTemplate(target);
+        return code ? { id: target.id, behaviorId: target.behaviorId, proofType: target.proofType, riskLevel: target.riskLevel, filename: getFilename(target.proofType), code, mutationTargets: target.mutationTargets } : null;
       }
-    } else {
-      // Template fallback for remaining targets
-      code = generateBusinessLogicTemplate(target);
-    }
-    if (code) {
-      proofs.push({
-        id: target.id,
-        behaviorId: target.behaviorId,
-        proofType: target.proofType,
-        riskLevel: target.riskLevel,
-        filename: getFilename(target.proofType),
-        code,
-        mutationTargets: target.mutationTargets,
-      });
-    }
-  }
-  return proofs;
+    })
+  )).filter((p): p is RawProof => p !== null);
+
+  // Remaining targets get template fallback (instant)
+  const fallbackProofs: RawProof[] = remainingTargets.map(target => {
+    const code = generateBusinessLogicTemplate(target);
+    return code ? { id: target.id, behaviorId: target.behaviorId, proofType: target.proofType, riskLevel: target.riskLevel, filename: getFilename(target.proofType), code, mutationTargets: target.mutationTargets } : null;
+  }).filter((p): p is RawProof => p !== null);
+
+  console.log(`[TestForge] Layer 3 done in ${Date.now() - t0}ms — ${templateProofs.length + llmProofs.length + fallbackProofs.length} proofs total`);
+  return [...templateProofs, ...llmProofs, ...fallbackProofs];
 }
 
 function getFilename(pt: ProofType): string {
@@ -979,18 +992,29 @@ export async function runAnalysisJob(
   specText: string,
   projectName: string
 ): Promise<AnalysisJobResult> {
-  // Schicht 1
+  const jobStart = Date.now();
+  console.log(`[TestForge] Job START — ${specText.length} chars, project: ${projectName}`);
+
+  // Schicht 1: Spec parsing (parallel chunks)
+  const t1 = Date.now();
   const analysisResult = await parseSpec(specText);
+  console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors extracted`);
 
-  // Schicht 2
+  // Schicht 2: Risk model (synchronous, instant)
+  const t2 = Date.now();
   const riskModel = buildRiskModel(analysisResult);
+  console.log(`[TestForge] Schicht 2 done in ${Date.now() - t2}ms — ${riskModel.proofTargets.length} proof targets`);
 
-  // Schicht 3
+  // Schicht 3: Proof generation (parallel LLM calls)
+  const t3 = Date.now();
   const rawProofs = await generateProofs(riskModel, analysisResult);
+  console.log(`[TestForge] Schicht 3 done in ${Date.now() - t3}ms — ${rawProofs.length} raw proofs`);
 
-  // Schicht 4
+  // Schicht 4: False-green validation (synchronous, instant)
+  const t4 = Date.now();
   const behaviorIds = analysisResult.ir.behaviors.map(b => b.id);
   const validatedSuite = validateProofs(rawProofs, behaviorIds);
+  console.log(`[TestForge] Schicht 4 done in ${Date.now() - t4}ms — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`);
 
   // Report
   const report = generateReport(analysisResult, riskModel, validatedSuite, projectName);
@@ -1003,5 +1027,6 @@ export async function runAnalysisJob(
   }
   const testFiles = Array.from(fileMap.entries()).map(([filename, content]) => ({ filename, content }));
 
+  console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files`);
   return { analysisResult, riskModel, validatedSuite, report, testFiles };
 }
