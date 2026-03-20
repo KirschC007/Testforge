@@ -155,6 +155,7 @@ Rules:
 4. Detect contradictions: requirements that conflict with each other
 5. Identify the tenant model if multi-tenant SaaS (what isolates tenants?)
 6. Identify resources with PII (phone, email, name, address)
+7. For each behavior with numeric fields: identify boundary values (0, -1, null, max+1, empty string)
 
 Return a JSON object with these exact keys:
 - behaviors: array of {id, title, subject, action, object, preconditions, postconditions, errorCases, tags, riskHints, chapter}
@@ -166,6 +167,42 @@ Return a JSON object with these exact keys:
 - qualityScore: number 0-10
 - specType: string
 
+--- FEW-SHOT EXAMPLE (follow this quality level exactly) ---
+Input spec fragment: "A booking requires partySize between 1 and 20. Guests with noShowRisk > 80 are blocked."
+
+Expected output fragment:
+{
+  "behaviors": [
+    {
+      "id": "B-001",
+      "title": "System rejects booking with invalid partySize",
+      "subject": "System",
+      "action": "rejects",
+      "object": "booking",
+      "preconditions": ["partySize is 0, -1, 21, or null"],
+      "postconditions": ["HTTP 400 returned", "booking not created in DB"],
+      "errorCases": ["partySize=0 → 400", "partySize=-1 → 400", "partySize=21 → 400", "partySize=null → 400"],
+      "tags": ["validation", "boundary"],
+      "riskHints": ["boundary"],
+      "chapter": "Bookings"
+    },
+    {
+      "id": "B-002",
+      "title": "System blocks booking for high-risk guest",
+      "subject": "System",
+      "action": "blocks",
+      "object": "booking",
+      "preconditions": ["guest.noShowRisk > 80"],
+      "postconditions": ["HTTP 403 returned", "booking not created"],
+      "errorCases": ["noShowRisk=81 → blocked", "noShowRisk=80 → allowed (boundary)"],
+      "tags": ["risk-scoring", "boundary"],
+      "riskHints": ["risk-scoring"],
+      "chapter": "Bookings"
+    }
+  ]
+}
+--- END EXAMPLE ---
+
 Output ONLY valid JSON. No markdown, no explanation.`;
 
   const response = await invokeLLM({
@@ -174,6 +211,8 @@ Output ONLY valid JSON. No markdown, no explanation.`;
       { role: "user", content: `Analyze this specification chunk and extract all testable behaviors:\n\n${chunk}` },
     ],
     response_format: { type: "json_object" },
+    thinkingBudget: 0,   // JSON extraction = Easy Task, thinking adds latency with no benefit
+    maxTokens: 4096,     // Our outputs are never >2k tokens
   });
 
   const content = response.choices[0].message.content as string;
@@ -744,24 +783,71 @@ test("${target.id} — No-Show triggert riskScoring-Job und erhöht noShowRisk v
 `;
 }
 
+// Few-shot example stored as a plain string constant to avoid esbuild parsing issues
+const LAYER3_FEW_SHOT_EXAMPLE = [
+  "--- FEW-SHOT EXAMPLE (follow this structure exactly) ---",
+  "Proof target: Booking partySize boundary (1-20)",
+  'Mutation targets: ["Remove partySize > 0 check", "Remove partySize <= 20 check"]',
+  "",
+  "Expected test structure:",
+  'import { test, expect } from "@playwright/test";',
+  'import { BASE_URL, adminCookie } from "../helpers";',
+  "",
+  'test.describe("B-001 - partySize boundary (1-20)", () => {',
+  '  test("valid boundary: partySize=1 should succeed", async ({ request }) => {',
+  '    const res = await request.post(BASE_URL + "/api/trpc/bookings.create", {',
+  "      data: { partySize: 1 },",
+  "      headers: { Cookie: adminCookie },",
+  "    });",
+  "    expect(res.status()).toBe(200); // Kills: Remove partySize > 0 check",
+  "  });",
+  "",
+  '  test("invalid boundary: partySize=0 should fail", async ({ request }) => {',
+  '    const res = await request.post(BASE_URL + "/api/trpc/bookings.create", {',
+  "      data: { partySize: 0 },",
+  "      headers: { Cookie: adminCookie },",
+  "    });",
+  "    expect(res.status()).toBe(400); // Kills: Remove partySize > 0 check",
+  "    const body = await res.json();",
+  '    expect(body.error?.message).toContain("partySize"); // Exact field name in error',
+  "  });",
+  "",
+  '  test("invalid boundary: partySize=21 should fail", async ({ request }) => {',
+  '    const res = await request.post(BASE_URL + "/api/trpc/bookings.create", {',
+  "      data: { partySize: 21 },",
+  "      headers: { Cookie: adminCookie },",
+  "    });",
+  "    expect(res.status()).toBe(400); // Kills: Remove partySize <= 20 check",
+  "  });",
+  "});",
+  "--- END EXAMPLE ---",
+].join("\n");
+
 async function generateLLMTest(target: ProofTarget, analysis: AnalysisResult): Promise<string> {
+  const systemPrompt = [
+    "You are TestForge Schicht 3 - a Gold Standard test generator.",
+    "Generate a TypeScript Playwright test that PROVES the given behavior works correctly AND kills the listed mutation targets.",
+    "",
+    "Gold Standard Rules (MUST follow):",
+    '1. NO if-wrappers: never use "if (x !== undefined) { expect(x)..." - use expect(x).toBeDefined() then unconditional assertions',
+    "2. NO existence-only: never use only toBeDefined() or toBeTruthy() - always assert exact values",
+    "3. NO broad status codes: never use toBeGreaterThanOrEqual(400) - use expect([401, 403]).toContain(status)",
+    "4. Security tests MUST have side-effect checks (DB state verification after the attack)",
+    "5. IDOR tests MUST have positive control (verify legitimate access still works after the attack)",
+    "6. Boundary tests MUST test BOTH sides: valid boundary (should succeed) AND invalid boundary (should fail)",
+    "7. Every assertion must have a comment explaining WHY it proves the behavior AND which mutation it kills",
+    "8. Mutation-killing: each mutation target listed must be killed by at least one assertion",
+    "",
+    LAYER3_FEW_SHOT_EXAMPLE,
+    "",
+    "Output ONLY the TypeScript test code, no markdown fences.",
+  ].join("\n");
+
   const response = await invokeLLM({
     messages: [
       {
         role: "system",
-        content: `You are TestForge Schicht 3 — a Gold Standard test generator.
-Generate a TypeScript Playwright test that PROVES the given behavior works correctly.
-
-Gold Standard Rules (MUST follow):
-1. NO if-wrappers: never use "if (x !== undefined) { expect(x)..." — use expect(x).toBeDefined() then unconditional assertions
-2. NO existence-only: never use only toBeDefined() or toBeTruthy() — always assert exact values
-3. NO broad status codes: never use toBeGreaterThanOrEqual(400) — use expect([401, 403]).toContain(status)
-4. Security tests MUST have side-effect checks (DB state verification)
-5. IDOR tests MUST have positive control (verify legitimate access still works)
-6. Risk scoring tests MUST explicitly set and verify precondition (noShowRisk=0 before job)
-7. Every assertion must have a comment explaining WHY it proves the behavior
-
-Output ONLY the TypeScript test code, no markdown fences.`,
+        content: systemPrompt,
       },
       {
         role: "user",
@@ -774,12 +860,15 @@ Proof Type: ${target.proofType}
 Preconditions: ${target.preconditions.join(", ")}
 Required Assertions:
 ${target.assertions.map(a => `- ${a.target} ${a.operator} ${JSON.stringify(a.value)}: ${a.rationale}`).join("\n")}
-Mutation Targets (test must catch these):
-${target.mutationTargets.map(m => `- ${m.description}`).join("\n")}
+
+Mutation Targets (your test MUST kill ALL of these):
+${target.mutationTargets.map((m, i) => `${i + 1}. ${m.description} - add a comment "// Kills: ${m.description}" next to the assertion that catches this`).join("\n")}
 
 Spec context: ${analysis.specType}`,
       },
     ],
+    thinkingBudget: 2048,  // Code generation = Hard Task, thinking improves quality significantly
+    maxTokens: 8192,       // Tests can be 200-400 lines
   });
 
   return response.choices[0].message.content as string;

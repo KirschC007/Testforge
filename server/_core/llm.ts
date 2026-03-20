@@ -62,6 +62,8 @@ export type InvokeParams = {
   tool_choice?: ToolChoice;
   maxTokens?: number;
   max_tokens?: number;
+  /** Thinking budget tokens. 0 = off (fast, for JSON extraction). 2048+ = on (for code generation). Default: 0 */
+  thinkingBudget?: number;
   outputSchema?: OutputSchema;
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
@@ -296,10 +298,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
+  // Per-call token limits: caller sets maxTokens/max_tokens, default 4096 (our outputs are never >2k)
+  const resolvedMaxTokens = params.maxTokens ?? params.max_tokens ?? 4096;
+  payload.max_tokens = resolvedMaxTokens;
+
+  // Per-call thinking budget: 0 = off (JSON extraction, Easy Task), 2048+ = on (code generation, Hard Task)
+  // Default: 0 — thinking adds latency with no quality benefit for structured JSON tasks
+  const thinkingBudget = params.thinkingBudget ?? 0;
+  payload.thinking = { budget_tokens: thinkingBudget };
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,

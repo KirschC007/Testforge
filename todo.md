@@ -38,3 +38,13 @@
 - [ ] Job-Timeout: Nach 8 Minuten automatisch auf failed setzen
 - [ ] Live demo with hey-listen spec (manual test after deploy)
 - [ ] Empty states, loading skeletons (basic implemented)
+
+## Phase 5: Marktführer-Architektur
+- [x] Speed: max_tokens 32768→4096 für Layer 1+2, 8192 für Layer 3
+- [x] Speed: thinking budget_tokens→0 für Layer 1+2 (JSON-Extraktion = Easy Task)
+- [x] Speed: thinking budget_tokens→2048 für Layer 3 (Code-Generierung = Hard Task)
+- [x] Speed: invokeLLM per-call überschreibbar machen (nicht global hardcoded)
+- [x] Qualität: Few-Shot Example in Layer 1 Prompt (1 perfektes Behavior-Beispiel zeigen)
+- [x] Qualität: Few-Shot Example in Layer 3 Prompt (1 perfekter Gold-Standard Test zeigen)
+- [x] Qualität: Boundary Value Analysis direkt in Layer 2 integrieren (kein Extra-Call)
+- [x] Qualität: Mutation Targets explizit in Layer 3 Prompt übergeben (was der Test fangen muss)
