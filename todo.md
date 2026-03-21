@@ -119,5 +119,21 @@
 - [x] Fix: buildCsrfPayloadLine optional chaining → explizite Variablen (esbuild-Kompatibilität)
 - [x] Fix: Google Fonts @import aus index.css entfernt (CSS-Fehler behoben)
 - [x] Tests: 9 neue extractConstraints Unit-Tests, 32/32 grün
-- [ ] Live-Test: TaskFlow-Spec durch echte Pipeline schicken und Output prüfen
-- [ ] Goldstandard erreicht: Tests laufen unverändert in Playwright
+- [x] Live-Test: TaskFlow-Spec durch echte Pipeline schicken und Output prüfen
+- [x] Goldstandard erreicht: Tests laufen unverändert in Playwright
+
+## Phase 14: Goldstandard Live-Test
+- [x] TaskManager-Spec durch echte Pipeline schicken (API-Call)
+- [x] Generierten ZIP-Output analysieren (alle Test-Dateien prüfen)
+- [x] Fix: Import-Deduplication — Symbole pro Modul mergen statt ganzer Zeilen
+- [x] Fix: basePayload eindeutige Namen pro Test (basePayload_PROOF_B_008_BOUND etc.)
+- [x] Fix: fieldFromTitle für "taskIds array is empty" → "taskIds" (nicht "array")
+- [x] Fix: arrayEmptyPattern in extractConstraints für "<field> array is empty"
+- [x] Fix: max=undefined wenn kein max-Constraint bekannt (Tests b+d nur wenn hasMax)
+- [x] Fix: resolvedFieldName bevorzugt Constraint-Feld das in knownFields ist (B-010: date → dueDate)
+- [x] Fix: buildPayloadLine für page/limit/offset → 1 (nicht "test-page")
+- [x] Fix: assigneeId → tenantConst (nicht "test-assigneeId")
+- [x] Fix: NOISE_FIELD_NAMES enthält "array", "list" (verhindert falsche Felder)
+- [x] Fix: Rate-Limit + State-Machine Behaviors aus boundary-Proof-Typ ausgeschlossen
+- [x] Zweiter Durchlauf: Output verifiziert — alle 6 Boundary-Tests korrekt
+- [x] Goldstandard: alle Tests laufen unverändert in Playwright

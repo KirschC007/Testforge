@@ -711,7 +711,10 @@ function determineProofTypes(b: Behavior): ProofType[] {
   if (combined.includes("dsgvo") || combined.includes("privacy") || combined.includes("gdpr") || combined.includes("pii")) types.add("dsgvo");
   if (combined.includes("status") || combined.includes("transition")) types.add("status_transition");
   if (combined.includes("no-show") || combined.includes("risk-scoring") || combined.includes("cron")) types.add("risk_scoring");
-  if (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit")) types.add("boundary");
+  // Only add boundary if NOT a rate-limit or state-machine behavior (those have their own test types)
+  const isRateLimit = combined.includes("rate-limit") || combined.includes("brute-force");
+  const isStateMachine = combined.includes("state-machine") || combined.includes("transition");
+  if (!isRateLimit && !isStateMachine && (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit"))) types.add("boundary");
   if (types.size === 0) types.add("business_logic");
   return Array.from(types);
 }
@@ -846,13 +849,39 @@ export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldCon
   }
   // Pattern: "max <N> <field>" or "maximum <N> <field>s"
   const maxNFieldPattern = /(?:max|maximum)\s+(\d+)\s+(\w+)/gi;
+  const MAX_N_FIELD_NOISE = new Set(["characters", "chars", "items", "entries", "elements", "ids", "requests", "req", "calls", "per", "minute", "second", "hour", "day", "times"]);
   for (const m of Array.from(allText.matchAll(maxNFieldPattern))) {
     const field = m[2].replace(/s$/, ""); // remove plural
+    if (MAX_N_FIELD_NOISE.has(m[2].toLowerCase())) continue; // skip noise words
     if (!constraints.find(c => c.field === field)) {
       const num = parseInt(m[1]);
       if (num > 0 && num < 10000) { // sanity check
         constraints.push({ field, type: "array", max: num });
       }
+    }
+  }
+  // Pattern: "<field> array is empty" or "<field>s array is empty" → array min=1
+  const arrayEmptyPattern = /(\w+)\s+(?:array|list|ids?)\s+is\s+empty/gi;
+  for (const m of Array.from(allText.matchAll(arrayEmptyPattern))) {
+    const field = m[1].toLowerCase();
+    if (["api", "it", "that", "this", "which", "value", "request", "returns", "return", "if", "the", "a", "an"].includes(field)) continue;
+    if (!constraints.find(c => c.field === m[1])) {
+      constraints.push({ field: m[1], type: "array", min: 1 });
+    }
+  }
+  // Pattern: "<field> is empty" or "empty <field>" → min=1 (field must not be empty)
+  const emptyFieldPattern = /(?:(\w+)\s+is\s+empty|empty\s+(\w+))/gi;
+  for (const m of Array.from(allText.matchAll(emptyFieldPattern))) {
+    const field = m[1] || m[2];
+    const fl = field.toLowerCase();
+    // Skip noise words and words that are actually array-type fields (handled above)
+    if (["api", "it", "that", "this", "which", "value", "request", "returns", "return", "if", "the", "a", "an", "array", "list"].includes(fl)) continue;
+    if (/^\d+$/.test(fl)) continue;
+    if (!constraints.find(c => c.field === field)) {
+      constraints.push({ field, type: "string", min: 1 });
+    } else {
+      const existing = constraints.find(c => c.field === field);
+      if (existing && existing.min === undefined) existing.min = 1;
     }
   }
   // Pattern: "<field> must be in the future" or "<field> must be a future date"
@@ -1611,14 +1640,18 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
 
   // Pre-compute payload lines (avoids nested backtick issues in template literals)
+  // Track if any date field is used so we can import tomorrowStr
+  let csrfHasDateField = false;
   function buildCsrfPayloadLine(f: string, isUnique: boolean): string {
     if (isUnique) return `        ${f}: uniqueTitle,`;
     const fl = f.toLowerCase();
     if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantConst},`;
     if (fl.includes("date") || fl.includes("datum")) {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-      return `        ${f}: "${tomorrow}",`;
+      csrfHasDateField = true;
+      return `        ${f}: tomorrowStr(),`;
     }
+    // assigneeId and other ID fields get the tenant constant (or a numeric 1 for non-workspace IDs)
+    if (fl.includes("assignee") || (fl.includes("id") && !fl.includes("workspace"))) return `        ${f}: ${tenantConst},`;
     if (fl.includes("priority")) {
       const enumPriority = analysis.ir.enums && analysis.ir.enums.priority;
       const pv = (enumPriority && enumPriority[0]) || "medium";
@@ -1641,10 +1674,12 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
     const fl = f.toLowerCase();
     if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantConst},`;
     if (fl.includes("date") || fl.includes("datum")) {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-      return `        ${f}: "${tomorrow}",`;
+      csrfHasDateField = true;
+      return `        ${f}: tomorrowStr(),`;
     }
     if (fl.includes("title") || fl.includes("name")) return `        ${f}: "Test ${f} valid",`;
+    // assigneeId and other ID fields get the tenant constant
+    if (fl.includes("assignee") || (fl.includes("id") && !fl.includes("workspace"))) return `        ${f}: ${tenantConst},`;
     if (fl.includes("priority")) {
       const enumPriority2 = analysis.ir.enums && analysis.ir.enums.priority;
       const pv2 = (enumPriority2 && enumPriority2[0]) || "medium";
@@ -1700,8 +1735,9 @@ ${positivePayloadLines.replace(/^        /gm, "    ")}
 });
 `;
 
+  const csrfTomorrowImport = csrfHasDateField ? ", tomorrowStr" : "";
   return `import { test, expect } from "@playwright/test";
-import { trpcMutation, trpcQuery, BASE_URL } from "../../helpers/api";
+import { trpcMutation, trpcQuery, BASE_URL${csrfTomorrowImport} } from "../../helpers/api";
 import { ${roleFnName}${csrfEndpoint ? ", getCsrfToken" : ""} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 
@@ -2005,16 +2041,30 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const hasEndpoint = !!target.endpoint;
 
   // Goldstandard: Use constraints from ProofTarget (extracted by extractConstraints in Layer 2)
-  // Pick the most relevant constraint: prefer non-enum, non-id fields
-  const primaryConstraint = target.constraints?.find(c => c.type !== "enum" && !c.field.toLowerCase().includes("id"))
-    || target.constraints?.[0];
+  // Pick the most relevant constraint: prefer non-enum, non-id fields, non-rate-limit fields
+  const RATE_LIMIT_NOISE_FIELDS = new Set(["workspace", "request", "minute", "second", "hour", "day", "requests"]);
+  const primaryConstraint = target.constraints?.find(c =>
+    c.type !== "enum" &&
+    !c.field.toLowerCase().includes("id") &&
+    !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase())
+  ) || target.constraints?.find(c => c.type !== "enum") || target.constraints?.[0];
 
   // Extract field name: prefer from constraint, then from behavior text
   const fieldFromConstraint = primaryConstraint?.field;
-  const fieldFromTitle = behavior?.title.match(/(\w+)\s*(?:boundary|limit|range|between|muss|must|zwischen)/i)?.[1];
-  const fieldFromError = behavior?.errorCases[0]?.match(/^(\w+)\s*[=<>]/)?.[1];
+  // Extract field from behavior title:
+  // "title exceeds 200" → "title", "dueDate is in the past" → "dueDate"
+  // "taskIds array is empty" → "taskIds" (word before array/list)
+  const titleText = behavior?.title || "";
+  const arrayEmptyTitleMatch = titleText.match(/(\w+)\s+(?:array|list|ids?)\s+is\s+empty/i);
+  const fieldFromTitle = arrayEmptyTitleMatch?.[1] ||
+    titleText.match(/(\w+)\s+(?:exceeds?|is\s+empty|is\s+in\s+the\s+past|must\s+be|above|below|between|boundary|limit|range)/i)?.[1];
+  // Extract field from error case: "title > 200 chars" → "title", "empty title -> 400" → skip
+  const fieldFromError = behavior?.errorCases[0]?.match(/^([a-zA-Z][a-zA-Z0-9_]*)\s*(?:>|<|=|exceeds?|is\s+empty|must)/i)?.[1];
   const fieldFromAssertion = target.assertions.find(a => a.type === "field_value")?.target.split(".").pop();
-  const fieldName = fieldFromConstraint || fieldFromTitle || fieldFromError || fieldFromAssertion || "value";
+  // Avoid noise words as field names
+  const NOISE_FIELD_NAMES = new Set(["empty", "not", "length", "size", "array", "list", "count", "value", "request", "returns", "return", "if", "system", "api"]);
+  const rawFieldName = fieldFromConstraint || fieldFromTitle || fieldFromError || fieldFromAssertion;
+  const fieldName = (rawFieldName && !NOISE_FIELD_NAMES.has(rawFieldName.toLowerCase())) ? rawFieldName : "value";
 
   // Use constraint values if available, otherwise fall back to text extraction
   const allText = [...(behavior?.errorCases || []), ...(behavior?.postconditions || []), target.description].join(" ");
@@ -2022,7 +2072,10 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const maxMatch = allText.match(/(\d+)\s*(?:maximum|max|\(max|≤|<=|maximal)/i);
   const gtAssertions = target.assertions.filter(a => a.operator === "gt" || a.operator === "lte");
   const min = primaryConstraint?.min ?? (minMatch ? parseInt(minMatch[1]) : (gtAssertions[0] ? Number(gtAssertions[0].value) + 1 : 1));
-  const max = primaryConstraint?.max ?? (maxMatch ? parseInt(maxMatch[1]) : (gtAssertions[1] ? Number(gtAssertions[1].value) : 100));
+  // max is optional: only set if explicitly known from constraint or text (no fallback to 100)
+  const maxRaw: number | undefined = primaryConstraint?.max ?? (maxMatch ? parseInt(maxMatch[1]) : (gtAssertions[1] ? Number(gtAssertions[1].value) : undefined));
+  const max = maxRaw ?? 100; // used for array/string generation; hasMax controls whether max-tests are generated
+  const hasMax = maxRaw !== undefined; // only generate max-boundary tests if max is explicitly known
 
   // Determine type from constraint or text
   const isStringField = primaryConstraint?.type === "string" || allText.toLowerCase().includes("length") || allText.toLowerCase().includes("char");
@@ -2039,11 +2092,23 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
         e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
 
-  // CRITICAL: If fieldName is not in knownFields, add it so boundaryValue is always injected
-  const fieldInKnown = knownFields.includes(fieldName);
+  // CRITICAL: If fieldName is not in knownFields, try to find a better constraint whose field IS in knownFields
+  // e.g. B-010 has constraints [{field:"date"}, {field:"dueDate"}] — prefer "dueDate" since it's in knownFields
+  let resolvedFieldName = fieldName;
+  if (!knownFields.includes(fieldName) && knownFields.length > 0) {
+    const betterConstraint = target.constraints?.find(c =>
+      c.type !== "enum" &&
+      !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase()) &&
+      knownFields.includes(c.field)
+    );
+    if (betterConstraint) resolvedFieldName = betterConstraint.field;
+  }
+  const fieldInKnown = knownFields.includes(resolvedFieldName);
   const effectiveFields = fieldInKnown || knownFields.length === 0
     ? knownFields
-    : [...knownFields, fieldName]; // append boundary field if missing
+    : [...knownFields, resolvedFieldName]; // append boundary field if missing
+  // Use resolvedFieldName everywhere below
+  const finalFieldName = resolvedFieldName;
 
   // Build boundary values for each test case
   function boundaryValue(bound: "min" | "max" | "below_min" | "above_max" | "null"): string {
@@ -2093,15 +2158,19 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     if (fl.includes("email")) return `    ${f}: "test@example.com",`;
     if (fl.includes("phone")) return `    ${f}: "+49123456789",`;
     if (fl.includes("name") || fl.includes("title") || fl.includes("description")) return `    ${f}: "Test ${f}",`;
-    if (fl.includes("count") || fl.includes("size") || fl.includes("num")) return `    ${f}: 1,`;
+    if (fl.includes("count") || fl.includes("size") || fl.includes("num") || fl === "page" || fl === "limit" || fl === "offset") return `    ${f}: 1,`;
+    // assigneeId and similar optional user-reference IDs: use tenantConst or null
+    if (fl.includes("assignee")) return `    ${f}: ${tenantConst},`;
     return `    ${f}: "test-${f}", // TODO: Replace with valid test value`;
   }
 
   const payloadLines = effectiveFields.length > 0
-    ? effectiveFields.map(f => buildPayloadLine(f, f === fieldName)).join("\n")
-    : `    ${tenantField}: ${tenantConst},\n    ${fieldName}: boundaryValue, // TODO: Add other required fields for ${endpoint}`;
+    ? effectiveFields.map(f => buildPayloadLine(f, f === finalFieldName)).join("\n")
+    : `    ${tenantField}: ${tenantConst},\n    ${finalFieldName}: boundaryValue, // TODO: Add other required fields for ${endpoint}`;
 
   const needsTomorrowStr = isDateField || effectiveFields.some(f => f.toLowerCase().includes("date"));
+  // Use a unique payload function name per test to avoid conflicts when merged into one file
+  const payloadFnName = `basePayload_${target.id.replace(/-/g, "_")}`;
 
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation${needsTomorrowStr ? ", tomorrowStr, yesterdayStr" : ""} } from "../../helpers/api";
@@ -2120,38 +2189,38 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-const basePayload = (boundaryValue: unknown) => ({
+const ${payloadFnName} = (boundaryValue: unknown) => ({
 ${payloadLines}
 });
 
-test("${target.id}a — ${fieldName}=${boundaryValue("min")} (minimum) is allowed", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("min")}), adminCookie);
+test("${target.id}a — ${finalFieldName}=${boundaryValue("min")} (minimum) is allowed", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("min")}), adminCookie);
   expect(status).toBe(200);
-  // Kills: Change >= to > in ${fieldName} validation (off-by-one)
+  // Kills: Change >= to > in ${finalFieldName} validation (off-by-one)
 });
-
-test("${target.id}b — ${fieldName}=${boundaryValue("max")} (maximum) is allowed", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("max")}), adminCookie);
+${hasMax ? `
+test("${target.id}b — ${finalFieldName}=${boundaryValue("max")} (maximum) is allowed", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("max")}), adminCookie);
   expect(status).toBe(200);
-  // Kills: Change <= to < in ${fieldName} validation (off-by-one)
+  // Kills: Change <= to < in ${finalFieldName} validation (off-by-one)
 });
-
-test("${target.id}c — ${fieldName}=${boundaryValue("below_min")} (below minimum) is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("below_min")}), adminCookie);
+` : ""}
+test("${target.id}c — ${finalFieldName}=${boundaryValue("below_min")} (below minimum) is rejected", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("below_min")}), adminCookie);
   expect([400, 422]).toContain(status);
-  // Kills: Remove ${fieldName} >= ${min} validation
+  // Kills: Remove ${finalFieldName} >= ${min} validation
 });
-
-test("${target.id}d — ${fieldName}=${boundaryValue("above_max")} (above maximum) is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("above_max")}), adminCookie);
+${hasMax ? `
+test("${target.id}d — ${finalFieldName}=${boundaryValue("above_max")} (above maximum) is rejected", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("above_max")}), adminCookie);
   expect([400, 422]).toContain(status);
-  // Kills: Remove ${fieldName} <= ${max} validation
+  // Kills: Remove ${finalFieldName} <= ${max} validation
 });
-
-test("${target.id}e — ${fieldName}=null is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(null), adminCookie);
+` : ""}
+test("${target.id}e — ${finalFieldName}=null is rejected", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(null), adminCookie);
   expect([400, 422]).toContain(status);
-  // Kills: Skip null check on ${fieldName}
+  // Kills: Skip null check on ${finalFieldName}
 });
 `;
 }
@@ -2856,19 +2925,37 @@ function extractTestBody(code: string): string {
 
 function mergeProofsToFile(proofs: ValidatedProof[]): string {
   // Collect all imports from all proofs and deduplicate
-  const importSet = new Set<string>();
-  // Do NOT add standard imports here — let each proof's own imports be collected below
-  // This ensures tenant constants match the actual spec (TEST_WORKSPACE_ID not TEST_TENANT_ID)
-
-  // Extract any extra imports from proof code (e.g. custom helpers)
+  // Collect imports per module path, merging named imports to avoid duplicates
+  // e.g. two proofs importing { trpcMutation } and { trpcMutation, tomorrowStr } → one merged import
+  const importsByModule = new Map<string, Set<string>>();
   for (const proof of proofs) {
     const lines = proof.code.split("\n");
     for (const line of lines) {
-      if (line.trim().startsWith("import ")) {
-        importSet.add(line.trim());
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("import ")) continue;
+      // Match: import { a, b, c } from "module"
+      const namedMatch = trimmed.match(/^import\s+\{([^}]+)\}\s+from\s+(["'][^"']+["'])/);
+      if (namedMatch) {
+        const symbols = namedMatch[1].split(",").map(s => s.trim()).filter(Boolean);
+        const mod = namedMatch[2];
+        if (!importsByModule.has(mod)) importsByModule.set(mod, new Set());
+        for (const sym of symbols) importsByModule.get(mod)!.add(sym);
+      } else {
+        // Default or namespace imports — keep as-is (use module path as key)
+        const defaultMatch = trimmed.match(/^import\s+\w+\s+from\s+(["'][^"']+["'])/);
+        const mod = defaultMatch?.[1] || trimmed;
+        if (!importsByModule.has(mod)) importsByModule.set(mod, new Set([trimmed]));
       }
     }
   }
+  // Rebuild merged import lines
+  const mergedImports = Array.from(importsByModule.entries()).map(([mod, syms]) => {
+    const firstVal = Array.from(syms)[0];
+    // If the only entry is a full import line (default import), use it directly
+    if (firstVal && firstVal.startsWith("import ")) return firstVal;
+    const sorted = Array.from(syms).sort();
+    return `import { ${sorted.join(", ")} } from ${mod};`;
+  });
 
   // Detect which cookie variables are actually used across all proofs
   const allCode = proofs.map(p => p.code).join("\n");
@@ -2902,27 +2989,15 @@ ${needsStaffCookie ? "  staffCookie = await getStaffCookie(request);\n" : ""}});
 `;
 
   // Test bodies without repeated imports/declarations
-  // Also deduplicate const basePayload declarations (keep only first)
-  let basePayloadSeen = false;
+  // Note: basePayload functions now have unique names (basePayload_PROOF_B_007_BOUND, etc.)
+  // so no deduplication is needed — each test keeps its own payload function
   const testBodies = proofs
-    .map(p => {
-      let body = extractTestBody(p.code);
-      // Remove duplicate const basePayload blocks
-      if (body.includes("const basePayload")) {
-        if (basePayloadSeen) {
-          // Remove the const basePayload = (...) => ({...}); block
-          body = body.replace(/const basePayload\s*=\s*\([^)]*\)\s*=>\s*\([\s\S]*?\);\n?/g, "");
-        } else {
-          basePayloadSeen = true;
-        }
-      }
-      return body;
-    })
+    .map(p => extractTestBody(p.code))
     .filter(b => b.length > 0)
     .join("\n\n");
 
   return [
-    Array.from(importSet).join("\n"),
+    mergedImports.join("\n"),
     beforeAll,
     testBodies,
   ].join("\n");
