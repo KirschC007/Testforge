@@ -38,6 +38,15 @@ function makeAnalysisResult(behaviors: Behavior[] = [makeBehavior()]): AnalysisR
       resources: [
         { name: "reservations", table: "reservations", tenantKey: "restaurantId", operations: ["read", "create", "update"], hasPII: true },
       ],
+      apiEndpoints: [
+        { name: "reservations.create", method: "POST /api/trpc/reservations.create", auth: "requireRestaurantAuth", relatedBehaviors: ["B001"], inputFields: ["restaurantId", "guestName", "partySize"] },
+        { name: "reservations.list", method: "GET /api/trpc/reservations.list", auth: "requireRestaurantAuth", relatedBehaviors: [], inputFields: ["restaurantId"] },
+        { name: "reservations.updateStatus", method: "POST /api/trpc/reservations.updateStatus", auth: "requireRestaurantAuth", relatedBehaviors: [], inputFields: ["id", "restaurantId", "status"] },
+      ],
+      authModel: {
+        loginEndpoint: "/api/trpc/auth.login",
+        roles: [{ name: "restaurant_admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" }],
+      },
     },
     qualityScore: 8.5,
     specType: "saas-reservation",
@@ -125,7 +134,7 @@ function makeRawProof(overrides: Partial<RawProof> = {}): RawProof {
     code: `
 test("IDOR test", async ({ request }) => {
   const response = await request.get("/api/resource", { headers: { Cookie: cookieA } });
-  expect([401, 403]).toContain(response.status()); // Must reject cross-tenant access
+  expect([401, 403]).toContain(response.status()); // Kills: Remove restaurantId filter in WHERE clause
   const body = await response.text();
   expect(body).not.toMatch(/IDOR Canary/); // side-effect check
   // positive control
@@ -234,7 +243,7 @@ test("idor no positive control", async () => {
 test("risk scoring no precondition", async () => {
   await triggerJob();
   const guest = await getGuest();
-  // Note: noShowRisk not set to 0 before job, and no .toBe(0) precondition check
+  // Note: noShowRisk baseline not verified before job runs
   expect(guest.noShowRisk).toBeGreaterThan(0);
 });`,
     });

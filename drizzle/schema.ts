@@ -50,6 +50,12 @@ export const analyses = mysqlTable("analyses", {
   outputZipUrl: text("outputZipUrl"),
   outputZipKey: varchar("outputZipKey", { length: 512 }),
 
+  // Live progress tracking
+  progressLayer: int("progressLayer").default(0), // 0=pending, 1=parsing, 2=risk, 3=tests, 4=validation, 5=done
+  progressMessage: varchar("progressMessage", { length: 512 }),
+  layer1Json: json("layer1Json"), // AnalysisResult after Layer 1 — available early
+  layer2Json: json("layer2Json"), // RiskModel after Layer 2 — available early
+
   // Error info if failed
   errorMessage: text("errorMessage"),
 

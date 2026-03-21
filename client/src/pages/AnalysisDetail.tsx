@@ -8,15 +8,26 @@ import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
 
 const STEPS = [
-  { key: "pending", label: "Queued", desc: "Waiting to start" },
-  { key: "running-1", label: "Schicht 1", desc: "Extracting behaviors from spec" },
-  { key: "running-2", label: "Schicht 2", desc: "Building risk model" },
-  { key: "running-3", label: "Schicht 3", desc: "Generating proof tests" },
-  { key: "running-4", label: "Schicht 4", desc: "Validating false-greens" },
-  { key: "completed", label: "Complete", desc: "Tests ready for download" },
+  { key: "pending",   label: "Queued",             desc: "Waiting to start",                    layer: 0 },
+  { key: "layer1",    label: "Layer 1 — Spec Parse", desc: "Extracting behaviors from spec",      layer: 1 },
+  { key: "checker",   label: "LLM Checker",          desc: "Verifying behaviors against spec",    layer: 2 },
+  { key: "layer2",    label: "Layer 2 — Risk Model",  desc: "Building risk model & proof targets", layer: 2 },
+  { key: "layer3",    label: "Layer 3 — Test Gen",    desc: "Generating proof tests (all parallel)",layer: 3 },
+  { key: "layer45",   label: "Layer 4+5 — Validation",desc: "Independent check + false-green guard",layer: 4 },
+  { key: "completed", label: "Complete",              desc: "Tests ready for download",             layer: 5 },
 ];
 
-function ProgressSteps({ status, createdAt }: { status: Analysis["status"]; createdAt: Date }) {
+function ProgressSteps({
+  status,
+  createdAt,
+  progressLayer,
+  progressMessage,
+}: {
+  status: Analysis["status"];
+  createdAt: Date;
+  progressLayer?: number | null;
+  progressMessage?: string | null;
+}) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (status !== "running" && status !== "pending") return;
@@ -26,25 +37,33 @@ function ProgressSteps({ status, createdAt }: { status: Analysis["status"]; crea
     return () => clearInterval(interval);
   }, [status, createdAt]);
 
-  // Estimate current step based on elapsed time
-  const stepIndex = status === "completed" ? 5
+  // Use real progressLayer from DB if available, else fall back to time estimate
+  const currentLayer = status === "completed" ? 5
     : status === "failed" ? -1
     : status === "pending" ? 0
-    : Math.min(1 + Math.floor(elapsed / 25), 4);
+    : (progressLayer ?? Math.min(1 + Math.floor(elapsed / 30), 4));
 
   return (
     <div className="bg-card border border-border rounded-lg p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="font-semibold text-sm">Analysis Progress</h2>
         {(status === "running" || status === "pending") && (
           <span className="text-xs font-mono text-muted-foreground">{elapsed}s elapsed</span>
         )}
       </div>
+
+      {/* Live progress message */}
+      {progressMessage && (status === "running" || status === "pending") && (
+        <div className="mb-4 px-3 py-2 bg-primary/5 border border-primary/20 rounded text-xs font-mono text-primary">
+          {progressMessage}
+        </div>
+      )}
+
       <div className="space-y-3">
         {STEPS.map((step, i) => {
-          const isDone = i < stepIndex;
-          const isCurrent = i === stepIndex && status !== "completed";
-          const isPending = i > stepIndex;
+          const isDone = step.layer < currentLayer || (status === "completed");
+          const isCurrent = step.layer === currentLayer && status !== "completed" && status !== "failed";
+          const isPending = step.layer > currentLayer && status !== "completed";
           return (
             <div key={step.key} className="flex items-center gap-3">
               <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
@@ -181,7 +200,12 @@ export default function AnalysisDetail() {
         {/* Running / Pending */}
         {(analysis.status === "running" || analysis.status === "pending") && (
           <div className="max-w-md">
-            <ProgressSteps status={analysis.status} createdAt={analysis.createdAt} />
+            <ProgressSteps
+              status={analysis.status}
+              createdAt={analysis.createdAt}
+              progressLayer={(analysis as any).progressLayer}
+              progressMessage={(analysis as any).progressMessage}
+            />
           </div>
         )}
 

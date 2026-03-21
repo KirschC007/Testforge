@@ -56,3 +56,13 @@
 - [x] Landing Page: Mock Report Preview aktualisiert (LLM Checker Stats, 52 Behaviors, 41/44 Proofs)
 - [ ] New Analysis Page: Upload-Hinweis aktualisieren (was passiert nach dem Upload)
 - [ ] Report Page: Neue Felder zeigen (LLM Checker Stats, Discarded Proofs, Mutation Score)
+  - [x] Fix: business_logic + rate_limit Templates einbauen (kein LLM-Call mehr, sofort deterministisch)
+
+## Phase 7: Qualität & Live-Progress
+- [x] Templates: business_logic und rate_limit nutzen jetzt echte IR-Daten (Endpoints, Felder, Assertions)
+- [x] Validierung R8: risk_scoring Tests müssen noShowRisk=0 Precondition verifizieren
+- [x] Priority-Filter: Low-Risk Behaviors (priority 2) bekommen keine Proof-Targets mehr
+- [x] Live-Progress: DB-Updates nach jeder Schicht (progressLayer, progressMessage, layer1Json, layer2Json)
+- [x] Live-Progress: Frontend zeigt echten Layer-Fortschritt statt Zeit-Schätzung
+- [x] Live-Progress: Progress-Message-Banner im ProgressSteps-Component
+- [x] Tests: alle 22 Unit-Tests grün

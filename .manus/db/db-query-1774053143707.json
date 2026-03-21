@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `analyses` ADD `progressLayer` int DEFAULT 0;\nALTER TABLE `analyses` ADD `progressMessage` varchar(512);\nALTER TABLE `analyses` ADD `layer1Json` json;\nALTER TABLE `analyses` ADD `layer2Json` json;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute ALTER TABLE `analyses` ADD `progressLayer` int DEFAULT 0;\nALTER TABLE `analyses` ADD `progressMessage` varchar(512);\nALTER TABLE `analyses` ADD `layer1Json` json;\nALTER TABLE `analyses` ADD `layer2Json` json;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 4177
+}

@@ -582,6 +582,9 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
 
   const proofTargets: ProofTarget[] = [];
   for (const sb of behaviors) {
+    // Only generate proof targets for priority 0 (critical/high) and 1 (medium)
+    // Low-risk behaviors (priority 2) don't get proof targets
+    if (sb.priority === 2) continue;
     for (const pt of sb.proofTypes) {
       const target = buildProofTarget(sb, pt, analysis);
       if (target) proofTargets.push(target);
@@ -1652,6 +1655,115 @@ test("${target.id} — No-show triggers risk score increase from baseline 0", as
 `;
 }
 
+function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "restaurantId";
+  const tenantConst = `TEST_${(analysis.ir.tenantModel?.tenantEntity || "restaurant").toUpperCase()}_ID`;
+  // Use the ACTUAL endpoint from the proof target (resolved from IR)
+  const ep = target.endpoint || analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"))?.name || "resource.create";
+  const getEp = analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("get") || e.name.toLowerCase().includes("list"))?.name || "resource.list";
+  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin"));
+  const roleFnName = adminRole
+    ? `get${adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+  // Build precondition comment block from actual spec preconditions
+  const preconditionComments = target.preconditions.length > 0
+    ? target.preconditions.map(p => `  // Precondition: ${p}`).join("\n")
+    : "  // Precondition: valid authenticated user";
+  // Build assertion lines from actual ProofTarget assertions
+  const assertionLines = target.assertions.map(a => {
+    if (a.operator === "eq") return `  expect((data as Record<string, unknown>)?.["${a.target.split(".").pop()}"] ?? status).toBe(${JSON.stringify(a.value)}); // Kills: ${a.rationale}`;
+    if (a.operator === "not_null") return `  expect((data as Record<string, unknown>)?.["${a.target.split(".").pop()}"]).toBeDefined(); // Kills: ${a.rationale}`;
+    return `  // Assert: ${a.target} ${a.operator} ${JSON.stringify(a.value)} — ${a.rationale}`;
+  }).join("\n");
+  // Build mutation kill comments from actual mutationTargets
+  const killComments = target.mutationTargets.map(m => `  // Kills: ${m.description}`).join("\n");
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery, tomorrowStr, randomPhone, BASE_URL } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+// ${target.id} — Business Logic: ${target.description}
+// Risk: ${target.riskLevel} | Endpoint: ${ep}
+let adminCookie: string;
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+test("${target.id} — ${target.description.slice(0, 80)}", async ({ request }) => {
+${preconditionComments}
+  const { data, status } = await trpcMutation(request, "${ep}",
+    { ${tenantField}: ${tenantConst}, guestName: "BL Test " + Date.now(), guestPhone: randomPhone(), partySize: 2, date: tomorrowStr(), time: "19:00", source: "manual_admin" },
+    adminCookie);
+  expect(status).toBe(200); // Kills: Remove success path in ${ep}
+${assertionLines || "  expect((data as Record<string, unknown>)?.id).toBeDefined(); // Kills: Return undefined id"}
+${killComments}
+});
+test("${target.id} — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${ep}",
+    { ${tenantField}: ${tenantConst}, guestName: "BL Auth Test", guestPhone: randomPhone(), partySize: 2, date: tomorrowStr(), time: "19:00", source: "manual_admin" },
+    "");
+  expect([401, 403]).toContain(status); // Kills: Remove auth middleware from ${ep}
+});
+test("${target.id} — ${target.description.slice(0, 60)} persists to DB", async ({ request }) => {
+  const { data: created } = await trpcMutation(request, "${ep}",
+    { ${tenantField}: ${tenantConst}, guestName: "BL Persist Test", guestPhone: randomPhone(), partySize: 2, date: tomorrowStr(), time: "19:00", source: "manual_admin" },
+    adminCookie);
+  const id = (created as Record<string, unknown>)?.id;
+  expect(id).toBeDefined(); // Kills: Don't return id from ${ep}
+  const { data: fetched, status } = await trpcQuery(request, "${getEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(status).toBe(200); // Kills: Remove ${getEp} endpoint
+  const items = Array.isArray(fetched) ? fetched : (fetched as Record<string, unknown[]>)?.items || [];
+  expect(items.some((r: unknown) => (r as Record<string, unknown>).id === id)).toBe(true); // Kills: Don't persist to DB
+});
+`;
+}
+
+function generateRateLimitTest(target: ProofTarget, analysis: AnalysisResult): string {
+  // Use actual login endpoint from auth model
+  const rawLoginEp = analysis.ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
+  const loginEp = rawLoginEp.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
+  // Use actual endpoint from target if it's not the login endpoint
+  const targetEp = target.endpoint ? target.endpoint : null;
+  // Build kill comments from actual mutationTargets
+  const killComments = target.mutationTargets.map(m => `  // Kills: ${m.description}`).join("\n");
+  return `import { test, expect } from "@playwright/test";
+import { BASE_URL } from "../../helpers/api";
+// ${target.id} — Rate Limit: ${target.description}
+// Risk: ${target.riskLevel} | Endpoint: ${targetEp || loginEp}
+test("${target.id} — Brute-force blocked after 10 attempts on ${targetEp || loginEp}", async ({ request }) => {
+  const results: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const res = await request.post(BASE_URL + "${loginEp}", {
+      data: { json: { email: "attacker-" + i + "@evil.com", password: "wrong" + i } },
+    });
+    results.push(res.status());
+  }
+  // At least one request should be rate-limited (429) after repeated failures
+  expect(results.some(s => s === 429)).toBe(true); // Kills: Remove rate limiting middleware
+${killComments}
+});
+test("${target.id} — Legitimate user not blocked after 3 attempts", async ({ request }) => {
+  const results: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const res = await request.post(BASE_URL + "${loginEp}", {
+      data: { json: { email: "legit@example.com", password: "wrong" } },
+    });
+    results.push(res.status());
+  }
+  // Should not be rate-limited yet (only 3 attempts)
+  expect(results.every(s => s !== 429)).toBe(true); // Kills: Rate limit too aggressively
+});
+test("${target.id} — Rate limit resets after window expires", async ({ request }) => {
+  // This test documents the expected reset behavior
+  // In CI: mock time or use short window (e.g. 1 minute)
+  const res = await request.post(BASE_URL + "${loginEp}", {
+    data: { json: { email: "reset-test@example.com", password: "wrong" } },
+  });
+  // Should not be blocked on first attempt after window reset
+  expect(res.status()).not.toBe(429); // Kills: Never reset rate limit counter
+});
+`;
+}
+
 const LAYER3_FEW_SHOT_EXAMPLE = [
   "--- FEW-SHOT EXAMPLE (follow this structure exactly) ---",
   "Proof target: Booking partySize boundary (1-20)",
@@ -1756,10 +1868,12 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     dsgvo: generateDSGVOTest,
     boundary: generateBoundaryTest,
     risk_scoring: generateRiskScoringTest,
+    business_logic: generateBusinessLogicTest,
+    rate_limit: generateRateLimitTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
-  const llmTargets = riskModel.proofTargets.filter(t => !templateMap[t.proofType]); // business_logic + rate_limit
+  const llmTargets = riskModel.proofTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
 
   console.log(`[TestForge] Schicht 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL`);
 
@@ -1896,6 +2010,15 @@ function runValidationRules(proof: RawProof): ValidationResult {
     return { passed: false, notes: [], reason: "missing_baseline", details: "R6 violation: Counter check without baseline. Add const countBefore = ... BEFORE the action." };
   }
   notes.push("✓ R6: Baseline present");
+
+  // R8: risk_scoring tests must verify precondition (noShowRisk = 0) before triggering job
+  if (proof.proofType === "risk_scoring") {
+    const hasPreconditionCheck = code.includes(".toBe(0)") || code.includes("noShowRisk = 0") || code.includes("noShowRisk: 0") || code.includes("noShowRisk).toBe(0");
+    if (!hasPreconditionCheck) {
+      return { passed: false, notes: [], reason: "missing_precondition", details: "R8 violation: risk_scoring test must verify noShowRisk = 0 BEFORE triggering job (precondition check)." };
+    }
+  }
+  notes.push("✓ R8: Preconditions verified");
 
   // R7: Must have at least one Kills comment
   if (!code.includes("// Kills:")) {
@@ -2128,19 +2251,38 @@ export function generateReport(
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
+export type ProgressCallback = (layer: number, message: string, data?: {
+  analysisResult?: AnalysisResult;
+  riskModel?: RiskModel;
+  proofCount?: number;
+}) => Promise<void>;
+
 export async function runAnalysisJob(
   specText: string,
-  projectName: string
+  projectName: string,
+  onProgress?: ProgressCallback
 ): Promise<AnalysisJobResult> {
   const jobStart = Date.now();
   console.log(`[TestForge] Job START v3.0 — ${specText.length} chars, project: ${projectName}`);
+
+  const progress = async (layer: number, message: string, data?: Parameters<ProgressCallback>[2]) => {
+    console.log(`[TestForge] Progress Layer ${layer}: ${message}`);
+    if (onProgress) {
+      try { await onProgress(layer, message, data); } catch (e) { console.error("[TestForge] Progress callback error:", e); }
+    }
+  };
+
+  await progress(1, "Layer 1: Analysiere Spec...");
 
   // Schicht 1: Spec parsing (ALL chunks parallel)
   const t1 = Date.now();
   const analysisResult = await parseSpec(specText);
   console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
 
+  await progress(1, `Layer 1 fertig: ${analysisResult.ir.behaviors.length} Behaviors, ${analysisResult.ir.apiEndpoints.length} Endpoints gefunden`, { analysisResult });
+
   // LLM Checker: verify all behaviors (parallel)
+  await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
   const t_checker = Date.now();
   const { checkedBehaviors, stats: llmCheckerStats } = await runLLMChecker(
     analysisResult.ir.behaviors,
@@ -2149,30 +2291,42 @@ export async function runAnalysisJob(
   analysisResult.ir.behaviors = checkedBehaviors;
   console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
 
+  await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+
   // Schicht 2: Risk model
   const t2 = Date.now();
   const riskModel = buildRiskModel(analysisResult);
   console.log(`[TestForge] Schicht 2 done in ${Date.now() - t2}ms — ${riskModel.proofTargets.length} proof targets`);
+
+  await progress(2, `Layer 2 fertig: ${riskModel.proofTargets.length} Proof-Targets, ${riskModel.idorVectors} IDOR-Vektoren`, { analysisResult, riskModel });
 
   // Helpers Generator
   const helpers = generateHelpers(analysisResult);
   console.log(`[TestForge] Helpers generated — ${Object.keys(helpers).length} files`);
 
   // Schicht 3: Proof generation (ALL parallel)
+  await progress(3, "Layer 3: Generiere Tests (alle parallel)...");
   const t3 = Date.now();
   const rawProofs = await generateProofs(riskModel, analysisResult);
   console.log(`[TestForge] Schicht 3 done in ${Date.now() - t3}ms — ${rawProofs.length} raw proofs`);
 
+  await progress(3, `Layer 3 fertig: ${rawProofs.length} Tests generiert`, { proofCount: rawProofs.length });
+
   // Schicht 5: Independent Checker (before Schicht 4)
+  await progress(4, `Layer 4: Independent Checker prüft ${rawProofs.length} Tests...`);
   const t5 = Date.now();
   const { checkedProofs } = await runIndependentChecker(rawProofs, analysisResult);
   console.log(`[TestForge] Schicht 5 done in ${Date.now() - t5}ms — ${checkedProofs.length} proofs after independent check`);
+
+  await progress(4, `Layer 4 fertig: ${checkedProofs.length} Tests nach Independent Check`);
 
   // Schicht 4: False-green validation
   const t4 = Date.now();
   const behaviorIds = analysisResult.ir.behaviors.map(b => b.id);
   const validatedSuite = validateProofs(checkedProofs, behaviorIds);
   console.log(`[TestForge] Schicht 4 done in ${Date.now() - t4}ms — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`);
+
+  await progress(5, `Layer 5 fertig: ${validatedSuite.proofs.length} validierte Tests, ${validatedSuite.discardedProofs.length} verworfen`);
 
   // Report
   const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);

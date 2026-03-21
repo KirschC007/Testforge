@@ -29,7 +29,16 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       if (!resp.ok) throw new Error(`Failed to fetch spec from S3: ${resp.status}`);
       const specText = await resp.text();
 
-      const result = await runAnalysisJob(specText, projectName);
+      const result = await runAnalysisJob(specText, projectName, async (layer, message, data) => {
+        // Update DB with live progress after each layer
+        const update: Record<string, unknown> = {
+          progressLayer: layer,
+          progressMessage: message,
+        };
+        if (data?.analysisResult) update.layer1Json = data.analysisResult as any;
+        if (data?.riskModel) update.layer2Json = data.riskModel as any;
+        await updateAnalysis(analysisId, update as any);
+      });
 
       // Store report and test files in S3
       const reportKey = `analyses/${analysisId}/testforge-report.md`;
