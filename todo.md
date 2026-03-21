@@ -82,3 +82,6 @@
 - [x] Fix: Few-Shot Example im LLM-Prompt nutzt items.create statt reservations.create
 - [x] Fix: README.md env vars generisch (TEST_TENANT_ID statt RESTAURANT_ID)
 - [x] Fix: Job-Stuck-Bug — ZIP-Archivierung nach Layer 5 hängt (archive.pipe + PassThrough + finish event)
+
+## Phase 9: Bug-Fix f.toUpperCase
+- [x] BUG: f.toUpperCase is not a function — Fix: Normalisierungs-Guard nach LLM-Merge: inputFields-Objekte werden zu Strings konvertiert (obj.name || obj.field || obj.key)

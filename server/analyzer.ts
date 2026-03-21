@@ -348,6 +348,20 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     return true;
   });
 
+  // Normalize inputFields: LLM sometimes returns objects instead of strings
+  // e.g. [{name: "workspaceId", type: "number"}] instead of ["workspaceId"]
+  merged.apiEndpoints = merged.apiEndpoints.map(e => ({
+    ...e,
+    inputFields: (e.inputFields || []).map((f: unknown) => {
+      if (typeof f === "string") return f;
+      if (f && typeof f === "object") {
+        const obj = f as Record<string, unknown>;
+        return String(obj.name || obj.field || obj.key || JSON.stringify(f));
+      }
+      return String(f);
+    }),
+  }));
+
   return {
     ir: merged,
     qualityScore: results.length > 0 ? totalQuality / results.length : 5.0,
