@@ -48,3 +48,11 @@
 - [x] Qualität: Few-Shot Example in Layer 3 Prompt (1 perfekter Gold-Standard Test zeigen)
 - [x] Qualität: Boundary Value Analysis direkt in Layer 2 integrieren (kein Extra-Call)
 - [x] Qualität: Mutation Targets explizit in Layer 3 Prompt übergeben (was der Test fangen muss)
+
+## Phase 6: UI-Texte auf neues System anpassen
+- [x] Landing Page: Neue Features kommunizieren (Helpers-Generator, LLM Checker, Schicht 5, 8 Output-Dateien)
+- [x] Landing Page: "How it works" Schritte aktualisieren (5 Schichten statt 4)
+- [x] Landing Page: "What You Get" aktualisiert (Status Transitions + Boundary, Auto-Generated Helpers)
+- [x] Landing Page: Mock Report Preview aktualisiert (LLM Checker Stats, 52 Behaviors, 41/44 Proofs)
+- [ ] New Analysis Page: Upload-Hinweis aktualisieren (was passiert nach dem Upload)
+- [ ] Report Page: Neue Felder zeigen (LLM Checker Stats, Discarded Proofs, Mutation Score)

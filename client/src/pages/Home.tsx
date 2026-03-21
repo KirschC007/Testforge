@@ -167,41 +167,48 @@ export default function Home() {
       <section className="border-b border-border/50 py-20">
         <div className="container">
           <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold mb-3">Four Layers. One Command.</h2>
+            <h2 className="text-2xl font-bold mb-3">Five Layers. Zero Setup.</h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              TestForge runs your specification through a four-layer quality compiler.
-              Each layer builds on the previous one.
+              TestForge runs your specification through a five-layer quality compiler.
+              Each layer builds on the previous one — and the output runs immediately.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
             {[
               {
                 layer: "Schicht 1",
                 icon: FileSearch,
                 title: "Spec Understanding",
-                desc: "LLM extracts behaviors, invariants, contradictions, and ambiguities from any format (PDF, Markdown, Word).",
+                desc: "LLM extracts behaviors, API endpoints, auth model, invariants, and ambiguities. Full spec coverage — no chunk limits.",
                 color: "var(--tf-blue)",
               },
               {
                 layer: "Schicht 2",
-                icon: Database,
-                title: "Risk Model",
-                desc: "Every behavior scored Critical/High/Medium/Low. IDOR vectors, CSRF endpoints, and proof targets identified.",
-                color: "var(--tf-orange)",
+                icon: Zap,
+                title: "LLM Checker",
+                desc: "Every behavior verified against the spec with a confidence score. Hallucinations flagged and rejected before test generation.",
+                color: "var(--tf-yellow)",
               },
               {
                 layer: "Schicht 3",
-                icon: Code2,
-                title: "Proof Generation",
-                desc: "TypeScript/Playwright tests with hard assertions, DB side-effect checks, and positive controls generated.",
-                color: "var(--tf-purple)",
+                icon: Database,
+                title: "Risk Model",
+                desc: "Behaviors scored Critical/High/Medium/Low. IDOR vectors, CSRF endpoints, status transitions, boundary values identified.",
+                color: "var(--tf-orange)",
               },
               {
                 layer: "Schicht 4",
+                icon: Code2,
+                title: "Proof Generation",
+                desc: "Tests with real endpoints from spec, DB side-effect checks, positive controls. Auto-generated helpers — run npx playwright test immediately.",
+                color: "var(--tf-purple)",
+              },
+              {
+                layer: "Schicht 5",
                 icon: Shield,
-                title: "False-Green Detection",
-                desc: "7 validation rules reject tests that would pass even if the feature is broken. Mutation score calculated.",
+                title: "Independent Checker",
+                desc: "7 False-Green rules reject tests that pass even when the feature is broken. Mutation score calculated. Discarded proofs explained.",
                 color: "var(--tf-green)",
               },
             ].map((step, i) => (
@@ -214,7 +221,7 @@ export default function Home() {
                 </div>
                 <h3 className="font-semibold text-sm mb-2">{step.title}</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
-                {i < 3 && (
+                {i < 4 && (
                   <ChevronRight className="absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-border hidden lg:block" />
                 )}
               </div>
@@ -230,15 +237,15 @@ export default function Home() {
             <div>
               <h2 className="text-2xl font-bold mb-4">What You Get</h2>
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                A ZIP file with ready-to-run Playwright tests and a full analysis report.
-                Drop the tests into your project and run them immediately.
+                A ZIP with 8 ready-to-run files. <code className="font-mono text-xs bg-muted px-1 rounded">npm install &amp;&amp; npx playwright test</code> — no configuration required.
+                Helpers are auto-generated from your spec: login endpoint, CSRF tokens, tenant factories, DB reset.
               </p>
               <div className="space-y-4">
                 {[
-                  { icon: Lock, title: "Security Tests", desc: "IDOR, CSRF, rate-limit — with side-effect checks and positive controls", color: "var(--tf-red)" },
-                  { icon: Shield, title: "DSGVO / Compliance", desc: "Anonymization, consent withdrawal, PII absence verification", color: "var(--tf-blue)" },
-                  { icon: GitBranch, title: "Business Logic", desc: "Status transitions, booking limits, risk scoring — spec-derived", color: "var(--tf-orange)" },
-                  { icon: Zap, title: "Ambiguity Report", desc: "Every unclear requirement flagged before tests are written", color: "var(--tf-yellow)" },
+                  { icon: Lock, title: "Security Tests", desc: "IDOR, CSRF, rate-limit — real endpoints from spec, DB side-effect checks, positive controls", color: "var(--tf-red)" },
+                  { icon: Shield, title: "DSGVO / Compliance", desc: "Anonymization, consent withdrawal, PII absence — spec-derived assertions", color: "var(--tf-blue)" },
+                  { icon: GitBranch, title: "Status Transitions + Boundary", desc: "Every state machine transition tested. Boundary values (n-1, n, n+1) for every numeric field", color: "var(--tf-orange)" },
+                  { icon: Zap, title: "Auto-Generated Helpers", desc: "helpers/api.ts, auth.ts, factories.ts, reset.ts, playwright.config.ts, GitHub Action — all generated", color: "var(--tf-yellow)" },
                 ].map((item, i) => (
                   <div key={i} className="flex gap-3">
                     <div className="w-8 h-8 rounded shrink-0 flex items-center justify-center" style={{ background: `${item.color}20` }}>
@@ -264,21 +271,23 @@ export default function Home() {
                 <span className="text-xs font-mono text-muted-foreground ml-2">testforge-report.md</span>
               </div>
               <div className="p-4 font-mono text-xs space-y-2 text-muted-foreground">
-                <div className="text-foreground font-bold"># TestForge Report — hey-listen</div>
-                <div className="text-muted-foreground">Generated: 2026-03-20 | Score: 8.4/10.0</div>
+                <div className="text-foreground font-bold"># TestForge Report — hey-listen v8</div>
+                <div className="text-muted-foreground">Generated: 2026-03-21 | Mutation Score: 8.7/10.0</div>
                 <div className="mt-3 text-foreground font-semibold">## Verdict</div>
-                <div><span className="text-[var(--tf-green)]">✓</span> 12/14 proofs passed validation</div>
+                <div><span className="text-[var(--tf-green)]">✓</span> 41/44 proofs passed validation</div>
                 <div className="grid grid-cols-2 gap-x-4 mt-2">
-                  <div>Behaviors: <span className="text-foreground">47</span></div>
-                  <div>Coverage: <span className="text-[var(--tf-green)]">89%</span></div>
-                  <div>IDOR Vectors: <span className="text-[var(--tf-orange)]">6</span></div>
-                  <div>CSRF Endpoints: <span className="text-[var(--tf-orange)]">3</span></div>
+                  <div>Behaviors: <span className="text-foreground">52</span></div>
+                  <div>LLM Checker: <span className="text-[var(--tf-green)]">49 approved</span></div>
+                  <div>IDOR Vectors: <span className="text-[var(--tf-orange)]">7</span></div>
+                  <div>Status Transitions: <span className="text-foreground">18</span></div>
+                  <div>Boundary Tests: <span className="text-foreground">12</span></div>
+                  <div>CSRF Endpoints: <span className="text-[var(--tf-orange)]">4</span></div>
                 </div>
-                <div className="mt-3 text-foreground font-semibold">## Risk Distribution</div>
-                <div><span className="text-[var(--tf-red)]">🔴 Critical: 8</span></div>
-                <div><span className="text-[var(--tf-orange)]">🟠 High: 12</span></div>
-                <div><span className="text-[var(--tf-yellow)]">🟡 Medium: 19</span></div>
-                <div><span className="text-[var(--tf-green)]">🟢 Low: 8</span></div>
+                <div className="mt-3 text-foreground font-semibold">## Output Files (ZIP)</div>
+                <div><span className="text-[var(--tf-green)]">✓</span> helpers/api.ts — loginAndGetCookie, trpcMutation</div>
+                <div><span className="text-[var(--tf-green)]">✓</span> helpers/auth.ts — CSRF token, session helpers</div>
+                <div><span className="text-[var(--tf-green)]">✓</span> helpers/factories.ts — createTestTenant, createReservation</div>
+                <div><span className="text-[var(--tf-green)]">✓</span> .github/workflows/testforge.yml — CI ready</div>
                 <div className="mt-3 text-foreground font-semibold">## Discarded (False-Green)</div>
                 <div><span className="text-[var(--tf-red)]">✗</span> PROOF-B003-CSRF: broad_status_code</div>
                 <div><span className="text-[var(--tf-red)]">✗</span> PROOF-B007-IDOR: no_positive_control</div>
