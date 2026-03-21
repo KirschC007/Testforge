@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `analyses` MODIFY COLUMN `status` enum('pending','running','completed','failed','cancelled') NOT NULL DEFAULT 'pending';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute ALTER TABLE `analyses` MODIFY COLUMN `status` enum('pending','running','completed','failed','cancelled') NOT NULL DEFAULT 'pending';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 618
+}

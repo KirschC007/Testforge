@@ -24,13 +24,13 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // Analysis job status
-export type AnalysisStatus = "pending" | "running" | "completed" | "failed";
+export type AnalysisStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export const analyses = mysqlTable("analyses", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   projectName: varchar("projectName", { length: 255 }).notNull(),
-  status: mysqlEnum("status", ["pending", "running", "completed", "failed"])
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed", "cancelled"])
     .default("pending")
     .notNull(),
 

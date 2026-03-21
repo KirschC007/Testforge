@@ -85,3 +85,9 @@
 
 ## Phase 9: Bug-Fix f.toUpperCase
 - [x] BUG: f.toUpperCase is not a function — Fix: Normalisierungs-Guard nach LLM-Merge: inputFields-Objekte werden zu Strings konvertiert (obj.name || obj.field || obj.key)
+
+## Phase 10: Cancel-Feature
+- [x] DB: Alle running/queued Jobs sofort auf cancelled setzen
+- [x] Backend: analyses.cancel tRPC-Procedure (stoppt In-Memory-Job + setzt DB-Status)
+- [x] Frontend: Abbrechen-Button in Dashboard-Übersicht (neben laufenden Jobs)
+- [x] Frontend: Abbrechen-Button auf Detail-Seite (während Job läuft)

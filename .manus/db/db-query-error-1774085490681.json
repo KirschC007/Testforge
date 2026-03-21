@@ -1,0 +1,8 @@
+{
+  "query": "UPDATE analyses SET status = 'cancelled', error_message = 'Manually cancelled by owner', updated_at = NOW() WHERE status IN ('running', 'queued');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute UPDATE analyses SET status = 'cancelled', error_message = 'Manually cancelled by owner', updated_at = NOW() WHERE status IN ('running', 'queued');",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'error_message' in 'field list'"
+  ]
+}

@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import React from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,17 +15,19 @@ import {
   ChevronRight,
   LogOut,
   BarChart3,
+  Ban,
 } from "lucide-react";
 import type { Analysis } from "../../../drizzle/schema";
 
 function StatusBadge({ status }: { status: Analysis["status"] }) {
-  const map = {
+  const map: Record<Analysis["status"], { label: string; color: string; icon: React.ElementType }> = {
     pending: { label: "Pending", color: "bg-muted text-muted-foreground", icon: Clock },
     running: { label: "Running", color: "bg-blue-500/20 text-blue-400", icon: Loader2 },
     completed: { label: "Completed", color: "bg-green-500/20 text-green-400", icon: CheckCircle2 },
     failed: { label: "Failed", color: "bg-red-500/20 text-red-400", icon: XCircle },
+    cancelled: { label: "Cancelled", color: "bg-muted text-muted-foreground", icon: Ban },
   };
-  const { label, color, icon: Icon } = map[status];
+  const { label, color, icon: Icon } = map[status] ?? map.failed;
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${color}`}>
       <Icon className={`w-3 h-3 ${status === "running" ? "animate-spin" : ""}`} />
@@ -49,6 +52,10 @@ function ScoreBar({ score }: { score: number | null }) {
 
 export default function Dashboard() {
   const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
+  const utils = trpc.useUtils();
+  const cancelMutation = trpc.analyses.cancel.useMutation({
+    onSuccess: () => utils.analyses.list.invalidate(),
+  });
   const { data: analyses, isLoading } = trpc.analyses.list.useQuery(undefined, {
     enabled: isAuthenticated,
     refetchInterval: (query) => {
@@ -173,44 +180,62 @@ export default function Dashboard() {
         ) : analyses && analyses.length > 0 ? (
           <div className="space-y-2">
             {analyses.map((analysis: Analysis) => (
-              <Link key={analysis.id} href={`/analysis/${analysis.id}`}>
-                <div className="bg-card border border-border rounded-lg px-5 py-4 hover:border-primary/40 transition-colors cursor-pointer">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm truncate">{analysis.projectName}</span>
-                          <StatusBadge status={analysis.status} />
-                        </div>
-                        <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                          <span>{new Date(analysis.createdAt).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                          {analysis.behaviorCount !== null && (
-                            <span>{analysis.behaviorCount} behaviors</span>
-                          )}
-                          {analysis.validatedProofCount !== null && (
-                            <span>{analysis.validatedProofCount} proofs</span>
-                          )}
+              <div key={analysis.id} className="relative group">
+                <Link href={`/analysis/${analysis.id}`}>
+                  <div className="bg-card border border-border rounded-lg px-5 py-4 hover:border-primary/40 transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm truncate">{analysis.projectName}</span>
+                            <StatusBadge status={analysis.status} />
+                          </div>
+                          <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                            <span>{new Date(analysis.createdAt).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                            {analysis.behaviorCount !== null && (
+                              <span>{analysis.behaviorCount} behaviors</span>
+                            )}
+                            {analysis.validatedProofCount !== null && (
+                              <span>{analysis.validatedProofCount} proofs</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-6 shrink-0">
-                      {analysis.coveragePercent !== null && (
-                        <div className="text-right hidden sm:block">
-                          <div className="text-xs text-muted-foreground mb-1">Coverage</div>
-                          <ScoreBar score={analysis.coveragePercent} />
-                        </div>
-                      )}
-                      {analysis.verdictScore !== null && (
-                        <div className="text-right hidden md:block">
-                          <div className="text-xs text-muted-foreground mb-1">Verdict</div>
-                          <ScoreBar score={analysis.verdictScore} />
-                        </div>
-                      )}
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      <div className="flex items-center gap-4 shrink-0">
+                        {analysis.coveragePercent !== null && (
+                          <div className="text-right hidden sm:block">
+                            <div className="text-xs text-muted-foreground mb-1">Coverage</div>
+                            <ScoreBar score={analysis.coveragePercent} />
+                          </div>
+                        )}
+                        {analysis.verdictScore !== null && (
+                          <div className="text-right hidden md:block">
+                            <div className="text-xs text-muted-foreground mb-1">Verdict</div>
+                            <ScoreBar score={analysis.verdictScore} />
+                          </div>
+                        )}
+                        {(analysis.status === "running" || analysis.status === "pending") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10 gap-1.5 text-xs"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              cancelMutation.mutate({ id: analysis.id });
+                            }}
+                            disabled={cancelMutation.isPending}
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            Abbrechen
+                          </Button>
+                        )}
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              </div>
             ))}
           </div>
         ) : (

@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock, AlertCircle, ChevronDown, ChevronUp, Ban } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
 
@@ -120,6 +120,10 @@ export default function AnalysisDetail() {
   const { id } = useParams<{ id: string }>();
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [showFullReport, setShowFullReport] = useState(false);
+  const utils = trpc.useUtils();
+  const cancelMutation = trpc.analyses.cancel.useMutation({
+    onSuccess: () => utils.analyses.getById.invalidate({ id: parseInt(id || "0") }),
+  });
 
   const { data: analysis, isLoading } = trpc.analyses.getById.useQuery(
     { id: parseInt(id || "0") },
@@ -188,13 +192,27 @@ export default function AnalysisDetail() {
               })}
             </p>
           </div>
-          {analysis.status === "completed" && analysis.outputZipUrl && (
-            <a href={analysis.outputZipUrl} download>
-              <Button className="gap-2 shrink-0">
-                <Download className="w-4 h-4" /> Download Tests (.zip)
+          <div className="flex items-center gap-2 shrink-0">
+            {(analysis.status === "running" || analysis.status === "pending") && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:text-red-400 hover:border-red-400/40"
+                onClick={() => cancelMutation.mutate({ id: parseInt(id || "0") })}
+                disabled={cancelMutation.isPending}
+              >
+                {cancelMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                Abbrechen
               </Button>
-            </a>
-          )}
+            )}
+            {analysis.status === "completed" && analysis.outputZipUrl && (
+              <a href={analysis.outputZipUrl} download>
+                <Button className="gap-2">
+                  <Download className="w-4 h-4" /> Download Tests (.zip)
+                </Button>
+              </a>
+            )}
+          </div>
         </div>
 
         {/* Running / Pending */}
@@ -206,6 +224,17 @@ export default function AnalysisDetail() {
               progressLayer={(analysis as any).progressLayer}
               progressMessage={(analysis as any).progressMessage}
             />
+          </div>
+        )}
+
+        {/* Cancelled */}
+        {analysis.status === "cancelled" && (
+          <div className="bg-muted/50 border border-border rounded-lg p-5 flex gap-3 max-w-xl">
+            <Ban className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+            <div>
+              <div className="font-medium text-sm mb-1">Analysis abgebrochen</div>
+              <div className="text-sm text-muted-foreground">Diese Analyse wurde manuell gestoppt.</div>
+            </div>
           </div>
         )}
 

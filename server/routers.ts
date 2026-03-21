@@ -15,6 +15,7 @@ import { storagePut, storageGet } from "./storage";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
 const runningJobs = new Set<number>();
+const cancelledJobs = new Set<number>(); // Jobs that should stop at next checkpoint
 
 async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string) {
   if (runningJobs.has(analysisId)) return;
@@ -30,6 +31,11 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       const specText = await resp.text();
 
       const result = await runAnalysisJob(specText, projectName, async (layer, message, data) => {
+        // Check if job was cancelled between layers
+        if (cancelledJobs.has(analysisId)) {
+          cancelledJobs.delete(analysisId);
+          throw new Error("Job cancelled by user");
+        }
         // Update DB with live progress after each layer
         const update: Record<string, unknown> = {
           progressLayer: layer,
@@ -100,12 +106,14 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       });
     } catch (err: any) {
       console.error(`[Job ${analysisId}] Failed:`, err);
+      const isCancelled = err?.message === "Job cancelled by user";
       await updateAnalysis(analysisId, {
-        status: "failed",
-        errorMessage: err?.message || "Unknown error",
+        status: isCancelled ? "cancelled" : "failed",
+        errorMessage: isCancelled ? "Cancelled by user" : (err?.message || "Unknown error"),
       });
     } finally {
       runningJobs.delete(analysisId);
+      cancelledJobs.delete(analysisId);
     }
   });
 }
@@ -212,6 +220,26 @@ export const appRouter = router({
         if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         if (analysis.status !== "completed") throw new TRPCError({ code: "BAD_REQUEST", message: "Analysis not completed yet" });
         return { url: analysis.outputZipUrl };
+      }),
+
+    // Cancel a running or pending analysis
+    cancel: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.id);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!['pending', 'running'].includes(analysis.status)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Analysis is not running" });
+        }
+        // Signal the in-memory job to stop at next layer checkpoint
+        cancelledJobs.add(input.id);
+        // Immediately update DB so UI reflects cancellation
+        await updateAnalysis(input.id, {
+          status: "cancelled",
+          errorMessage: "Cancelled by user",
+        });
+        return { success: true };
       }),
   }),
 });
