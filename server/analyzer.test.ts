@@ -3,9 +3,11 @@ import {
   buildRiskModel,
   validateProofs,
   generateReport,
+  extractConstraints,
   type AnalysisResult,
   type RawProof,
   type Behavior,
+  type AnalysisIR,
 } from "./analyzer";
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────────
@@ -333,3 +335,126 @@ describe("generateReport", () => {
     expect(report).toContain("existence_only");
   });
 });
+
+// ─── extractConstraints ────────────────────────────────────────────────────────
+
+function makeIR(overrides: Partial<AnalysisIR> = {}): AnalysisIR {
+  return {
+    behaviors: [],
+    invariants: [],
+    ambiguities: [],
+    contradictions: [],
+    tenantModel: null,
+    resources: [],
+    apiEndpoints: [],
+    authModel: null,
+    enums: {},
+    statusMachine: null,
+    ...overrides,
+  };
+}
+
+describe("extractConstraints", () => {
+  it("extracts title max constraint from 'exceeds 200 characters'", () => {
+    const b = makeBehavior({
+      errorCases: ["title is empty or exceeds 200 characters → 400"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const titleConstraint = constraints.find(c => c.field === "title");
+    expect(titleConstraint).toBeDefined();
+    expect(titleConstraint?.max).toBe(200);
+    expect(titleConstraint?.type).toBe("string");
+  });
+
+  it("extracts title max constraint from 'Returns 400 if title exceeds 200'", () => {
+    const b = makeBehavior({
+      errorCases: ["Returns 400 if title exceeds 200 characters"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const titleConstraint = constraints.find(c => c.field === "title");
+    expect(titleConstraint).toBeDefined();
+    expect(titleConstraint?.max).toBe(200);
+  });
+
+  it("extracts taskIds array constraint from 'taskIds array exceeds 50 items'", () => {
+    const b = makeBehavior({
+      errorCases: ["taskIds array exceeds 50 items → 400"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const taskIdsConstraint = constraints.find(c => c.field === "taskIds");
+    expect(taskIdsConstraint).toBeDefined();
+    expect(taskIdsConstraint?.max).toBe(50);
+    expect(taskIdsConstraint?.type).toBe("array");
+  });
+
+  it("extracts title max constraint from 'title must not exceed 200 characters'", () => {
+    const b = makeBehavior({
+      errorCases: ["title must not exceed 200 characters"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const titleConstraint = constraints.find(c => c.field === "title");
+    expect(titleConstraint).toBeDefined();
+    expect(titleConstraint?.max).toBe(200);
+  });
+
+  it("extracts between constraint from 'partySize between 1 and 20'", () => {
+    const b = makeBehavior({
+      errorCases: ["partySize between 1 and 20"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const c = constraints.find(c => c.field === "partySize");
+    expect(c).toBeDefined();
+    expect(c?.min).toBe(1);
+    expect(c?.max).toBe(20);
+  });
+
+  it("extracts dueDate future constraint", () => {
+    const b = makeBehavior({
+      errorCases: ["dueDate must be in the future → 400"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const c = constraints.find(c => c.field === "dueDate");
+    expect(c).toBeDefined();
+    expect(c?.type).toBe("date");
+    expect(c?.min).toBe(1);
+  });
+
+  it("merges enums from IR into constraints", () => {
+    const b = makeBehavior({ errorCases: [] });
+    const ir = makeIR({ enums: { priority: ["low", "medium", "high"] } });
+    const constraints = extractConstraints(b, ir);
+    const c = constraints.find(c => c.field === "priority");
+    expect(c).toBeDefined();
+    expect(c?.type).toBe("enum");
+    expect(c?.enumValues).toEqual(["low", "medium", "high"]);
+  });
+
+  it("does not extract 'not' as a field name from 'must not exceed'", () => {
+    const b = makeBehavior({
+      errorCases: ["title must not exceed 200 characters"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const notConstraint = constraints.find(c => c.field === "not");
+    expect(notConstraint).toBeUndefined();
+  });
+
+  it("does not extract numeric strings as field names", () => {
+    const b = makeBehavior({
+      errorCases: ["Returns 400 if title exceeds 200 characters"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const numConstraint = constraints.find(c => /^\d+$/.test(c.field));
+    expect(numConstraint).toBeUndefined();
+  });
+});
+
+  it("extracts dueDate future constraint from 'Returns 400 if dueDate is in the past'", () => {
+    const b = makeBehavior({
+      errorCases: ["Returns 400 if dueDate is in the past"],
+    });
+    const constraints = extractConstraints(b, makeIR());
+    const c = constraints.find(c => c.field === "dueDate");
+    expect(c).toBeDefined();
+    expect(c?.type).toBe("date");
+    expect(c?.min).toBe(1); // must be future
+  });

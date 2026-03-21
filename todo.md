@@ -107,3 +107,17 @@
 - [x] TypeScript-Syntax-Check nach Layer 3: kaputte Tests → TODO-Stub (checkTypeScriptSyntax + generateTODOStub)
 - [x] Retry-Button auf failed/cancelled Analysen (Detail-Seite, analyses.retry tRPC)
 - [x] Job-Timeout: 8 Minuten → automatisch auf failed setzen (cancelledJobs + setTimeout)
+
+## Phase 13: Goldstandard-Test & Fix
+- [x] extractConstraints: Patterns robuster gemacht (exceedsPattern, arrayExceedsPattern, abovePattern, isInPastPattern)
+- [x] Fix: exceedsPattern überspringt Noise-Wörter (not, length, size, array, count) und reine Zahlen
+- [x] Fix: arrayExceedsPattern extrahiert Feld VOR "array" (taskIds array exceeds 50 → field=taskIds)
+- [x] Fix: abovePattern für "pageSize above 100" hinzugefügt
+- [x] Fix: isInPastPattern für "dueDate is in the past" → future constraint
+- [x] Fix: effectiveFields stellt sicher dass fieldName immer im Payload ist (auch wenn nicht in knownFields)
+- [x] Fix: targetEndpointDef nutzt den richtigen Endpoint für Boundary-Felder (nicht immer tasks.create)
+- [x] Fix: buildCsrfPayloadLine optional chaining → explizite Variablen (esbuild-Kompatibilität)
+- [x] Fix: Google Fonts @import aus index.css entfernt (CSS-Fehler behoben)
+- [x] Tests: 9 neue extractConstraints Unit-Tests, 32/32 grün
+- [ ] Live-Test: TaskFlow-Spec durch echte Pipeline schicken und Output prüfen
+- [ ] Goldstandard erreicht: Tests laufen unverändert in Playwright

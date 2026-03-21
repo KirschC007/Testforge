@@ -796,6 +796,65 @@ export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldCon
     constraints.push({ field: m[1], type: "array", max: parseInt(m[2]) });
   }
 
+  // Pattern: "<field> must not exceed <N> characters" or "<field> cannot exceed <N>"
+  const mustNotExceedPattern = /(\w+)\s+(?:must\s+not|cannot|can't|may\s+not)\s+exceed\s+(\d+)(?:\s+(?:characters?|chars?|items?|entries?))?/gi;
+  for (const m of Array.from(allText.matchAll(mustNotExceedPattern))) {
+    const field = m[1].toLowerCase();
+    if (["api", "it", "that", "this", "which", "value", "request", "returns", "return", "if"].includes(field)) continue;
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) existing.max = parseInt(m[2]);
+    else constraints.push({ field: m[1], type: "string", max: parseInt(m[2]) });
+  }
+  // Pattern: "<field> exceeds <N>" or "<field> is empty or exceeds <N>"
+  // Also handles: "<field> length exceeds <N>" → field is the word before "length"
+  const exceedsPattern = /(\w+)\s+(?:length\s+)?(?:is\s+empty\s+or\s+)?exceeds?\s+(\d+)(?:\s+(?:characters?|chars?|items?|entries?))?/gi;
+  for (const m of Array.from(allText.matchAll(exceedsPattern))) {
+    const field = m[1].toLowerCase();
+    // Skip common false positives and noise words
+    if (["api", "it", "that", "this", "which", "value", "request", "returns", "return", "if", "not", "length", "size", "array", "count"].includes(field)) continue;
+    // Skip pure numbers (e.g. "400 if title exceeds" → skip "400")
+    if (/^\d+$/.test(field)) continue;
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) existing.max = parseInt(m[2]);
+    else constraints.push({ field: m[1], type: "string", max: parseInt(m[2]) });
+  }
+  // Pattern: "<field> array exceeds <N> items" → extract field before "array"
+  const arrayExceedsPattern = /(\w+)\s+array\s+exceeds?\s+(\d+)\s+(?:items?|entries?|elements?)/gi;
+  for (const m of Array.from(allText.matchAll(arrayExceedsPattern))) {
+    const field = m[1].toLowerCase();
+    if (["api", "it", "that", "this", "which"].includes(field)) continue;
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) { existing.max = parseInt(m[2]); existing.type = "array"; }
+    else constraints.push({ field: m[1], type: "array", max: parseInt(m[2]) });
+  }
+  // Pattern: "<field> above <N>" (e.g. "pageSize above 100")
+  const abovePattern = /(\w+)\s+(?:is\s+)?above\s+(\d+)/gi;
+  for (const m of Array.from(allText.matchAll(abovePattern))) {
+    const field = m[1].toLowerCase();
+    if (["api", "it", "that", "this", "which", "value", "request", "returns", "return", "if"].includes(field)) continue;
+    if (/^\d+$/.test(field)) continue;
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) existing.max = parseInt(m[2]);
+    else constraints.push({ field: m[1], type: "number", max: parseInt(m[2]) });
+  }
+  // Pattern: "<field> limited to <N>" or "<field> up to <N>"
+  const limitedToPattern = /(\w+)\s+(?:limited\s+to|up\s+to)\s+(\d+)(?:\s+(?:characters?|chars?|items?|entries?))?/gi;
+  for (const m of Array.from(allText.matchAll(limitedToPattern))) {
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) existing.max = parseInt(m[2]);
+    else constraints.push({ field: m[1], type: "string", max: parseInt(m[2]) });
+  }
+  // Pattern: "max <N> <field>" or "maximum <N> <field>s"
+  const maxNFieldPattern = /(?:max|maximum)\s+(\d+)\s+(\w+)/gi;
+  for (const m of Array.from(allText.matchAll(maxNFieldPattern))) {
+    const field = m[2].replace(/s$/, ""); // remove plural
+    if (!constraints.find(c => c.field === field)) {
+      const num = parseInt(m[1]);
+      if (num > 0 && num < 10000) { // sanity check
+        constraints.push({ field, type: "array", max: num });
+      }
+    }
+  }
   // Pattern: "<field> must be in the future" or "<field> must be a future date"
   const futureDatePattern = /(\w*[Dd]ate\w*|\w*[Dd]ue\w*)\s+must\s+be\s+(?:in\s+the\s+)?future/gi;
   for (const m of Array.from(allText.matchAll(futureDatePattern))) {
@@ -809,6 +868,14 @@ export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldCon
   for (const m of Array.from(allText.matchAll(pastDatePattern))) {
     if (!constraints.find(c => c.field === m[1])) {
       constraints.push({ field: m[1], type: "date", max: -1 }); // max:-1 means "yesterday"
+    }
+  }
+  // Pattern: "<field> is in the past" → implies must be future
+  // e.g. "Returns 400 if dueDate is in the past"
+  const isInPastPattern = /(\w*[Dd]ate\w*|\w*[Dd]ue\w*)\s+is\s+in\s+the\s+past/gi;
+  for (const m of Array.from(allText.matchAll(isInPastPattern))) {
+    if (!constraints.find(c => c.field === m[1])) {
+      constraints.push({ field: m[1], type: "date", min: 1 }); // must be future
     }
   }
 
@@ -1437,12 +1504,17 @@ function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string
     ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
 
-  // Use resolved endpoint from IR, or TODO placeholder
-  const endpoint = target.endpoint || analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
-  const hasEndpoint = !!target.endpoint;
+  // For IDOR tests: always use the list endpoint for positive control + cross-tenant check
+  // The mutation endpoint (target.endpoint) is the behavior endpoint, but IDOR checks need list/read endpoints
+  const listEndpoint = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall") || e.name.toLowerCase().includes("search"))?.name
+    || analysis.ir.apiEndpoints.find(e => !e.name.toLowerCase().includes("create") && !e.name.toLowerCase().includes("update") && !e.name.toLowerCase().includes("delete"))?.name
+    || target.endpoint
+    || "TODO_REPLACE_WITH_LIST_ENDPOINT";
+  const endpoint = listEndpoint;
+  const hasEndpoint = !!analysis.ir.apiEndpoints.find(e => e.name === listEndpoint);
   const getEndpoint = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby"))?.name || "TODO_REPLACE_WITH_GETBYID_ENDPOINT";
+    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes(".get"))?.name || "TODO_REPLACE_WITH_GETBYID_ENDPOINT";
 
   return `import { test, expect } from "@playwright/test";
 import { trpcQuery, trpcMutation, loginAndGetCookie } from "../../helpers/api";
@@ -1532,36 +1604,121 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
   // Build minimal payload from known input fields
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const knownFields = epDef?.inputFields || [];
-  const payloadFields = knownFields.length > 0
-    ? knownFields.map(f => `        ${f}: "TODO_${f.toUpperCase()}",`).join("\n")
-    : `        // TODO: Add the actual input fields for ${endpoint}`;
 
   // Side-effect check: use a unique title field to verify no DB write after 403
   const uniqueField = knownFields.find(f => f.toLowerCase().includes("title") || f.toLowerCase().includes("name")) || knownFields[0] || "title";
   const listEndpointForDbCheck = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
 
+  // Pre-compute payload lines (avoids nested backtick issues in template literals)
+  function buildCsrfPayloadLine(f: string, isUnique: boolean): string {
+    if (isUnique) return `        ${f}: uniqueTitle,`;
+    const fl = f.toLowerCase();
+    if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantConst},`;
+    if (fl.includes("date") || fl.includes("datum")) {
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      return `        ${f}: "${tomorrow}",`;
+    }
+    if (fl.includes("priority")) {
+      const enumPriority = analysis.ir.enums && analysis.ir.enums.priority;
+      const pv = (enumPriority && enumPriority[0]) || "medium";
+      return `        ${f}: "${pv}",`;
+    }
+    if (fl.includes("status")) {
+      const enumStatus = analysis.ir.enums && analysis.ir.enums.status;
+      const sm = analysis.ir.statusMachine;
+      const sv = (sm && sm.initialState) || (enumStatus && enumStatus[0]) || "active";
+      return `        ${f}: "${sv}",`;
+    }
+    return `        ${f}: "test-${f}",`;
+  }
+
+  const noTokenPayloadLines = knownFields.length > 0
+    ? knownFields.map(f => buildCsrfPayloadLine(f, f === uniqueField)).join("\n")
+    : `        ${tenantField}: ${tenantConst},\n        ${uniqueField}: uniqueTitle,\n        // TODO: Add other required fields for ${endpoint}`;
+
+  function buildCsrfPositivePayloadLine(f: string): string {
+    const fl = f.toLowerCase();
+    if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantConst},`;
+    if (fl.includes("date") || fl.includes("datum")) {
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      return `        ${f}: "${tomorrow}",`;
+    }
+    if (fl.includes("title") || fl.includes("name")) return `        ${f}: "Test ${f} valid",`;
+    if (fl.includes("priority")) {
+      const enumPriority2 = analysis.ir.enums && analysis.ir.enums.priority;
+      const pv2 = (enumPriority2 && enumPriority2[0]) || "medium";
+      return `        ${f}: "${pv2}",`;
+    }
+    if (fl.includes("status")) {
+      const enumStatus2 = analysis.ir.enums && analysis.ir.enums.status;
+      const sm2 = analysis.ir.statusMachine;
+      const sv2 = (sm2 && sm2.initialState) || (enumStatus2 && enumStatus2[0]) || "active";
+      return `        ${f}: "${sv2}",`;
+    }
+    return `        ${f}: "test-${f}",`;
+  }
+
+  const positivePayloadLines = knownFields.length > 0
+    ? knownFields.map(f => buildCsrfPositivePayloadLine(f)).join("\n")
+    : `        ${tenantField}: ${tenantConst},\n        // TODO: Add other required fields for ${endpoint}`;
+
+  // Build kills comments
+  const killsComments = target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join("\n");
+  const firstKill = target.mutationTargets[0]?.description || `Remove CSRF middleware from ${endpoint}`;
+
+  // Build positive test (with CSRF token) - uses pre-computed positivePayloadLines
+  const positiveTest = csrfEndpoint ? `
+test("${target.id}b \u2014 POST with valid CSRF token succeeds", async ({ request }) => {
+  const csrfToken = await getCsrfToken(request, adminCookie);
+  expect(typeof csrfToken).toBe("string");
+  expect(csrfToken.length).toBeGreaterThanOrEqual(16);
+  // Kills: Accept any token value without validation
+  const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie": adminCookie,
+      "X-CSRF-Token": csrfToken,
+    },
+    data: {
+      json: {
+${positivePayloadLines}
+      },
+    },
+  });
+  expect(res.status()).toBe(200);
+  // Kills: CSRF check blocks all requests including valid ones
+});
+` : `
+test("${target.id}b \u2014 POST with valid session (no CSRF required) succeeds", async ({ request }) => {
+  // No CSRF endpoint in spec \u2014 testing that authenticated requests work normally
+  const res = await trpcMutation(request, "${endpoint}", {
+${positivePayloadLines.replace(/^        /gm, "    ")}
+  }, adminCookie);
+  expect(res.status).toBe(200);
+  // Kills: Auth middleware blocks all requests
+});
+`;
+
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation, trpcQuery, BASE_URL } from "../../helpers/api";
 import { ${roleFnName}${csrfEndpoint ? ", getCsrfToken" : ""} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 
-// ${target.id} — CSRF: ${target.description}
+// ${target.id} \u2014 CSRF: ${target.description}
 // Risk: CRITICAL
 // Spec: ${behavior?.chapter || behavior?.specAnchor || "Security"}
 // Behavior: ${behavior?.title || target.description}
-${!hasEndpoint ? "// ⚠️  TODO: No mutation endpoint found in spec. Replace TODO_REPLACE_WITH_MUTATION_ENDPOINT." : ""}
+${!hasEndpoint ? "// \u26a0\ufe0f  TODO: No mutation endpoint found in spec. Replace TODO_REPLACE_WITH_MUTATION_ENDPOINT." : ""}
 
 let adminCookie: string;
-
 test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-test("${target.id}a — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
+test("${target.id}a \u2014 POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = \`CSRF-Test-\${Date.now()}\`;
-
   // Send request WITHOUT X-CSRF-Token header
   const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
     headers: {
@@ -1571,17 +1728,13 @@ test("${target.id}a — POST without CSRF token is rejected (no DB write)", asyn
     },
     data: {
       json: {
-        ${tenantField}: ${tenantConst},
-        ${uniqueField}: uniqueTitle,
-${payloadFields}
+${noTokenPayloadLines}
       },
     },
   });
-
   expect(res.status()).toBe(403);
-  // Kills: ${target.mutationTargets[0]?.description || "Remove CSRF middleware from " + endpoint}
-${target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join("\n")}
-
+  // Kills: ${firstKill}
+${killsComments}
   // DB-Check: verify no record was written despite 403
   const { data: list } = await trpcQuery(request, "${listEndpointForDbCheck}",
     { ${tenantField}: ${tenantConst} }, adminCookie);
@@ -1591,45 +1744,9 @@ ${target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join(
   expect(leaked).toBeUndefined();
   // Kills: Write to DB before checking CSRF token
 });
-
-${csrfEndpoint ? `
-test("${target.id}b — POST with valid CSRF token succeeds", async ({ request }) => {
-  const csrfToken = await getCsrfToken(request, adminCookie);
-  expect(typeof csrfToken).toBe("string");
-  expect(csrfToken.length).toBeGreaterThanOrEqual(16);
-  // Kills: Accept any token value without validation
-
-  const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
-    headers: {
-      "Content-Type": "application/json",
-      "Cookie": adminCookie,
-      "X-CSRF-Token": csrfToken,
-    },
-    data: {
-      json: {
-        ${tenantField}: ${tenantConst},
-${payloadFields}
-      },
-    },
-  });
-
-  expect(res.status()).toBe(200);
-  // Kills: CSRF check blocks all requests including valid ones
-});
-` : `
-test("${target.id}b — POST with valid session (no CSRF required) succeeds", async ({ request }) => {
-  // No CSRF endpoint in spec — testing that authenticated requests work normally
-  const res = await trpcMutation(request, "${endpoint}", {
-    ${tenantField}: ${tenantConst},
-${payloadFields.replace(/^/gm, "  ")}
-  }, adminCookie);
-  expect(res.status).toBe(200);
-  // Kills: Auth middleware blocks all requests
-});
-`}
+${positiveTest}
 `;
 }
-
 function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisResult): string {
   const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
@@ -1913,9 +2030,20 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const isArrayField = primaryConstraint?.type === "array" || allText.toLowerCase().includes("array") || allText.toLowerCase().includes("items");
 
   // Build payload using only fields known from IR
-  const createEndpoint = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
+  // Prefer the endpoint that matches the target's endpoint, then fall back to create/add
+  const targetEndpointDef = target.endpoint
+    ? analysis.ir.apiEndpoints.find(e => e.name === target.endpoint)
+    : undefined;
+  const createEndpoint = targetEndpointDef
+    || analysis.ir.apiEndpoints.find(e =>
+        e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
+
+  // CRITICAL: If fieldName is not in knownFields, add it so boundaryValue is always injected
+  const fieldInKnown = knownFields.includes(fieldName);
+  const effectiveFields = fieldInKnown || knownFields.length === 0
+    ? knownFields
+    : [...knownFields, fieldName]; // append boundary field if missing
 
   // Build boundary values for each test case
   function boundaryValue(bound: "min" | "max" | "below_min" | "above_max" | "null"): string {
@@ -1969,11 +2097,11 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     return `    ${f}: "test-${f}", // TODO: Replace with valid test value`;
   }
 
-  const payloadLines = knownFields.length > 0
-    ? knownFields.map(f => buildPayloadLine(f, f === fieldName)).join("\n")
+  const payloadLines = effectiveFields.length > 0
+    ? effectiveFields.map(f => buildPayloadLine(f, f === fieldName)).join("\n")
     : `    ${tenantField}: ${tenantConst},\n    ${fieldName}: boundaryValue, // TODO: Add other required fields for ${endpoint}`;
 
-  const needsTomorrowStr = isDateField || knownFields.some(f => f.toLowerCase().includes("date"));
+  const needsTomorrowStr = isDateField || effectiveFields.some(f => f.toLowerCase().includes("date"));
 
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation${needsTomorrowStr ? ", tomorrowStr, yesterdayStr" : ""} } from "../../helpers/api";
@@ -2677,25 +2805,60 @@ export async function runIndependentChecker(proofs: RawProof[], analysis: Analys
  * shared let-declarations (adminCookie, staffCookie, tenantACookie, tenantBCookie).
  */
 function extractTestBody(code: string): string {
-  return code
-    .replace(/^import\s+.*$/gm, "")
-    .replace(/^let\s+adminCookie.*$/gm, "")
-    .replace(/^let\s+staffCookie.*$/gm, "")
-    .replace(/^let\s+tenantACookie.*$/gm, "")
-    .replace(/^let\s+tenantBCookie.*$/gm, "")
-    .replace(/^test\.beforeAll\([\s\S]*?^\}\);$/gm, "")
-    .replace(/^\n{3,}/gm, "\n\n")
+  const lines = code.split("\n");
+  const result: string[] = [];
+  let skipDepth = 0;
+  let inBeforeAll = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Skip import lines
+    if (trimmed.startsWith("import ")) continue;
+
+    // Skip let cookie declarations
+    if (/^let\s+(adminCookie|staffCookie|tenantACookie|tenantBCookie)/.test(trimmed)) continue;
+
+    // Detect start of test.beforeAll block
+    if (trimmed.startsWith("test.beforeAll(")) {
+      inBeforeAll = true;
+      skipDepth = 0;
+      // Count opening braces on this line
+      for (const ch of line) {
+        if (ch === "{") skipDepth++;
+        if (ch === "}") skipDepth--;
+      }
+      // If depth reaches 0 on same line, block ended
+      if (skipDepth <= 0) inBeforeAll = false;
+      continue;
+    }
+
+    // Inside beforeAll block — track braces
+    if (inBeforeAll) {
+      for (const ch of line) {
+        if (ch === "{") skipDepth++;
+        if (ch === "}") skipDepth--;
+      }
+      if (skipDepth <= 0) inBeforeAll = false;
+      continue;
+    }
+
+    result.push(line);
+  }
+
+  // Remove leading/trailing blank lines and collapse 3+ blank lines to 2
+  return result.join("\n")
+    .replace(/^\n+/, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function mergeProofsToFile(proofs: ValidatedProof[]): string {
   // Collect all imports from all proofs and deduplicate
   const importSet = new Set<string>();
-  // Always include standard imports
-  importSet.add(`import { test, expect } from "@playwright/test";`);
-  importSet.add(`import { trpcMutation, trpcQuery, BASE_URL, tomorrowStr, yesterdayStr } from "../../helpers/api";`);
-  importSet.add(`import { getAdminCookie, getStaffCookie, getCsrfToken } from "../../helpers/auth";`);
-  importSet.add(`import { TEST_TENANT_ID, TEST_TENANT_B_ID, createTestResource, getResource } from "../../helpers/factories";`);
+  // Do NOT add standard imports here — let each proof's own imports be collected below
+  // This ensures tenant constants match the actual spec (TEST_WORKSPACE_ID not TEST_TENANT_ID)
 
   // Extract any extra imports from proof code (e.g. custom helpers)
   for (const proof of proofs) {
@@ -2707,20 +2870,54 @@ function mergeProofsToFile(proofs: ValidatedProof[]): string {
     }
   }
 
+  // Detect which cookie variables are actually used across all proofs
+  const allCode = proofs.map(p => p.code).join("\n");
+  const needsTenantCookies = allCode.includes("tenantACookie") || allCode.includes("tenantBCookie");
+  const needsStaffCookie = allCode.includes("staffCookie");
+
+  // Determine the login function from the first proof's beforeAll
+  const loginFnMatch = allCode.match(/tenantACookie = await (\w+)\(request\)/);
+  const tenantLoginFn = loginFnMatch?.[1] || "getAdminCookie";
+
   // Shared beforeAll block
-  const beforeAll = `
-let adminCookie: string;
-let staffCookie: string;
+  const beforeAll = needsTenantCookies ? `
+let tenantACookie: string;
+let tenantBCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  tenantACookie = await ${tenantLoginFn}(request);
+  // IMPORTANT: Set E2E_TENANT_B_USER and E2E_TENANT_B_PASS to a user from a DIFFERENT tenant
+  tenantBCookie = await loginAndGetCookie(
+    request,
+    process.env.E2E_TENANT_B_USER || "test-tenant-b-user",
+    process.env.E2E_TENANT_B_PASS || "TestPass2026x"
+  );
+});
+` : `
+let adminCookie: string;${needsStaffCookie ? "\nlet staffCookie: string;" : ""}
 
 test.beforeAll(async ({ request }) => {
   adminCookie = await getAdminCookie(request);
-  staffCookie = await getStaffCookie(request);
-});
+${needsStaffCookie ? "  staffCookie = await getStaffCookie(request);\n" : ""}});
 `;
 
   // Test bodies without repeated imports/declarations
+  // Also deduplicate const basePayload declarations (keep only first)
+  let basePayloadSeen = false;
   const testBodies = proofs
-    .map(p => extractTestBody(p.code))
+    .map(p => {
+      let body = extractTestBody(p.code);
+      // Remove duplicate const basePayload blocks
+      if (body.includes("const basePayload")) {
+        if (basePayloadSeen) {
+          // Remove the const basePayload = (...) => ({...}); block
+          body = body.replace(/const basePayload\s*=\s*\([^)]*\)\s*=>\s*\([\s\S]*?\);\n?/g, "");
+        } else {
+          basePayloadSeen = true;
+        }
+      }
+      return body;
+    })
     .filter(b => b.length > 0)
     .join("\n\n");
 
