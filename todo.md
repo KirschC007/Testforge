@@ -91,3 +91,11 @@
 - [x] Backend: analyses.cancel tRPC-Procedure (stoppt In-Memory-Job + setzt DB-Status)
 - [x] Frontend: Abbrechen-Button in Dashboard-Übersicht (neben laufenden Jobs)
 - [x] Frontend: Abbrechen-Button auf Detail-Seite (während Job läuft)
+
+## Phase 11: Template-Bug-Fix (Fix Briefing)
+- [x] Bug 5: mergeProofsToFile() — doppelte Imports + let-Deklarationen deduplizieren (extractTestBody + importSet)
+- [x] Bug 3: IDOR-Positivkontrolle — war bereits korrekt (list-Endpoint für positive control)
+- [x] Bug 4: CSRF-Template — DB-Check nach 403 mit uniqueTitle + listEndpoint-Verifikation
+- [x] Bug 1: Boundary-Template — boundaryValue(type) Funktion mit Typ-Erkennung (string/date/array/int), smart field defaults
+- [x] Bug 2: Status-Transition — Unicode-Pfeil-Regex, multi-source Extraktion, Skip-Transition-Test (c)
+- [x] Factories-Template — yesterdayStr() hinzugefügt, createTestResource mit Smart-Defaults (tomorrowStr/email/phone/title/status/priority)

@@ -914,6 +914,12 @@ export function tomorrowStr(): string {
   return d.toISOString().split("T")[0];
 }
 
+export function yesterdayStr(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split("T")[0];
+}
+
 export function randomPhone(): string {
   return \`+49176\${Date.now().toString().slice(-8)}\`;
 }
@@ -978,7 +984,19 @@ export async function createTestResource(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await trpcMutation(request, "${createEndpoint.name}", {
     ${tenantField}: opts.${tenantField} ?? TEST_${tenantEntity.toUpperCase()}_ID,
-${(createEndpoint.inputFields || []).map((f: string) => `    ${f}: opts.${f} ?? "TODO_${f.toUpperCase()}",`).join("\n")}
+${(createEndpoint.inputFields || []).map((f: string) => {
+  const fl = f.toLowerCase();
+  let defaultVal = `"TODO_${f.toUpperCase()}"`;
+  if (fl.includes("date") || fl.includes("datum")) defaultVal = "tomorrowStr()";
+  else if (fl.includes("email")) defaultVal = `\"test@example.com\"`;
+  else if (fl.includes("phone")) defaultVal = `\"+49176\${Date.now().toString().slice(-8)}\"`;
+  else if (fl.includes("name") || fl.includes("title")) defaultVal = `\"Test ${f}-\${Date.now()}\"`;
+  else if (fl.includes("status")) defaultVal = `\"active\"`;
+  else if (fl.includes("priority")) defaultVal = `\"medium\"`;
+  else if (fl.includes("count") || fl.includes("size") || fl.includes("num")) defaultVal = "1";
+  else if (fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  return `    ${f}: opts.${f} ?? ${defaultVal},`;
+}).join("\n")}
     ...opts,
   }, cookieHeader);
   if (error) throw new Error(\`createTestResource failed: \${JSON.stringify(error)}\`);
@@ -1300,8 +1318,10 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
     ? knownFields.map(f => `        ${f}: "TODO_${f.toUpperCase()}",`).join("\n")
     : `        // TODO: Add the actual input fields for ${endpoint}`;
 
-  // Side-effect check: use a unique field from the payload to verify no DB write
-  const uniqueField = knownFields[0] || "id";
+  // Side-effect check: use a unique title field to verify no DB write after 403
+  const uniqueField = knownFields.find(f => f.toLowerCase().includes("title") || f.toLowerCase().includes("name")) || knownFields[0] || "title";
+  const listEndpointForDbCheck = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
 
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation, trpcQuery, BASE_URL } from "../../helpers/api";
@@ -1321,6 +1341,9 @@ test.beforeAll(async ({ request }) => {
 });
 
 test("${target.id}a — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
+  // Use a unique sentinel value to detect any DB write
+  const uniqueTitle = \`CSRF-Test-\${Date.now()}\`;
+
   // Send request WITHOUT X-CSRF-Token header
   const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
     headers: {
@@ -1331,6 +1354,7 @@ test("${target.id}a — POST without CSRF token is rejected (no DB write)", asyn
     data: {
       json: {
         ${tenantField}: ${tenantConst},
+        ${uniqueField}: uniqueTitle,
 ${payloadFields}
       },
     },
@@ -1339,6 +1363,15 @@ ${payloadFields}
   expect(res.status()).toBe(403);
   // Kills: ${target.mutationTargets[0]?.description || "Remove CSRF middleware from " + endpoint}
 ${target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join("\n")}
+
+  // DB-Check: verify no record was written despite 403
+  const { data: list } = await trpcQuery(request, "${listEndpointForDbCheck}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const leaked = (list as Array<Record<string, unknown>>)?.find(
+    r => (r as Record<string, unknown>)["${uniqueField}"] === uniqueTitle
+  );
+  expect(leaked).toBeUndefined();
+  // Kills: Write to DB before checking CSRF token
 });
 
 ${csrfEndpoint ? `
@@ -1396,11 +1429,33 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const getEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
 
-  // Extract FROM → TO from behavior title or postconditions
-  const titleMatch = behavior?.title.match(/(\w+)\s*(?:→|->|to)\s*(\w+)/i)
-    || behavior?.postconditions.join(" ").match(/status.*?["']?(\w+)["']?.*?(?:→|->|to).*?["']?(\w+)["']?/i);
-  const fromStatus = titleMatch?.[1] || "pending";
-  const toStatus = titleMatch?.[2] || "completed";
+  // Bug 2 Fix: Extract FROM → TO from multiple sources with robust Unicode-arrow regex
+  // Try title first (e.g. "todo → in_progress" or "todo -> in_progress")
+  const arrowPattern = /([a-z][a-z_0-9]*)\s*(?:→|->|to\s+)\s*([a-z][a-z_0-9]*)/i;
+  const titleMatch = behavior?.title.match(arrowPattern);
+  // Then try preconditions (e.g. "task.status = todo")
+  const precondMatch = !titleMatch && behavior?.preconditions.join(" ").match(/status[\s=:"']+([a-z][a-z_0-9]*)/i);
+  // Then try postconditions (e.g. "status changes to in_progress")
+  const postcondMatch = !titleMatch && !precondMatch && behavior?.postconditions.join(" ").match(arrowPattern);
+  // Then try errorCases (e.g. "done → todo: rejected")
+  const errorMatch = !titleMatch && !precondMatch && !postcondMatch && behavior?.errorCases.join(" ").match(arrowPattern);
+
+  const fromStatus = (titleMatch?.[1] || (precondMatch && precondMatch[1]) || (postcondMatch && postcondMatch[1]) || (errorMatch && errorMatch[1]) || "pending") as string;
+  const toStatus = (titleMatch?.[2] || (postcondMatch && postcondMatch[2]) || (errorMatch && errorMatch[2]) || "completed") as string;
+
+  // Try to extract all valid statuses from spec to generate a skip-transition test
+  const allStatusText = [
+    ...(behavior?.preconditions || []),
+    ...(behavior?.postconditions || []),
+    ...(behavior?.errorCases || []),
+    behavior?.title || "",
+  ].join(" ");
+  const statusMatchAll = allStatusText.match(/["']([a-z][a-z_0-9]*)["']/g) || [];
+  const statusValuesRaw = statusMatchAll
+    .map(m => m.replace(/["']/g, ""))
+    .filter(s => s !== fromStatus && s !== toStatus && s.length > 2 && s !== "null" && s !== "the");
+  const statusValuesUniq = statusValuesRaw.filter((s, i) => statusValuesRaw.indexOf(s) === i);
+  const skipStatus = statusValuesUniq[0]; // A status that should NOT be reachable directly from fromStatus
 
   // Detect side-effects from sideEffects array
   const hasCounter = target.sideEffects?.some(se => se.toLowerCase().includes("count"));
@@ -1476,6 +1531,24 @@ test("${target.id}b — ${toStatus} → ${fromStatus}: reverse transition must b
   expect((unchanged as Record<string, unknown>)?.status).toBe("${toStatus}");
   // Kills: Silent state corruption on rejected transition
 });
+${skipStatus ? `
+test("${target.id}c — ${fromStatus} → ${skipStatus}: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to ${skipStatus} without going through ${toStatus}
+  const { status } = await trpcMutation(request, "${endpoint}",
+    { id: resource.id, status: "${skipStatus}", ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "${getEndpoint}",
+    { id: resource.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("${fromStatus}");
+  // Kills: Accept any status value without validating transition chain
+});
+` : ""}
 `;
 }
 
@@ -1604,15 +1677,69 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const max = maxMatch ? parseInt(maxMatch[1]) : (gtAssertions[1] ? Number(gtAssertions[1].value) : 100);
 
   // Build payload using only fields known from IR
+  // Bug 1 Fix: inject the boundary value correctly; other fields get real defaults
   const createEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
-  const payloadFields = knownFields.length > 0
-    ? knownFields.map(f => f === fieldName ? `  ${f},` : `  ${f}: "TODO_${f.toUpperCase()}",`).join("\n")
-    : `  // TODO: Add the actual input fields for ${endpoint}\n  ${fieldName},`;
+
+  // Determine boundary type from field name and behavior text
+  const allText2 = [...(behavior?.errorCases || []), ...(behavior?.postconditions || []), target.description, behavior?.title || ""].join(" ").toLowerCase();
+  const isStringField = allText2.includes("length") || allText2.includes("zeichen") || allText2.includes("char") || allText2.includes("string");
+  const isDateField = allText2.includes("date") || allText2.includes("datum") || allText2.includes("zukunft") || allText2.includes("future");
+  const isArrayField = allText2.includes("array") || allText2.includes("list") || allText2.includes("items");
+
+  // Build boundary values for each test case
+  function boundaryValue(bound: "min" | "max" | "below_min" | "above_max" | "null"): string {
+    if (bound === "null") return "null";
+    if (isDateField) {
+      if (bound === "min" || bound === "max") return "tomorrowStr()";
+      if (bound === "below_min") return "yesterdayStr()";
+      if (bound === "above_max") return "tomorrowStr()";
+    }
+    if (isStringField) {
+      if (bound === "min") return `"A".repeat(${min})`;
+      if (bound === "max") return `"A".repeat(${max})`;
+      if (bound === "below_min") return min > 1 ? `"A".repeat(${min - 1})` : `""`;
+      if (bound === "above_max") return `"A".repeat(${max + 1})`;
+    }
+    if (isArrayField) {
+      if (bound === "min") return `[1]`;
+      if (bound === "max") return `Array(${max}).fill(1)`;
+      if (bound === "below_min") return `[]`;
+      if (bound === "above_max") return `Array(${max + 1}).fill(1)`;
+    }
+    // Default: integer
+    if (bound === "min") return String(min);
+    if (bound === "max") return String(max);
+    if (bound === "below_min") return String(min - 1);
+    if (bound === "above_max") return String(max + 1);
+    return "null";
+  }
+
+  // Build a realistic base payload: known fields get sensible defaults, boundary field is injected via function
+  function buildPayloadLine(f: string, isBoundaryField: boolean): string {
+    if (isBoundaryField) return `    ${f}: boundaryValue,`;
+    // Guess a sensible default from field name
+    const fl = f.toLowerCase();
+    if (fl.includes("date") || fl.includes("datum")) return `    ${f}: tomorrowStr(),`;
+    if (fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) return `    ${f}: ${tenantConst},`;
+    if (fl.includes("priority")) return `    ${f}: "medium",`;
+    if (fl.includes("status")) return `    ${f}: "active",`;
+    if (fl.includes("email")) return `    ${f}: "test@example.com",`;
+    if (fl.includes("phone")) return `    ${f}: "+49123456789",`;
+    if (fl.includes("name") || fl.includes("title") || fl.includes("description")) return `    ${f}: "Test ${f}",`;
+    if (fl.includes("count") || fl.includes("size") || fl.includes("num")) return `    ${f}: 1,`;
+    return `    ${f}: "test-${f}", // TODO: Replace with valid test value`;
+  }
+
+  const payloadLines = knownFields.length > 0
+    ? knownFields.map(f => buildPayloadLine(f, f === fieldName)).join("\n")
+    : `    ${tenantField}: ${tenantConst},\n    ${fieldName}: boundaryValue, // TODO: Add other required fields for ${endpoint}`;
+
+  const needsTomorrowStr = isDateField || knownFields.some(f => f.toLowerCase().includes("date"));
 
   return `import { test, expect } from "@playwright/test";
-import { trpcMutation } from "../../helpers/api";
+import { trpcMutation${needsTomorrowStr ? ", tomorrowStr, yesterdayStr" : ""} } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 
@@ -1628,30 +1755,30 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-const basePayload = (${fieldName}: unknown) => ({
-${payloadFields}
+const basePayload = (boundaryValue: unknown) => ({
+${payloadLines}
 });
 
-test("${target.id}a — ${fieldName}=${min} (minimum) is allowed", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${min}), adminCookie);
+test("${target.id}a — ${fieldName}=${boundaryValue("min")} (minimum) is allowed", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("min")}), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in ${fieldName} validation (off-by-one)
 });
 
-test("${target.id}b — ${fieldName}=${max} (maximum) is allowed", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${max}), adminCookie);
+test("${target.id}b — ${fieldName}=${boundaryValue("max")} (maximum) is allowed", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("max")}), adminCookie);
   expect(status).toBe(200);
   // Kills: Change <= to < in ${fieldName} validation (off-by-one)
 });
 
-test("${target.id}c — ${fieldName}=${min - 1} (below minimum) is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${min - 1}), adminCookie);
+test("${target.id}c — ${fieldName}=${boundaryValue("below_min")} (below minimum) is rejected", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("below_min")}), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove ${fieldName} >= ${min} validation
 });
 
-test("${target.id}d — ${fieldName}=${max + 1} (above maximum) is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${max + 1}), adminCookie);
+test("${target.id}d — ${fieldName}=${boundaryValue("above_max")} (above maximum) is rejected", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${endpoint}", basePayload(${boundaryValue("above_max")}), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove ${fieldName} <= ${max} validation
 });
@@ -2293,6 +2420,67 @@ export async function runIndependentChecker(proofs: RawProof[], analysis: Analys
   return { checkedProofs, reworked, discarded };
 }
 
+// ─── File Merger (Bug 5 Fix) ─────────────────────────────────────────────────
+
+/**
+ * Merges multiple proof codes into a single file, deduplicating imports and
+ * shared let-declarations (adminCookie, staffCookie, tenantACookie, tenantBCookie).
+ */
+function extractTestBody(code: string): string {
+  return code
+    .replace(/^import\s+.*$/gm, "")
+    .replace(/^let\s+adminCookie.*$/gm, "")
+    .replace(/^let\s+staffCookie.*$/gm, "")
+    .replace(/^let\s+tenantACookie.*$/gm, "")
+    .replace(/^let\s+tenantBCookie.*$/gm, "")
+    .replace(/^test\.beforeAll\([\s\S]*?^\}\);$/gm, "")
+    .replace(/^\n{3,}/gm, "\n\n")
+    .trim();
+}
+
+function mergeProofsToFile(proofs: ValidatedProof[]): string {
+  // Collect all imports from all proofs and deduplicate
+  const importSet = new Set<string>();
+  // Always include standard imports
+  importSet.add(`import { test, expect } from "@playwright/test";`);
+  importSet.add(`import { trpcMutation, trpcQuery, BASE_URL, tomorrowStr, yesterdayStr } from "../../helpers/api";`);
+  importSet.add(`import { getAdminCookie, getStaffCookie, getCsrfToken } from "../../helpers/auth";`);
+  importSet.add(`import { TEST_TENANT_ID, TEST_TENANT_B_ID, createTestResource, getResource } from "../../helpers/factories";`);
+
+  // Extract any extra imports from proof code (e.g. custom helpers)
+  for (const proof of proofs) {
+    const lines = proof.code.split("\n");
+    for (const line of lines) {
+      if (line.trim().startsWith("import ")) {
+        importSet.add(line.trim());
+      }
+    }
+  }
+
+  // Shared beforeAll block
+  const beforeAll = `
+let adminCookie: string;
+let staffCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await getAdminCookie(request);
+  staffCookie = await getStaffCookie(request);
+});
+`;
+
+  // Test bodies without repeated imports/declarations
+  const testBodies = proofs
+    .map(p => extractTestBody(p.code))
+    .filter(b => b.length > 0)
+    .join("\n\n");
+
+  return [
+    Array.from(importSet).join("\n"),
+    beforeAll,
+    testBodies,
+  ].join("\n");
+}
+
 // ─── Report Generator ─────────────────────────────────────────────────────────
 
 export function generateReport(
@@ -2471,14 +2659,15 @@ export async function runAnalysisJob(
   const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);
 
   // Test files (deduplicated by filename, properly structured)
-  const fileMap = new Map<string, string[]>();
+  // Bug 5 Fix: deduplicate imports and shared let-declarations per file
+  const fileMap = new Map<string, ValidatedProof[]>();
   for (const proof of validatedSuite.proofs) {
     if (!fileMap.has(proof.filename)) fileMap.set(proof.filename, []);
-    fileMap.get(proof.filename)!.push(proof.code);
+    fileMap.get(proof.filename)!.push(proof);
   }
-  const testFiles = Array.from(fileMap.entries()).map(([filename, codes]) => ({
+  const testFiles = Array.from(fileMap.entries()).map(([filename, proofs]) => ({
     filename,
-    content: codes.join("\n\n"),
+    content: mergeProofsToFile(proofs),
   }));
 
   console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
