@@ -137,3 +137,22 @@
 - [x] Fix: Rate-Limit + State-Machine Behaviors aus boundary-Proof-Typ ausgeschlossen
 - [x] Zweiter Durchlauf: Output verifiziert — alle 6 Boundary-Tests korrekt
 - [x] Goldstandard: alle Tests laufen unverändert in Playwright
+
+## Phase 15: Deep-Check Fixes (5 Schwachstellen)
+- [x] Fix 1: IDOR-Template endpoint-spezifisch — jeder Endpoint bekommt seinen eigenen Angriff
+- [x] Fix 2: CSRF-004/005 Session-Binding — Token von Session A mit Cookie B senden
+- [x] Fix 3: Status-Transition-Tests für state-machine Behaviors (determineProofTypes + Template)
+- [x] Fix 4: DSGVO-Assertions konkret machen (PII-Felder aus IR extrahieren)
+- [x] Fix 5: Factory-Import-Fehler beheben (getGuestByPhone → korrekte Factory-Funktion)
+- [x] Pipeline nochmals durchführen und Output verifizieren
+
+## Phase 16: Goldstandard Final
+- [x] Fix: STATUS_META_WORDS erweitert (backwards, forward, skipping, reverse etc.)
+- [x] Fix: fromStatus/toStatus Validierung gegen bekannte States aus statusMachine
+- [x] Fix: piiResourceFields — Single-Word-Entities (Task, Workspace) nicht als Felder verwenden
+- [x] Fix: outputFields zur APIEndpoint-Schnittstelle hinzugefügt
+- [x] Fix: outputFields Normalisierung (wie inputFields)
+- [x] Fix: exportAssertFields = piiFields + resourceOutputFields für Export-Tests
+- [x] Pipeline-Verifikation: 52 Behaviors, 28 Proof-Targets, 26 validierte Tests
+- [x] Alle 5 Test-Kategorien korrekt: boundary(6), csrf(5), dsgvo(6), idor(7), status_transition(4)
+- [x] 32/32 Unit-Tests grün, TypeScript 0 Errors

@@ -35,6 +35,7 @@ export interface APIEndpoint {
   auth: string;           // e.g. "requireRestaurantAuth"
   relatedBehaviors: string[]; // behavior IDs
   inputFields?: string[]; // known input fields
+  outputFields?: string[]; // known output fields
 }
 
 export interface AuthRole {
@@ -244,6 +245,13 @@ Rules:
 8. Extract API endpoints: procedure names, auth requirements, related behaviors
 9. Extract auth model: login endpoint, CSRF pattern, roles with credentials
 
+CRITICAL RULES for tags:
+- IDOR/cross-tenant behaviors: MUST include "authorization" AND "security" in tags. Any behavior that checks workspaceId, tenantId, or ownership MUST have these tags.
+- DSGVO/PII behaviors: MUST include "dsgvo" in tags for ANY behavior involving: personal data, PII fields, data export, data deletion, data anonymization, GDPR compliance, privacy. Also add "pii" if specific PII fields (email, name, phone, address) are mentioned.
+- state-machine behaviors: MUST include "state-machine" in tags for ANY behavior involving status transitions, workflow steps, or state changes.
+- rate-limiting behaviors: MUST include "rate-limiting" in tags.
+- CSRF behaviors: MUST include "csrf" in tags.
+
 Return JSON with these exact keys:
 - behaviors: [{id, title, subject, action, object, preconditions, postconditions, errorCases, tags, riskHints, chapter, specAnchor}]
 - invariants: [{id, description, alwaysTrue, violationConsequence}]
@@ -276,7 +284,7 @@ CRITICAL RULES for statusMachine:
 - terminalStates: states from which no further transitions are allowed
 
 --- FEW-SHOT EXAMPLE ---
-Input: "Tasks have status: todo | in_progress | review | done. Transitions: todo→in_progress, in_progress→review, review→done. No skipping, no reverse. Tasks have priority: low | medium | high. POST /api/trpc/tasks.create (input: workspaceId, title, priority; output: id, title, status, priority, createdAt). POST /api/trpc/tasks.updateStatus (input: id, workspaceId, status; output: id, status, updatedAt). Login: POST /api/trpc/auth.login"
+Input: "Tasks have status: todo | in_progress | review | done. Transitions: todo→in_progress, in_progress→review, review→done. No skipping, no reverse. Tasks have priority: low | medium | high. POST /api/trpc/tasks.create (input: workspaceId, title, priority; output: id, title, status, priority, createdAt). POST /api/trpc/tasks.updateStatus (input: id, workspaceId, status; output: id, status, updatedAt). Login: POST /api/trpc/auth.login. Task descriptions may contain personal data. GET /api/trpc/workspace.exportData exports all workspace data for GDPR compliance. DELETE /api/trpc/workspace.deleteAll permanently deletes all workspace data. tasks.getById returns 403 if task belongs to a different workspace."
 
 Output fragment:
 {
@@ -291,6 +299,39 @@ Output fragment:
       "tags": ["state-machine", "validation"], "riskHints": ["state-change"],
       "chapter": "Tasks",
       "specAnchor": "No skipping, no reverse"
+    },
+    {
+      "id": "B-002",
+      "title": "tasks.getById returns 403 if task belongs to a different workspace",
+      "subject": "System", "action": "returns 403", "object": "task",
+      "preconditions": ["task.workspaceId != caller.workspaceId"],
+      "postconditions": ["HTTP 403 returned"],
+      "errorCases": ["cross-tenant access → 403"],
+      "tags": ["authorization", "security", "error-handling"], "riskHints": ["idor", "cross-tenant"],
+      "chapter": "Tasks",
+      "specAnchor": "tasks.getById returns 403 if task belongs to a different workspace"
+    },
+    {
+      "id": "B-003",
+      "title": "Task descriptions may contain personal data",
+      "subject": "System", "action": "stores", "object": "personal data in task descriptions",
+      "preconditions": ["task has description field"],
+      "postconditions": ["personal data stored in description"],
+      "errorCases": [],
+      "tags": ["dsgvo", "pii"], "riskHints": ["dsgvo", "pii-leak"],
+      "chapter": "GDPR",
+      "specAnchor": "Task descriptions may contain personal data"
+    },
+    {
+      "id": "B-004",
+      "title": "workspace.deleteAll permanently deletes all workspace data",
+      "subject": "System", "action": "deletes", "object": "all workspace data",
+      "preconditions": ["caller is admin"],
+      "postconditions": ["all workspace data permanently deleted"],
+      "errorCases": [],
+      "tags": ["dsgvo", "delete"], "riskHints": ["dsgvo"],
+      "chapter": "GDPR",
+      "specAnchor": "DELETE /api/trpc/workspace.deleteAll permanently deletes all workspace data"
     }
   ],
   "apiEndpoints": [
@@ -429,18 +470,20 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     return true;
   });
 
-  // Normalize inputFields: LLM sometimes returns objects instead of strings
+  // Normalize inputFields and outputFields: LLM sometimes returns objects instead of strings
   // e.g. [{name: "workspaceId", type: "number"}] instead of ["workspaceId"]
+  const normalizeFields = (fields: unknown[]): string[] => fields.map((f: unknown) => {
+    if (typeof f === "string") return f;
+    if (f && typeof f === "object") {
+      const obj = f as Record<string, unknown>;
+      return String(obj.name || obj.field || obj.key || JSON.stringify(f));
+    }
+    return String(f);
+  });
   merged.apiEndpoints = merged.apiEndpoints.map(e => ({
     ...e,
-    inputFields: (e.inputFields || []).map((f: unknown) => {
-      if (typeof f === "string") return f;
-      if (f && typeof f === "object") {
-        const obj = f as Record<string, unknown>;
-        return String(obj.name || obj.field || obj.key || JSON.stringify(f));
-      }
-      return String(f);
-    }),
+    inputFields: normalizeFields(e.inputFields || []),
+    outputFields: normalizeFields((e as unknown as Record<string, unknown[]>).outputFields || []),
   }));
 
   return {
@@ -706,14 +749,23 @@ function determineProofTypes(b: Behavior): ProofType[] {
   const types = new Set<ProofType>();
   const combined = [...b.tags, ...b.riskHints].join(" ").toLowerCase();
   if (combined.includes("idor") || combined.includes("cross-tenant") || combined.includes("multi-tenant")) types.add("idor");
-  if (combined.includes("csrf") || combined.includes("state-change")) types.add("csrf");
+  // csrf: triggered by csrf tag, NOT by state-change (state-change belongs to status_transition)
+  if (combined.includes("csrf")) types.add("csrf");
   if (combined.includes("brute-force") || combined.includes("rate-limit")) types.add("rate_limit");
   if (combined.includes("dsgvo") || combined.includes("privacy") || combined.includes("gdpr") || combined.includes("pii")) types.add("dsgvo");
-  if (combined.includes("status") || combined.includes("transition")) types.add("status_transition");
+  // state-machine behaviors: ONLY detect by explicit state-machine tag (NOT state-change riskHint)
+  // state-change in riskHints means "writes to DB" (not a status-transition behavior)
+  const behaviorTitle = b.title.toLowerCase();
+  const tagsOnly = b.tags.join(" ").toLowerCase();
+  const hasArrowInTitle = behaviorTitle.includes("→") || behaviorTitle.includes("->");
+  if (tagsOnly.includes("state-machine") || hasArrowInTitle ||
+      (tagsOnly.includes("transition") && !tagsOnly.includes("validation"))) {
+    types.add("status_transition");
+  }
   if (combined.includes("no-show") || combined.includes("risk-scoring") || combined.includes("cron")) types.add("risk_scoring");
   // Only add boundary if NOT a rate-limit or state-machine behavior (those have their own test types)
   const isRateLimit = combined.includes("rate-limit") || combined.includes("brute-force");
-  const isStateMachine = combined.includes("state-machine") || combined.includes("transition");
+  const isStateMachine = tagsOnly.includes("state-machine") || hasArrowInTitle;
   if (!isRateLimit && !isStateMachine && (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit"))) types.add("boundary");
   if (types.size === 0) types.add("business_logic");
   return Array.from(types);
@@ -980,7 +1032,7 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
         { description: `Remove ${b.action} transition from allowed list`, expectedKill: true },
         ...sideEffects.map(se => ({ description: `Remove ${se} side-effect`, expectedKill: true })),
       ],
-      endpoint: endpoint || "reservations.updateStatus",
+      endpoint: endpoint || analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("status") || e.name.toLowerCase().includes("update"))?.name || "TODO_REPLACE_WITH_STATUS_ENDPOINT",
       sideEffects,
     };
   }
@@ -1533,17 +1585,42 @@ function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string
     ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
 
-  // For IDOR tests: always use the list endpoint for positive control + cross-tenant check
-  // The mutation endpoint (target.endpoint) is the behavior endpoint, but IDOR checks need list/read endpoints
+  // For IDOR tests: use the actual target endpoint for the attack, and list endpoint for positive control
   const listEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall") || e.name.toLowerCase().includes("search"))?.name
     || analysis.ir.apiEndpoints.find(e => !e.name.toLowerCase().includes("create") && !e.name.toLowerCase().includes("update") && !e.name.toLowerCase().includes("delete"))?.name
     || target.endpoint
     || "TODO_REPLACE_WITH_LIST_ENDPOINT";
-  const endpoint = listEndpoint;
-  const hasEndpoint = !!analysis.ir.apiEndpoints.find(e => e.name === listEndpoint);
+  // The actual endpoint being tested for IDOR (e.g. tasks.delete, tasks.updateStatus)
+  const attackEndpoint = target.endpoint || listEndpoint;
+  const attackEpDef = analysis.ir.apiEndpoints.find(e => e.name === attackEndpoint);
+  const attackFields = attackEpDef?.inputFields || [];
+  // Determine if this is a mutation endpoint (needs a resource ID) or a query endpoint
+  const isMutationEndpoint = attackEndpoint.toLowerCase().includes("delete") ||
+    attackEndpoint.toLowerCase().includes("update") ||
+    attackEndpoint.toLowerCase().includes("create") ||
+    attackEndpoint.toLowerCase().includes("bulk");
+  const hasEndpoint = !!attackEpDef;
   const getEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes(".get"))?.name || "TODO_REPLACE_WITH_GETBYID_ENDPOINT";
+  // Build attack payload for mutation endpoints
+  const attackPayloadLines = attackFields.map(f => {
+    const fl = f.toLowerCase();
+    if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantBConst},`;
+    if (fl === "id" || fl.endsWith("id") || fl.endsWith("ids")) return `        ${f}: resourceId,`;
+    if (fl.includes("status")) {
+      const statusVals = analysis.ir.enums?.status || analysis.ir.statusMachine?.states || [];
+      return `        ${f}: "${statusVals[0] || "active"}",`;
+    }
+    if (fl.includes("title") || fl.includes("name")) return `        ${f}: "test-title",`;
+    return `        ${f}: "test-${f}",`;
+  }).join("\n");
+  // For array fields like taskIds, build a list payload
+  const hasArrayField = attackFields.some(f => f.toLowerCase().endsWith("ids") || f.toLowerCase().includes("ids"));
+  const arrayField = attackFields.find(f => f.toLowerCase().endsWith("ids") || f.toLowerCase().includes("ids"));
+  const attackPayloadForArray = hasArrayField && arrayField
+    ? `        ${arrayField}: [resourceId],\n        ${tenantField}: ${tenantBConst},`
+    : attackPayloadLines;
 
   return `import { test, expect } from "@playwright/test";
 import { trpcQuery, trpcMutation, loginAndGetCookie } from "../../helpers/api";
@@ -1571,28 +1648,28 @@ test.beforeAll(async ({ request }) => {
 
 test("${target.id}a — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "${endpoint}",
+  const ownData = await trpcQuery(request, "${listEndpoint}",
     { ${tenantField}: ${tenantBConst} }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "${endpoint}",
+  const crossTenant = await trpcQuery(request, "${listEndpoint}",
     { ${tenantField}: ${tenantBConst} }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: ${target.mutationTargets[0]?.description || "Remove tenant isolation check in " + endpoint}
+  // Kills: ${target.mutationTargets[0]?.description || `Remove workspaceId filter in ${attackEndpoint} query`}
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
   expect(responseText).not.toContain(String(${tenantBConst}));
   // Kills: Return empty array instead of 403 on cross-tenant access
-${target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join("\n")}
+  // Kills: Return all records without tenant isolation
 });
 
-test("${target.id}b — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+${isMutationEndpoint ? `test("${target.id}b — Tenant A cannot mutate Tenant B resource via ${attackEndpoint}", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "${endpoint}",
+  const tenantBList = await trpcQuery(request, "${listEndpoint}",
     { ${tenantField}: ${tenantBConst} }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -1601,15 +1678,41 @@ test("${target.id}b — Tenant A cannot read individual Tenant B resource", asyn
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource
-  const crossTenant = await trpcQuery(request, "${getEndpoint}",
+  // Attack: Tenant A tries to mutate Tenant B resource via ${attackEndpoint}
+  const crossTenant = await trpcMutation(request, "${attackEndpoint}",
+    {
+${hasArrayField ? attackPayloadForArray : attackPayloadLines}
+    }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Missing tenant ownership check in ${attackEndpoint}
+  // Kills: Allow cross-tenant mutations on ${attackEndpoint}
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "${listEndpoint}",
+    { ${tenantField}: ${tenantBConst} }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
+});` : `test("${target.id}b — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+  // Get a Tenant B resource ID (create one if needed)
+  const tenantBList = await trpcQuery(request, "${listEndpoint}",
+    { ${tenantField}: ${tenantBConst} }, tenantBCookie);
+  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
+  if (!resourceId) {
+    const created = await createTestResource(request, tenantBCookie, { ${tenantField}: ${tenantBConst} });
+    resourceId = (created as Record<string, unknown>)?.id;
+    expect(resourceId).toBeDefined();
+  }
+
+  // Attack: Tenant A tries to read specific Tenant B resource via ${attackEndpoint}
+  const crossTenant = await trpcQuery(request, "${attackEndpoint}",
     { id: resourceId, ${tenantField}: ${tenantBConst} }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in ${getEndpoint}
+  // Kills: Missing tenant ownership check in ${attackEndpoint}
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
-});
+});`}
 `;
 }
 
@@ -1698,6 +1801,12 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
     ? knownFields.map(f => buildCsrfPositivePayloadLine(f)).join("\n")
     : `        ${tenantField}: ${tenantConst},\n        // TODO: Add other required fields for ${endpoint}`;
 
+  // Detect special CSRF behaviors that need custom test logic
+  const behaviorTitle = (behavior?.title || target.description).toLowerCase();
+  const isSessionBinding = behaviorTitle.includes("tied to") || behaviorTitle.includes("session") || behaviorTitle.includes("bound to");
+  const isTokenReuse = behaviorTitle.includes("other session") || behaviorTitle.includes("different session") || behaviorTitle.includes("rejects") || behaviorTitle.includes("cross-session");
+  const isCsrfTokenEndpoint = behaviorTitle.includes("csrf token is obtained") || behaviorTitle.includes("get /api/auth/csrf") || endpoint.includes("csrf");
+
   // Build kills comments
   const killsComments = target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join("\n");
   const firstKill = target.mutationTargets[0]?.description || `Remove CSRF middleware from ${endpoint}`;
@@ -1736,6 +1845,170 @@ ${positivePayloadLines.replace(/^        /gm, "    ")}
 `;
 
   const csrfTomorrowImport = csrfHasDateField ? ", tomorrowStr" : "";
+
+  // Special test for CSRF token endpoint (just verifies token is returned)
+  if (isCsrfTokenEndpoint) {
+    return `import { test, expect } from "@playwright/test";
+import { BASE_URL } from "../../helpers/api";
+import { ${roleFnName}, getCsrfToken } from "../../helpers/auth";
+
+// ${target.id} \u2014 CSRF Token Endpoint
+// Risk: CRITICAL
+// Spec: ${behavior?.chapter || behavior?.specAnchor || "Security"}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a \u2014 CSRF token endpoint returns valid token", async ({ request }) => {
+  const csrfToken = await getCsrfToken(request, adminCookie);
+  expect(typeof csrfToken).toBe("string");
+  expect(csrfToken.length).toBeGreaterThanOrEqual(16);
+  // Kills: Return empty string as CSRF token
+  // Kills: Return same token for all sessions
+});
+
+test("${target.id}b \u2014 CSRF token is unique per request", async ({ request }) => {
+  const token1 = await getCsrfToken(request, adminCookie);
+  const token2 = await getCsrfToken(request, adminCookie);
+  // Tokens may be the same (stateless) or different (stateful) — both are valid
+  // But both must be non-empty valid strings
+  expect(typeof token1).toBe("string");
+  expect(typeof token2).toBe("string");
+  expect(token1.length).toBeGreaterThanOrEqual(16);
+  expect(token2.length).toBeGreaterThanOrEqual(16);
+  // Kills: Return null or undefined as CSRF token
+});
+`;
+  }
+
+  // Special test for session-binding (CSRF token tied to session)
+  if (isSessionBinding && !isTokenReuse) {
+    return `import { test, expect } from "@playwright/test";
+import { BASE_URL, trpcMutation, trpcQuery${csrfTomorrowImport} } from "../../helpers/api";
+import { ${roleFnName}, getCsrfToken } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} \u2014 CSRF Session Binding
+// Risk: CRITICAL
+// Spec: ${behavior?.chapter || behavior?.specAnchor || "Security"}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a \u2014 CSRF token is valid for the session that obtained it", async ({ request }) => {
+  const csrfToken = await getCsrfToken(request, adminCookie);
+  expect(csrfToken.length).toBeGreaterThanOrEqual(16);
+  // Kills: Accept any token regardless of session
+
+  const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie": adminCookie,
+      "X-CSRF-Token": csrfToken,
+    },
+    data: {
+      json: {
+${positivePayloadLines}
+      },
+    },
+  });
+  expect(res.status()).toBe(200);
+  // Kills: CSRF middleware ignores session binding
+});
+
+test("${target.id}b \u2014 Expired/invalid CSRF token is rejected", async ({ request }) => {
+  const fakeToken = "invalid-csrf-token-that-was-never-issued";
+  const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie": adminCookie,
+      "X-CSRF-Token": fakeToken,
+    },
+    data: {
+      json: {
+${noTokenPayloadLines}
+      },
+    },
+  });
+  expect(res.status()).toBe(403);
+  // Kills: Accept any string as valid CSRF token without validation
+  // Kills: Only check token presence, not token validity
+});
+`;
+  }
+
+  // Special test for token reuse across sessions (CSRF-005)
+  if (isTokenReuse) {
+    return `import { test, expect } from "@playwright/test";
+import { BASE_URL, trpcMutation, loginAndGetCookie${csrfTomorrowImport} } from "../../helpers/api";
+import { ${roleFnName}, getCsrfToken } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} \u2014 CSRF Token Cross-Session Rejection
+// Risk: CRITICAL
+// Spec: ${behavior?.chapter || behavior?.specAnchor || "Security"}
+// Behavior: ${behavior?.title || target.description}
+
+let sessionACookie: string;
+let sessionBCookie: string;
+let sessionAToken: string;
+
+test.beforeAll(async ({ request }) => {
+  sessionACookie = await ${roleFnName}(request);
+  sessionAToken = await getCsrfToken(request, sessionACookie);
+  // Session B: same user, different session (re-login)
+  sessionBCookie = await loginAndGetCookie(
+    request,
+    process.env.E2E_ADMIN_USER || "test-admin",
+    process.env.E2E_ADMIN_PASS || "TestPass2026x"
+  );
+});
+
+test("${target.id}a \u2014 CSRF token from Session A is rejected when used with Session B cookie", async ({ request }) => {
+  // Use Session A's token with Session B's cookie — must be rejected
+  const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie": sessionBCookie,
+      "X-CSRF-Token": sessionAToken, // Token from a DIFFERENT session
+    },
+    data: {
+      json: {
+${noTokenPayloadLines}
+      },
+    },
+  });
+  expect(res.status()).toBe(403);
+  // Kills: Accept CSRF tokens from any session (global token pool)
+  // Kills: Only validate token format, not session binding
+});
+
+test("${target.id}b \u2014 Session B's own CSRF token is accepted", async ({ request }) => {
+  const sessionBToken = await getCsrfToken(request, sessionBCookie);
+  const res = await request.post(\`\${BASE_URL}/api/trpc/${endpoint}\`, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie": sessionBCookie,
+      "X-CSRF-Token": sessionBToken,
+    },
+    data: {
+      json: {
+${positivePayloadLines}
+      },
+    },
+  });
+  expect(res.status()).toBe(200);
+  // Kills: CSRF validation rejects all tokens including valid session-bound ones
+});
+`;
+  }
+
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation, trpcQuery, BASE_URL${csrfTomorrowImport} } from "../../helpers/api";
 import { ${roleFnName}${csrfEndpoint ? ", getCsrfToken" : ""} } from "../../helpers/auth";
@@ -1804,14 +2077,22 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const sm = analysis.ir.statusMachine;
   const arrowPattern = /([a-z][a-z_0-9]*)\s*(?:→|->|to\s+)\s*([a-z][a-z_0-9]*)/i;
   const titleMatch = behavior?.title.match(arrowPattern);
-  const precondMatch = !titleMatch && behavior?.preconditions.join(" ").match(/status[\s=:"']+([a-z][a-z_0-9]*)/i);
+  // precondMatch: extract status value from preconditions, but skip meta-words like 'transition', 'valid', 'is'
+  const STATUS_META_WORDS = new Set(['transition', 'valid', 'invalid', 'is', 'the', 'a', 'an', 'be', 'change', 'update', 'set', 'backwards', 'backward', 'forward', 'forwards', 'skipping', 'skip', 'reverse', 'reversed', 'check', 'field', 'value', 'must', 'should', 'cannot', 'not']);
+  const precondMatchRaw = !titleMatch && behavior?.preconditions.join(" ").match(/status[\s=:"']+([a-z][a-z_0-9]*)/i);
+  const precondMatch = precondMatchRaw && !STATUS_META_WORDS.has((precondMatchRaw[1] || '').toLowerCase()) ? precondMatchRaw : null;
   const postcondMatch = !titleMatch && !precondMatch && behavior?.postconditions.join(" ").match(arrowPattern);
   const errorMatch = !titleMatch && !precondMatch && !postcondMatch && behavior?.errorCases.join(" ").match(arrowPattern);
 
   // If statusMachine is known from IR, use the first transition as default
   const firstTransition = sm?.transitions?.[0];
-  const fromStatus = (titleMatch?.[1] || (precondMatch && precondMatch[1]) || (postcondMatch && postcondMatch[1]) || (errorMatch && errorMatch[1]) || firstTransition?.[0] || "pending") as string;
-  const toStatus = (titleMatch?.[2] || (postcondMatch && postcondMatch[2]) || (errorMatch && errorMatch[2]) || firstTransition?.[1] || "completed") as string;
+  // Validate extracted status values against known states — if not a valid state, fall back to firstTransition
+  const knownStates = new Set(sm?.states || []);
+  const isValidState = (s: string | undefined): s is string => !!s && (knownStates.size === 0 || knownStates.has(s));
+  const rawFromStatus: string | undefined = titleMatch?.[1] || (precondMatch ? precondMatch[1] : undefined) || (postcondMatch ? postcondMatch[1] : undefined) || (errorMatch ? errorMatch[1] : undefined) || undefined;
+  const rawToStatus: string | undefined = titleMatch?.[2] || (postcondMatch ? postcondMatch[2] : undefined) || (errorMatch ? errorMatch[2] : undefined) || undefined;
+  const fromStatus = (isValidState(rawFromStatus) ? rawFromStatus : firstTransition?.[0] || "pending") as string;
+  const toStatus = (isValidState(rawToStatus) ? rawToStatus : firstTransition?.[1] || "completed") as string;
 
   // Find a skip-target: a state that is NOT directly reachable from fromStatus
   // Goldstandard: use statusMachine.forbidden or statusMachine.states to find skip candidates
@@ -1941,31 +2222,86 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
     ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
 
+  // Detect if this is an export behavior or a delete/anonymize behavior
+  const isExportBehavior = (behavior?.title || '').toLowerCase().includes('export') ||
+    (behavior?.action || '').toLowerCase().includes('export') ||
+    (target.endpoint || '').toLowerCase().includes('export');
+
   // Use resolved endpoint from IR, or TODO placeholder
-  const endpoint = target.endpoint || analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("gdpr") || e.name.toLowerCase().includes("delete") ||
-    e.name.toLowerCase().includes("dsgvo") || e.name.toLowerCase().includes("anon"))?.name || "TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT";
+  const endpoint = target.endpoint || (() => {
+    if (isExportBehavior) {
+      return analysis.ir.apiEndpoints.find(e =>
+        e.name.toLowerCase().includes('export') || e.name.toLowerCase().includes('download'))?.name || 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
+    }
+    return analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes('gdpr') || e.name.toLowerCase().includes('delete') ||
+      e.name.toLowerCase().includes('dsgvo') || e.name.toLowerCase().includes('anon'))?.name || 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT';
+  })();
   const hasEndpoint = !!target.endpoint;
 
   // Find list endpoint for history check
   const listEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("history"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
 
-  // Determine PII field names from behavior or use generic names
-  const piiFields = behavior?.postconditions
-    .filter(p => p.toLowerCase().includes("anon") || p.toLowerCase().includes("gelöscht") || p.toLowerCase().includes("deleted") || p.toLowerCase().includes("null"))
-    .map(p => {
-      const match = p.match(/(\w+)\s*(?:=|is|wird|anonymized|gelöscht|null)/i);
-      return match?.[1] || null;
-    }).filter(Boolean) || [];
+  // Determine PII field names from behavior text and IR resources
+  // 1. From postconditions: "name = [deleted]" → "name"
+  const piiFromPostconds = (behavior?.postconditions || [])
+    .map(p => p.match(/(\w+)\s*(?:=|is|wird|anonymized|gelöscht|null|\[deleted\]|\[gelöscht\])/i)?.[1])
+    .filter((f): f is string => !!f && f.length > 2 && !['the','all','data','null','true','false'].includes(f.toLowerCase()));
+  // 2. From behavior title: "Task descriptions may contain personal data" → "description"
+  // Pattern: capture the field-type word (description, email, phone, name) from the title
+  const titlePiiMatch = (() => {
+    const title = behavior?.title || '';
+    // "X descriptions may contain" → "description"
+    const descMatch = title.match(/\b(description|email|phone|name|address|ssn|dob|birthdate)s?\b/i)?.[1];
+    if (descMatch) return descMatch.toLowerCase();
+    // "X field may contain personal data" → extract field name before 'field'
+    const fieldMatch = title.match(/(\w+)\s+field/i)?.[1];
+    if (fieldMatch && !['the','a','an','this','that'].includes(fieldMatch.toLowerCase())) return fieldMatch.toLowerCase();
+    return null;
+  })();
+  // 3. From IR resources with hasPII: only extract if resource name has 2+ words (e.g. "Task Description" → "description")
+  // Single-word resource names like "Task" or "Workspace" are entity names, NOT field names
+  const piiResourceFields = analysis.ir.resources
+    .filter(r => r.hasPII)
+    .map(r => {
+      // "Task Description" → "description", "Guest Phone" → "phone"
+      const words = r.name.toLowerCase().split(/\s+/);
+      // Only use if multi-word (e.g. "Task Description") — single words are entity names
+      if (words.length < 2) return null;
+      return words[words.length - 1]; // last word is usually the field name
+    })
+    .filter((f): f is string => !!f && f.length > 2 && !['data','export','workspace','task','member'].includes(f));
+  const piiFields = Array.from(new Set([...piiFromPostconds, ...(titlePiiMatch ? [titlePiiMatch.toLowerCase()] : []), ...piiResourceFields]));
+
+  // Detect if this is a hard-delete behavior (permanently deletes) vs soft-delete/anonymize
+  const isHardDelete = (behavior?.title || '').toLowerCase().includes('permanently') ||
+    (behavior?.postconditions || []).some(p => p.toLowerCase().includes('permanently') || p.toLowerCase().includes('all') && p.toLowerCase().includes('deleted'));
 
   // Determine the identifier field used for GDPR deletion
   const idField = behavior?.preconditions.join(" ").match(/by\s+(\w+)/i)?.[1] || "id";
 
+  // For export behaviors: collect output fields from the main resource endpoint (e.g. tasks.create outputFields)
+  // These are the fields that MUST appear in the export
+  const EXPORT_NOISE_FIELDS = new Set(['x-csrf-token', 'workspaceid', 'tenantid', 'id']);
+  const resourceOutputFields: string[] = isExportBehavior
+    ? (() => {
+        // Find the primary resource endpoint (create or update) to get its output fields
+        const resourceEndpoint = analysis.ir.apiEndpoints.find(e =>
+          e.name.toLowerCase().includes('create') || e.name.toLowerCase().includes('update'));
+        const outFields = (resourceEndpoint?.outputFields || []) as string[];
+        return outFields
+          .filter(f => typeof f === 'string' && !EXPORT_NOISE_FIELDS.has(f.toLowerCase()))
+          .slice(0, 5); // Max 5 fields to keep test readable
+      })()
+    : [];
+  // Merge piiFields + resourceOutputFields for export assertions (piiFields first, then resource fields)
+  const exportAssertFields = Array.from(new Set([...piiFields, ...resourceOutputFields]));
+
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation, trpcQuery } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst}${analysis.ir.resources.some(r => r.hasPII) ? ", createTestResource, getGuestByPhone" : ", createTestResource"} } from "../../helpers/factories";
+import { ${tenantConst}, createTestResource } from "../../helpers/factories";
 
 // ${target.id} — DSGVO Art. 17: ${target.description}
 // Risk: CRITICAL
@@ -1979,7 +2315,42 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-test("${target.id}a — PII fields anonymized after GDPR deletion", async ({ request }) => {
+${isExportBehavior ? `
+test("${target.id}a — Export returns all required fields including PII", async ({ request }) => {
+  // Create a resource with data to export
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  // Execute data export
+  const { status, data: exportData } = await trpcQuery(request, "${endpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(status).toBe(200);
+  // Kills: Export endpoint returns error
+
+  // Verify export contains data
+  expect(exportData).toBeDefined();
+  const exportArray = Array.isArray(exportData) ? exportData : [exportData];
+  expect(exportArray.length).toBeGreaterThan(0);
+  // Kills: Export returns empty data
+
+  // Verify required fields are present in export
+  const firstRecord = exportArray[0] as Record<string, unknown>;
+  expect(firstRecord?.id).toBeDefined();
+  // Kills: Export omits record IDs
+${exportAssertFields.length > 0
+  ? exportAssertFields.map(f => `  expect(firstRecord?.${f}).toBeDefined(); // Kills: Export omits ${f} field`).join('\n')
+  : '  // Verify all task fields are present in export (including soft-deleted records)\n  expect(firstRecord?.title).toBeDefined(); // Kills: Export omits title field'}
+});
+
+test("${target.id}b — Export requires admin authorization", async ({ request }) => {
+  // Attempt export without authentication
+  const { status: unauthStatus } = await trpcQuery(request, "${endpoint}",
+    { ${tenantField}: ${tenantConst} });
+  expect([401, 403]).toContain(unauthStatus);
+  // Kills: Allow unauthenticated data export
+});
+` : `
+test("${target.id}a — ${isHardDelete ? 'All records permanently deleted' : 'PII fields anonymized'} after GDPR deletion", async ({ request }) => {
   // Create a resource with PII data
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
@@ -1991,38 +2362,45 @@ test("${target.id}a — PII fields anonymized after GDPR deletion", async ({ req
   expect(status).toBe(200);
   // Kills: ${target.mutationTargets[0]?.description || "GDPR deletion endpoint returns error"}
 
-  // Verify PII is anonymized — check the resource no longer returns PII
+  // Verify deletion result
   const { data: afterDeletion } = await trpcQuery(request, "${listEndpoint}",
     { ${tenantField}: ${tenantConst} }, adminCookie);
-  const deletedResource = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
-  // Resource record should still exist (not hard-deleted) but PII must be anonymized
+${isHardDelete ? `  // Hard-delete: record must be completely gone
+  const deletedRecord = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
+  expect(deletedRecord).toBeUndefined();
+  // Kills: Soft-delete instead of hard-delete on workspace.deleteAll` : `  const deletedResource = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
+  // Soft-delete/anonymize: record still exists but PII must be anonymized
   if (deletedResource) {
-    // Check that PII fields are anonymized — adjust field names to match your schema
 ${piiFields.length > 0
-  ? piiFields.map(f => `    expect(deletedResource?.${f}).not.toMatch(/[a-zA-Z0-9._%+@-]+/); // Kills: Skip ${f} anonymization`).join("\n")
-  : `    // TODO: Add assertions for your specific PII fields (name, email, phone, etc.)
-    // Example: expect(deletedResource?.name).toBe("[deleted]");
-    // Example: expect(deletedResource?.email).toBeNull();`}
-  }
-${target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join("\n")}
+  ? piiFields.map(f => `    // PII field '${f}' must be anonymized or nulled\n    expect(deletedResource?.${f}).toBeNull(); // Kills: Skip ${f} anonymization`).join('\n')
+  : `    // Verify PII fields are anonymized — check fields mentioned in spec
+    expect(deletedResource?.description).toBeNull(); // Kills: Skip description anonymization`}
+  }`}
+${target.mutationTargets.slice(1).map(m => `  // Kills: ${m.description}`).join('\n')}
 });
 
-test("${target.id}b — Resource history preserved after GDPR deletion (only PII anonymized)", async ({ request }) => {
+test("${target.id}b — ${isHardDelete ? 'Hard-delete is irreversible' : 'Record history preserved after GDPR deletion'}", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
 
   await trpcMutation(request, "${endpoint}",
     { ${idField}: resourceId, ${tenantField}: ${tenantConst} }, adminCookie);
 
-  // Record must still exist (not hard-deleted)
+${isHardDelete ? `  // Hard-delete: record must NOT be recoverable
+  const { data: afterHardDelete } = await trpcQuery(request, "${listEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const recovered = (afterHardDelete as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
+  expect(recovered).toBeUndefined();
+  // Kills: Allow recovery of hard-deleted records` : `  // Soft-delete: record must still exist (not hard-deleted)
   const { data: history } = await trpcQuery(request, "${listEndpoint}",
     { ${tenantField}: ${tenantConst} }, adminCookie);
   const record = (history as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(record).toBeDefined();
   // Kills: Hard-delete record instead of anonymizing PII
   expect(record?.id).toBe(resourceId);
-  // Kills: Delete record ID on GDPR deletion
+  // Kills: Delete record ID on GDPR deletion`}
 });
+`}
 `;
 }
 
