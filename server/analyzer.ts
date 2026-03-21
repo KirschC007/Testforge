@@ -80,6 +80,14 @@ export interface AnalysisIR {
   resources: Array<{ name: string; table: string; tenantKey: string; operations: string[]; hasPII: boolean }>;
   apiEndpoints: APIEndpoint[];
   authModel: AuthModel | null;
+  enums: Record<string, string[]>;  // e.g. { status: ["todo","in_progress","done"], priority: ["low","medium","high"] }
+  statusMachine: {
+    states: string[];
+    transitions: [string, string][];
+    forbidden: [string, string][];
+    initialState?: string;
+    terminalStates?: string[];
+  } | null;
 }
 
 export interface AnalysisResult {
@@ -120,6 +128,16 @@ export interface ProofAssertion {
   rationale: string;
 }
 
+export interface FieldConstraint {
+  field: string;          // e.g. "title"
+  type: "string" | "number" | "date" | "array" | "enum";
+  min?: number;           // min length (string/array) or min value (number/date)
+  max?: number;           // max length (string/array) or max value (number/date)
+  pattern?: string;       // regex pattern for string fields
+  enumValues?: string[];  // allowed values for enum fields
+  required?: boolean;
+}
+
 export interface ProofTarget {
   id: string;
   behaviorId: string;
@@ -133,6 +151,7 @@ export interface ProofTarget {
   sideEffects?: string[];  // Postconditions that are DB side-effects
   checkVerdict?: CheckVerdict;
   checkConfidence?: number;
+  constraints?: FieldConstraint[];  // Boundary constraints extracted from spec
 }
 
 export interface RiskModel {
@@ -232,30 +251,64 @@ Return JSON with these exact keys:
 - contradictions: [{ids, description}]
 - tenantModel: {tenantEntity, tenantIdField} or null
 - resources: [{name, table, tenantKey, operations, hasPII}]
-- apiEndpoints: [{name, method, auth, relatedBehaviors, inputFields}]
+- apiEndpoints: [{name, method, auth, relatedBehaviors, inputFields: string[], outputFields: string[]}]
 - authModel: {loginEndpoint, csrfEndpoint, csrfPattern, roles: [{name, envUserVar, envPassVar, defaultUser, defaultPass}]} or null
+- enums: object mapping field names to their allowed string values, e.g. {"status": ["todo","in_progress","done"], "priority": ["low","medium","high"]}
+- statusMachine: {states: string[], transitions: [[from,to],...], forbidden: [[from,to],...], initialState: string, terminalStates: string[]} or null
 - qualityScore: number 0-10
 - specType: string
 
+CRITICAL RULES for apiEndpoints:
+- inputFields MUST be a flat array of strings: ["workspaceId", "title", "status"] — NOT objects
+- Include ALL input parameters visible in the spec, including path params and query params
+- outputFields MUST be a flat array of strings: ["id", "title", "status", "createdAt"]
+
+CRITICAL RULES for enums:
+- Extract EVERY field that has a fixed set of allowed values
+- Use the EXACT values from the spec (e.g. "in_progress" not "inProgress")
+- If a field has numeric values, still include them as strings
+
+CRITICAL RULES for statusMachine:
+- Only populate if the spec describes a state machine or workflow
+- transitions: list ONLY explicitly allowed transitions as [from, to] pairs
+- forbidden: list ONLY explicitly forbidden transitions (e.g. reverse, skip)
+- initialState: the state a new resource starts in
+- terminalStates: states from which no further transitions are allowed
+
 --- FEW-SHOT EXAMPLE ---
-Input: "A booking requires partySize between 1 and 20. Guests with noShowRisk > 80 are blocked. Login: POST /api/trpc/auth.login"
+Input: "Tasks have status: todo | in_progress | review | done. Transitions: todo→in_progress, in_progress→review, review→done. No skipping, no reverse. Tasks have priority: low | medium | high. POST /api/trpc/tasks.create (input: workspaceId, title, priority; output: id, title, status, priority, createdAt). POST /api/trpc/tasks.updateStatus (input: id, workspaceId, status; output: id, status, updatedAt). Login: POST /api/trpc/auth.login"
 
 Output fragment:
 {
   "behaviors": [
     {
       "id": "B-001",
-      "title": "System rejects booking with invalid partySize",
-      "subject": "System", "action": "rejects", "object": "booking",
-      "preconditions": ["partySize is 0, -1, 21, or null"],
-      "postconditions": ["HTTP 400 returned", "booking not created in DB"],
-      "errorCases": ["partySize=0 → 400", "partySize=21 → 400", "partySize=null → 400"],
-      "tags": ["validation", "boundary"], "riskHints": ["boundary"],
-      "chapter": "Bookings",
-      "specAnchor": "A booking requires partySize between 1 and 20"
+      "title": "System rejects todo→done skip-transition",
+      "subject": "System", "action": "rejects", "object": "status update",
+      "preconditions": ["task.status = 'todo'"],
+      "postconditions": ["HTTP 422 returned", "task.status unchanged in DB"],
+      "errorCases": ["todo→done → 422", "todo→review → 422"],
+      "tags": ["state-machine", "validation"], "riskHints": ["state-change"],
+      "chapter": "Tasks",
+      "specAnchor": "No skipping, no reverse"
     }
   ],
-  "apiEndpoints": [{"name": "auth.login", "method": "POST /api/trpc/auth.login", "auth": "public", "relatedBehaviors": []}],
+  "apiEndpoints": [
+    {"name": "tasks.create", "method": "POST /api/trpc/tasks.create", "auth": "requireAuth", "relatedBehaviors": ["B-002"], "inputFields": ["workspaceId", "title", "priority"], "outputFields": ["id", "title", "status", "priority", "createdAt"]},
+    {"name": "tasks.updateStatus", "method": "POST /api/trpc/tasks.updateStatus", "auth": "requireAuth", "relatedBehaviors": ["B-001"], "inputFields": ["id", "workspaceId", "status"], "outputFields": ["id", "status", "updatedAt"]},
+    {"name": "auth.login", "method": "POST /api/trpc/auth.login", "auth": "public", "relatedBehaviors": [], "inputFields": ["username", "password"], "outputFields": ["token"]}
+  ],
+  "enums": {
+    "status": ["todo", "in_progress", "review", "done"],
+    "priority": ["low", "medium", "high"]
+  },
+  "statusMachine": {
+    "states": ["todo", "in_progress", "review", "done"],
+    "transitions": [["todo", "in_progress"], ["in_progress", "review"], ["review", "done"]],
+    "forbidden": [["done", "todo"], ["done", "in_progress"], ["review", "todo"], ["in_progress", "todo"]],
+    "initialState": "todo",
+    "terminalStates": ["done"]
+  },
   "authModel": {"loginEndpoint": "/api/trpc/auth.login", "roles": [{"name": "admin", "envUserVar": "E2E_ADMIN_USER", "envPassVar": "E2E_ADMIN_PASS", "defaultUser": "test-admin", "defaultPass": "TestPass2026x"}]}
 }
 --- END EXAMPLE ---
@@ -296,6 +349,7 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
 
   const emptyChunk: Partial<AnalysisIR> & { qualityScore?: number; specType?: string } = {
     behaviors: [], invariants: [], ambiguities: [], contradictions: [], resources: [], apiEndpoints: [],
+    enums: {}, statusMachine: null,
   };
 
   const results = await Promise.all(
@@ -316,6 +370,7 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
   const merged: AnalysisIR = {
     behaviors: [], invariants: [], ambiguities: [], contradictions: [],
     tenantModel: null, resources: [], apiEndpoints: [], authModel: null,
+    enums: {}, statusMachine: null,
   };
   let totalQuality = 0;
   let specType = "generic";
@@ -331,6 +386,32 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     if (!merged.authModel && r.authModel) merged.authModel = r.authModel;
     if (r.qualityScore) totalQuality += r.qualityScore;
     if (r.specType && r.specType !== "generic") specType = r.specType;
+    // Merge enums: combine values from all chunks, deduplicate
+    if (r.enums && typeof r.enums === "object") {
+      for (const [key, vals] of Object.entries(r.enums)) {
+        if (!Array.isArray(vals)) continue;
+        if (!merged.enums[key]) merged.enums[key] = [];
+        for (const v of vals) {
+          if (!merged.enums[key].includes(v)) merged.enums[key].push(v);
+        }
+      }
+    }
+    // Merge statusMachine: first non-null wins, but merge transitions
+    if (r.statusMachine) {
+      if (!merged.statusMachine) {
+        merged.statusMachine = r.statusMachine as AnalysisIR["statusMachine"];
+      } else {
+        // Merge states
+        for (const s of (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).states || []) {
+          if (!merged.statusMachine!.states.includes(s)) merged.statusMachine!.states.push(s);
+        }
+        // Merge transitions
+        for (const t of (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).transitions || []) {
+          const exists = merged.statusMachine!.transitions.some(x => x[0] === t[0] && x[1] === t[1]);
+          if (!exists) merged.statusMachine!.transitions.push(t);
+        }
+      }
+    }
   }
 
   // Deduplicate by id
@@ -669,6 +750,78 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
   return match?.name;
 }
 
+/**
+ * Goldstandard: Extract structured field constraints from behavior text.
+ * Parses preconditions, errorCases, and postconditions for boundary rules like:
+ * - "title max 200 characters" → {field: "title", type: "string", max: 200}
+ * - "partySize between 1 and 20" → {field: "partySize", type: "number", min: 1, max: 20}
+ * - "dueDate must be in the future" → {field: "dueDate", type: "date", min: 1}
+ * - "status: todo | in_progress | done" → {field: "status", type: "enum", enumValues: [...]}
+ * - "taskIds max 50 items" → {field: "taskIds", type: "array", max: 50}
+ */
+export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldConstraint[] {
+  const constraints: FieldConstraint[] = [];
+  const allText = [
+    behavior.title,
+    ...behavior.preconditions,
+    ...behavior.postconditions,
+    ...behavior.errorCases,
+  ].join(" ");
+
+  // Pattern: "<field> max <N> characters" or "<field> maximum <N> chars"
+  const maxCharPattern = /(\w+)\s+(?:max|maximum)\s+(\d+)\s+(?:characters?|chars?|length)/gi;
+  for (const m of Array.from(allText.matchAll(maxCharPattern))) {
+    constraints.push({ field: m[1], type: "string", max: parseInt(m[2]) });
+  }
+
+  // Pattern: "<field> min <N> characters"
+  const minCharPattern = /(\w+)\s+(?:min|minimum)\s+(\d+)\s+(?:characters?|chars?|length)/gi;
+  for (const m of Array.from(allText.matchAll(minCharPattern))) {
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) existing.min = parseInt(m[2]);
+    else constraints.push({ field: m[1], type: "string", min: parseInt(m[2]) });
+  }
+
+  // Pattern: "<field> between <N> and <M>" or "<field> from <N> to <M>"
+  const betweenPattern = /(\w+)\s+(?:between|from)\s+(\d+)\s+(?:and|to)\s+(\d+)/gi;
+  for (const m of Array.from(allText.matchAll(betweenPattern))) {
+    const existing = constraints.find(c => c.field === m[1]);
+    if (existing) { existing.min = parseInt(m[2]); existing.max = parseInt(m[3]); }
+    else constraints.push({ field: m[1], type: "number", min: parseInt(m[2]), max: parseInt(m[3]) });
+  }
+
+  // Pattern: "<field> max <N> items" or "<field> maximum <N> entries"
+  const maxItemsPattern = /(\w+)\s+(?:max|maximum)\s+(\d+)\s+(?:items?|entries?|elements?|ids?)/gi;
+  for (const m of Array.from(allText.matchAll(maxItemsPattern))) {
+    constraints.push({ field: m[1], type: "array", max: parseInt(m[2]) });
+  }
+
+  // Pattern: "<field> must be in the future" or "<field> must be a future date"
+  const futureDatePattern = /(\w*[Dd]ate\w*|\w*[Dd]ue\w*)\s+must\s+be\s+(?:in\s+the\s+)?future/gi;
+  for (const m of Array.from(allText.matchAll(futureDatePattern))) {
+    if (!constraints.find(c => c.field === m[1])) {
+      constraints.push({ field: m[1], type: "date", min: 1 }); // min:1 means "tomorrow"
+    }
+  }
+
+  // Pattern: "<field> must be in the past" or "past date"
+  const pastDatePattern = /(\w*[Dd]ate\w*)\s+must\s+be\s+(?:in\s+the\s+)?past/gi;
+  for (const m of Array.from(allText.matchAll(pastDatePattern))) {
+    if (!constraints.find(c => c.field === m[1])) {
+      constraints.push({ field: m[1], type: "date", max: -1 }); // max:-1 means "yesterday"
+    }
+  }
+
+  // Merge with enums from IR
+  for (const [field, vals] of Object.entries(ir.enums || {})) {
+    if (!constraints.find(c => c.field === field)) {
+      constraints.push({ field, type: "enum", enumValues: vals });
+    }
+  }
+
+  return constraints;
+}
+
 function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisResult): ProofTarget | null {
   const b = sb.behavior;
   const base = { behaviorId: b.id, proofType: pt, riskLevel: sb.riskLevel };
@@ -759,25 +912,35 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
 
   if (pt === "boundary") {
     // Extract boundary values from errorCases
-    const boundaries = b.errorCases.filter(ec => ec.includes("→") || ec.includes("="));
+    const boundaries = b.errorCases.filter(ec => ec.includes("→") || ec.includes("=") || ec.includes("→"));
+    // Extract structured constraints from behavior text + IR enums
+    const constraints = extractConstraints(b, analysis.ir);
     return {
       ...base,
       id: `PROOF-${b.id}-BOUND`,
       description: b.title,
       preconditions: b.preconditions,
-      assertions: boundaries.map((ec, i) => ({
-        type: "http_status" as const,
-        target: "response",
-        operator: "in" as const,
-        value: ec.includes("allowed") ? [200] : [400, 422],
-        rationale: ec,
-      })),
+      assertions: boundaries.length > 0
+        ? boundaries.map((ec) => ({
+            type: "http_status" as const,
+            target: "response",
+            operator: "in" as const,
+            value: ec.includes("allowed") ? [200] : [400, 422],
+            rationale: ec,
+          }))
+        : [
+            { type: "http_status" as const, target: "response", operator: "in" as const, value: [400, 422], rationale: "Boundary violation must be rejected" },
+          ],
       mutationTargets: [
         { description: `Change >= to > in boundary validation (off-by-one)`, expectedKill: true },
         { description: `Remove null check`, expectedKill: true },
+        ...constraints.filter(c => c.max !== undefined).map(c =>
+          ({ description: `Remove max ${c.max} constraint on ${c.field}`, expectedKill: true })
+        ),
       ],
       endpoint,
       sideEffects,
+      constraints,
     };
   }
 
@@ -1194,6 +1357,61 @@ ${roles.map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n  
 
 // ─── Schicht 3: Proof Generator ───────────────────────────────────────────────
 
+/**
+ * Goldstandard: Check if generated TypeScript code is syntactically valid.
+ * Uses a simple bracket/paren balance check + known bad patterns.
+ * Returns error message if invalid, null if OK.
+ */
+function checkTypeScriptSyntax(code: string): string | null {
+  // Check bracket balance
+  let braces = 0, parens = 0, brackets = 0;
+  let inString = false;
+  let stringChar = '';
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    const prev = i > 0 ? code[i - 1] : '';
+    if (inString) {
+      if (c === stringChar && prev !== '\\') inString = false;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { inString = true; stringChar = c; continue; }
+    if (c === '{') braces++;
+    else if (c === '}') braces--;
+    else if (c === '(') parens++;
+    else if (c === ')') parens--;
+    else if (c === '[') brackets++;
+    else if (c === ']') brackets--;
+    if (braces < 0 || parens < 0 || brackets < 0) return `Unmatched closing bracket at position ${i}`;
+  }
+  if (braces !== 0) return `Unbalanced braces: ${braces > 0 ? 'unclosed {' : 'extra }'}`;
+  if (parens !== 0) return `Unbalanced parentheses: ${parens > 0 ? 'unclosed (' : 'extra )'}`;
+  if (brackets !== 0) return `Unbalanced brackets: ${brackets > 0 ? 'unclosed [' : 'extra ]'}`;
+  // Check for obvious template artifacts
+  if (code.includes('undefined}') || code.includes('null}') && code.includes('${')) return 'Unresolved template variable';
+  if (code.includes('TODO_REPLACE_WITH_YOUR_ENDPOINT') && !code.includes('// ⚠️')) return null; // TODOs are allowed
+  return null;
+}
+
+/**
+ * Generate a valid TODO stub test when a template crashes or produces invalid code.
+ */
+function generateTODOStub(target: ProofTarget, reason: string): string {
+  return `import { test, expect } from "@playwright/test";
+
+// ${target.id} — ${target.description}
+// ⚠️  TODO: This test could not be generated automatically.
+// Reason: ${reason.replace(/\n/g, ' ').slice(0, 200)}
+// Please implement this test manually.
+// Risk: ${target.riskLevel}
+// Proof type: ${target.proofType}
+
+test.skip("${target.id} — TODO: Implement manually", async () => {
+  // TODO: Implement ${target.description}
+  expect(true).toBe(true);
+});
+`;
+}
+
 function getFilename(pt: ProofType): string {
   const map: Record<ProofType, string> = {
     idor: "tests/security/idor.spec.ts",
@@ -1429,33 +1647,41 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const getEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
 
-  // Bug 2 Fix: Extract FROM → TO from multiple sources with robust Unicode-arrow regex
-  // Try title first (e.g. "todo → in_progress" or "todo -> in_progress")
+  // Goldstandard: Use statusMachine from IR if available, otherwise fall back to text extraction
+  const sm = analysis.ir.statusMachine;
   const arrowPattern = /([a-z][a-z_0-9]*)\s*(?:→|->|to\s+)\s*([a-z][a-z_0-9]*)/i;
   const titleMatch = behavior?.title.match(arrowPattern);
-  // Then try preconditions (e.g. "task.status = todo")
   const precondMatch = !titleMatch && behavior?.preconditions.join(" ").match(/status[\s=:"']+([a-z][a-z_0-9]*)/i);
-  // Then try postconditions (e.g. "status changes to in_progress")
   const postcondMatch = !titleMatch && !precondMatch && behavior?.postconditions.join(" ").match(arrowPattern);
-  // Then try errorCases (e.g. "done → todo: rejected")
   const errorMatch = !titleMatch && !precondMatch && !postcondMatch && behavior?.errorCases.join(" ").match(arrowPattern);
 
-  const fromStatus = (titleMatch?.[1] || (precondMatch && precondMatch[1]) || (postcondMatch && postcondMatch[1]) || (errorMatch && errorMatch[1]) || "pending") as string;
-  const toStatus = (titleMatch?.[2] || (postcondMatch && postcondMatch[2]) || (errorMatch && errorMatch[2]) || "completed") as string;
+  // If statusMachine is known from IR, use the first transition as default
+  const firstTransition = sm?.transitions?.[0];
+  const fromStatus = (titleMatch?.[1] || (precondMatch && precondMatch[1]) || (postcondMatch && postcondMatch[1]) || (errorMatch && errorMatch[1]) || firstTransition?.[0] || "pending") as string;
+  const toStatus = (titleMatch?.[2] || (postcondMatch && postcondMatch[2]) || (errorMatch && errorMatch[2]) || firstTransition?.[1] || "completed") as string;
 
-  // Try to extract all valid statuses from spec to generate a skip-transition test
-  const allStatusText = [
-    ...(behavior?.preconditions || []),
-    ...(behavior?.postconditions || []),
-    ...(behavior?.errorCases || []),
-    behavior?.title || "",
-  ].join(" ");
-  const statusMatchAll = allStatusText.match(/["']([a-z][a-z_0-9]*)["']/g) || [];
-  const statusValuesRaw = statusMatchAll
-    .map(m => m.replace(/["']/g, ""))
-    .filter(s => s !== fromStatus && s !== toStatus && s.length > 2 && s !== "null" && s !== "the");
-  const statusValuesUniq = statusValuesRaw.filter((s, i) => statusValuesRaw.indexOf(s) === i);
-  const skipStatus = statusValuesUniq[0]; // A status that should NOT be reachable directly from fromStatus
+  // Find a skip-target: a state that is NOT directly reachable from fromStatus
+  // Goldstandard: use statusMachine.forbidden or statusMachine.states to find skip candidates
+  let skipStatus: string | undefined;
+  if (sm) {
+    // Find a state that is not directly reachable from fromStatus (not in transitions from fromStatus)
+    const directlyReachable = new Set(sm.transitions.filter(t => t[0] === fromStatus).map(t => t[1]));
+    skipStatus = sm.states.find(s => s !== fromStatus && s !== toStatus && !directlyReachable.has(s));
+  }
+  if (!skipStatus) {
+    // Fallback: extract from behavior text
+    const allStatusText = [
+      ...(behavior?.preconditions || []),
+      ...(behavior?.postconditions || []),
+      ...(behavior?.errorCases || []),
+      behavior?.title || "",
+    ].join(" ");
+    const statusMatchAll = allStatusText.match(/["']([a-z][a-z_0-9]*)["']/g) || [];
+    const statusValuesRaw = statusMatchAll
+      .map(m => m.replace(/["']/g, ""))
+      .filter(s => s !== fromStatus && s !== toStatus && s.length > 2 && s !== "null" && s !== "the");
+    skipStatus = statusValuesRaw.filter((s, i) => statusValuesRaw.indexOf(s) === i)[0];
+  }
 
   // Detect side-effects from sideEffects array
   const hasCounter = target.sideEffects?.some(se => se.toLowerCase().includes("count"));
@@ -1661,32 +1887,35 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
   const hasEndpoint = !!target.endpoint;
 
-  // Extract field name from behavior title or assertions
-  const fieldFromTitle = behavior?.title.match(/(\w+)\s*(?:boundary|limit|range|between|muss|must|between|zwischen)/i)?.[1];
+  // Goldstandard: Use constraints from ProofTarget (extracted by extractConstraints in Layer 2)
+  // Pick the most relevant constraint: prefer non-enum, non-id fields
+  const primaryConstraint = target.constraints?.find(c => c.type !== "enum" && !c.field.toLowerCase().includes("id"))
+    || target.constraints?.[0];
+
+  // Extract field name: prefer from constraint, then from behavior text
+  const fieldFromConstraint = primaryConstraint?.field;
+  const fieldFromTitle = behavior?.title.match(/(\w+)\s*(?:boundary|limit|range|between|muss|must|zwischen)/i)?.[1];
   const fieldFromError = behavior?.errorCases[0]?.match(/^(\w+)\s*[=<>]/)?.[1];
   const fieldFromAssertion = target.assertions.find(a => a.type === "field_value")?.target.split(".").pop();
-  const fieldName = fieldFromTitle || fieldFromError || fieldFromAssertion || "value";
+  const fieldName = fieldFromConstraint || fieldFromTitle || fieldFromError || fieldFromAssertion || "value";
 
-  // Extract min/max from errorCases and assertions
+  // Use constraint values if available, otherwise fall back to text extraction
   const allText = [...(behavior?.errorCases || []), ...(behavior?.postconditions || []), target.description].join(" ");
   const minMatch = allText.match(/(\d+)\s*(?:minimum|min|\(min|≥|>=|mindestens)/i);
   const maxMatch = allText.match(/(\d+)\s*(?:maximum|max|\(max|≤|<=|maximal)/i);
-  // Also check assertions for boundary values
   const gtAssertions = target.assertions.filter(a => a.operator === "gt" || a.operator === "lte");
-  const min = minMatch ? parseInt(minMatch[1]) : (gtAssertions[0] ? Number(gtAssertions[0].value) + 1 : 1);
-  const max = maxMatch ? parseInt(maxMatch[1]) : (gtAssertions[1] ? Number(gtAssertions[1].value) : 100);
+  const min = primaryConstraint?.min ?? (minMatch ? parseInt(minMatch[1]) : (gtAssertions[0] ? Number(gtAssertions[0].value) + 1 : 1));
+  const max = primaryConstraint?.max ?? (maxMatch ? parseInt(maxMatch[1]) : (gtAssertions[1] ? Number(gtAssertions[1].value) : 100));
+
+  // Determine type from constraint or text
+  const isStringField = primaryConstraint?.type === "string" || allText.toLowerCase().includes("length") || allText.toLowerCase().includes("char");
+  const isDateField = primaryConstraint?.type === "date" || allText.toLowerCase().includes("date") || allText.toLowerCase().includes("future");
+  const isArrayField = primaryConstraint?.type === "array" || allText.toLowerCase().includes("array") || allText.toLowerCase().includes("items");
 
   // Build payload using only fields known from IR
-  // Bug 1 Fix: inject the boundary value correctly; other fields get real defaults
   const createEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
-
-  // Determine boundary type from field name and behavior text
-  const allText2 = [...(behavior?.errorCases || []), ...(behavior?.postconditions || []), target.description, behavior?.title || ""].join(" ").toLowerCase();
-  const isStringField = allText2.includes("length") || allText2.includes("zeichen") || allText2.includes("char") || allText2.includes("string");
-  const isDateField = allText2.includes("date") || allText2.includes("datum") || allText2.includes("zukunft") || allText2.includes("future");
-  const isArrayField = allText2.includes("array") || allText2.includes("list") || allText2.includes("items");
 
   // Build boundary values for each test case
   function boundaryValue(bound: "min" | "max" | "below_min" | "above_max" | "null"): string {
@@ -1723,8 +1952,16 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     const fl = f.toLowerCase();
     if (fl.includes("date") || fl.includes("datum")) return `    ${f}: tomorrowStr(),`;
     if (fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) return `    ${f}: ${tenantConst},`;
-    if (fl.includes("priority")) return `    ${f}: "medium",`;
-    if (fl.includes("status")) return `    ${f}: "active",`;
+    if (fl.includes("priority")) {
+      const priorityVals = analysis.ir.enums?.priority || analysis.ir.enums?.Priority;
+      const firstPriority = priorityVals?.[0] || "medium";
+      return `    ${f}: "${firstPriority}",`;
+    }
+    if (fl.includes("status")) {
+      const statusVals = analysis.ir.enums?.status || analysis.ir.enums?.Status;
+      const initialStatus = analysis.ir.statusMachine?.initialState || statusVals?.[0] || "active";
+      return `    ${f}: "${initialStatus}",`;
+    }
     if (fl.includes("email")) return `    ${f}: "test@example.com",`;
     if (fl.includes("phone")) return `    ${f}: "+49123456789",`;
     if (fl.includes("name") || fl.includes("title") || fl.includes("description")) return `    ${f}: "Test ${f}",`;
@@ -2146,8 +2383,21 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
   // Template tests (instant)
   const templateProofs: RawProof[] = templateTargets.map(target => {
     const generator = templateMap[target.proofType];
-    const code = generator(target, analysis);
+    let code: string;
+    try {
+      code = generator(target, analysis);
+    } catch (err) {
+      console.warn(`[TestForge] Template generator crashed for ${target.id}:`, err);
+      // Replace with a TODO stub so the file is still valid TypeScript
+      code = generateTODOStub(target, String(err));
+    }
     if (!code) return null;
+    // Goldstandard: TypeScript syntax check — discard tests with syntax errors
+    const syntaxError = checkTypeScriptSyntax(code);
+    if (syntaxError) {
+      console.warn(`[TestForge] Syntax error in ${target.id}: ${syntaxError}`);
+      code = generateTODOStub(target, `Syntax error: ${syntaxError}`);
+    }
     return {
       id: target.id,
       behaviorId: target.behaviorId,

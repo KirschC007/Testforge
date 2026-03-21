@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock, AlertCircle, ChevronDown, ChevronUp, Ban } from "lucide-react";
+import { Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock, AlertCircle, ChevronDown, ChevronUp, Ban, RotateCcw } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
 
@@ -124,6 +124,9 @@ export default function AnalysisDetail() {
   const cancelMutation = trpc.analyses.cancel.useMutation({
     onSuccess: () => utils.analyses.getById.invalidate({ id: parseInt(id || "0") }),
   });
+  const retryMutation = trpc.analyses.retry.useMutation({
+    onSuccess: () => utils.analyses.getById.invalidate({ id: parseInt(id || "0") }),
+  });
 
   const { data: analysis, isLoading } = trpc.analyses.getById.useQuery(
     { id: parseInt(id || "0") },
@@ -231,9 +234,21 @@ export default function AnalysisDetail() {
         {analysis.status === "cancelled" && (
           <div className="bg-muted/50 border border-border rounded-lg p-5 flex gap-3 max-w-xl">
             <Ban className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <div className="font-medium text-sm mb-1">Analysis abgebrochen</div>
-              <div className="text-sm text-muted-foreground">Diese Analyse wurde manuell gestoppt.</div>
+              <div className="text-sm text-muted-foreground mb-3">Diese Analyse wurde manuell gestoppt.</div>
+              {(analysis as any).specFileKey && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => retryMutation.mutate({ id: parseInt(id || "0") })}
+                  disabled={retryMutation.isPending}
+                >
+                  {retryMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Nochmal versuchen
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -242,9 +257,21 @@ export default function AnalysisDetail() {
         {analysis.status === "failed" && (
           <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-5 flex gap-3 max-w-xl">
             <XCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <div className="font-medium text-sm mb-1">Analysis Failed</div>
-              <div className="text-sm text-muted-foreground font-mono">{analysis.errorMessage || "Unknown error"}</div>
+              <div className="text-sm text-muted-foreground font-mono mb-3">{analysis.errorMessage || "Unknown error"}</div>
+              {(analysis as any).specFileKey && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => retryMutation.mutate({ id: parseInt(id || "0") })}
+                  disabled={retryMutation.isPending}
+                >
+                  {retryMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Nochmal versuchen
+                </Button>
+              )}
             </div>
           </div>
         )}

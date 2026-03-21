@@ -21,7 +21,24 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
 
+  // Goldstandard: 8-minute job timeout — prevents permanently stuck jobs after server restarts
+  const JOB_TIMEOUT_MS = 8 * 60 * 1000;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
   setImmediate(async () => {
+    // Set timeout: if job doesn't complete in 8 minutes, mark as failed
+    timeoutHandle = setTimeout(async () => {
+      if (runningJobs.has(analysisId)) {
+        console.error(`[Job ${analysisId}] Timeout after 8 minutes — marking as failed`);
+        cancelledJobs.add(analysisId); // Signal the job to stop at next checkpoint
+        await updateAnalysis(analysisId, {
+          status: "failed",
+          errorMessage: "Job timed out after 8 minutes. Please try again.",
+        }).catch(() => {});
+        runningJobs.delete(analysisId);
+      }
+    }, JOB_TIMEOUT_MS);
+
     try {
       await updateAnalysis(analysisId, { status: "running" });
       // Fetch spec text from S3
@@ -112,6 +129,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         errorMessage: isCancelled ? "Cancelled by user" : (err?.message || "Unknown error"),
       });
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       runningJobs.delete(analysisId);
       cancelledJobs.delete(analysisId);
     }
@@ -220,6 +238,40 @@ export const appRouter = router({
         if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         if (analysis.status !== "completed") throw new TRPCError({ code: "BAD_REQUEST", message: "Analysis not completed yet" });
         return { url: analysis.outputZipUrl };
+      }),
+
+    // Retry a failed or cancelled analysis with the same spec
+    retry: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.id);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!['failed', 'cancelled'].includes(analysis.status)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only failed or cancelled analyses can be retried" });
+        }
+        if (!analysis.specFileKey) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No spec file found for this analysis" });
+        }
+        // Reset status and clear previous results
+        await updateAnalysis(input.id, {
+          status: "pending",
+          errorMessage: null,
+          progressLayer: null,
+          progressMessage: null,
+          resultJson: null,
+          outputZipUrl: null,
+          outputZipKey: null,
+          verdictScore: null,
+          coveragePercent: null,
+          validatedProofCount: null,
+          discardedProofCount: null,
+          behaviorCount: null,
+          completedAt: null,
+        } as any);
+        // Restart the job
+        startAnalysisJobFromKey(input.id, analysis.specFileKey, analysis.projectName);
+        return { id: input.id };
       }),
 
     // Cancel a running or pending analysis

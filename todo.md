@@ -99,3 +99,11 @@
 - [x] Bug 1: Boundary-Template — boundaryValue(type) Funktion mit Typ-Erkennung (string/date/array/int), smart field defaults
 - [x] Bug 2: Status-Transition — Unicode-Pfeil-Regex, multi-source Extraktion, Skip-Transition-Test (c)
 - [x] Factories-Template — yesterdayStr() hinzugefügt, createTestResource mit Smart-Defaults (tomorrowStr/email/phone/title/status/priority)
+
+## Phase 12: Goldstandard
+- [x] Layer 1 Prompt: strukturiertes JSON-Schema mit Pflichtfeldern endpoints.inputFields, enums{}, statusMachine{}
+- [x] Layer 2: Constraint-Extraktor — min/max/pattern aus Assertions in ProofTarget.constraints
+- [x] Templates: Enum-Werte aus IR.enums, echte Status-Werte aus IR.statusMachine, echte Boundary-Constraints
+- [x] TypeScript-Syntax-Check nach Layer 3: kaputte Tests → TODO-Stub (checkTypeScriptSyntax + generateTODOStub)
+- [x] Retry-Button auf failed/cancelled Analysen (Detail-Seite, analyses.retry tRPC)
+- [x] Job-Timeout: 8 Minuten → automatisch auf failed setzen (cancelledJobs + setTimeout)
