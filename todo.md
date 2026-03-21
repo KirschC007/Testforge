@@ -66,3 +66,19 @@
 - [x] Live-Progress: Frontend zeigt echten Layer-Fortschritt statt Zeit-Schätzung
 - [x] Live-Progress: Progress-Message-Banner im ProgressSteps-Component
 - [x] Tests: alle 22 Unit-Tests grün
+
+## Phase 8: Template-Bug-Fix
+- [x] BUG: Templates verwenden hardcodierte hey-listen Fallbacks (reservations.create, partySize, restaurantId) wenn Layer 1 keine Endpoints extrahiert — Tests testen dann den falschen Endpoint
+- [x] Fix: Alle Templates prüfen ob Endpoint aus IR bekannt ist; wenn nicht → TODO-Kommentar statt fake Code
+- [x] Fix: Boundary-Template soll echte Felder aus IR-Behaviors nutzen statt partySize-Hardcode
+- [x] Fix: CSRF-Template soll echten Endpoint aus IR nutzen statt reservations.create-Fallback
+- [x] Fix: IDOR-Template restaurantId → tenantId Fallback, loginAndGetCookie import korrekt
+- [x] Fix: Status-Transition-Template restaurantId → tenantId Fallback, trpcQuery statt getResource
+- [x] Fix: Risk-Scoring-Template vollständig aus IR-Daten generiert
+- [x] Fix: LLM-Test-Generator restaurantId/restaurant → tenantId/tenant Fallbacks
+- [x] Fix: factories.ts generiert Felder aus IR statt hardcoded guestName/partySize/date/time
+- [x] Fix: factories.ts Import tomorrowStr/randomPhone entfernt (nicht mehr benötigt)
+- [x] Fix: getGuestByPhone → getResourceByIdentifier (generisch, nicht hey-listen spezifisch)
+- [x] Fix: Few-Shot Example im LLM-Prompt nutzt items.create statt reservations.create
+- [x] Fix: README.md env vars generisch (TEST_TENANT_ID statt RESTAURANT_ID)
+- [x] Fix: Job-Stuck-Bug — ZIP-Archivierung nach Layer 5 hängt (archive.pipe + PassThrough + finish event)

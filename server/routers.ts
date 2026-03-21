@@ -46,12 +46,15 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
 
       // Build ZIP with all test files + report
       const archiver = await import("archiver");
-      const { Readable } = await import("stream");
+      const { PassThrough } = await import("stream");
 
       const chunks: Buffer[] = [];
       const archive = archiver.default("zip", { zlib: { level: 9 } });
+      const passThrough = new PassThrough();
 
-      archive.on("data", (chunk: Buffer) => chunks.push(chunk));
+      // Pipe archive output into passthrough so we can collect chunks
+      archive.pipe(passThrough);
+      passThrough.on("data", (chunk: Buffer) => chunks.push(chunk));
 
       // Add test files
       for (const tf of result.testFiles) {
@@ -62,8 +65,15 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       // Add README
       archive.append(buildReadme(result), { name: "README.md" });
 
-      await archive.finalize();
-      await new Promise<void>((resolve) => archive.on("end", resolve));
+      // Wait for both finalize and stream finish
+      await Promise.all([
+        archive.finalize(),
+        new Promise<void>((resolve, reject) => {
+          passThrough.on("finish", resolve);
+          passThrough.on("error", reject);
+          archive.on("error", reject);
+        }),
+      ]);
 
       const zipBuffer = Buffer.concat(chunks);
       const zipKey = `analyses/${analysisId}/testforge-output.zip`;
@@ -123,16 +133,14 @@ Copy the test files into your project and configure \`playwright.config.ts\`.
 
 \`\`\`env
 BASE_URL=http://localhost:3000
-TENANT_A_ID=1
-TENANT_A_USER=admin@your-tenant.com
-TENANT_A_PASS=yourpassword
-TENANT_B_ID=2
-TENANT_B_USER=admin@other-tenant.com
-TENANT_B_PASS=otherpassword
-RESTAURANT_ID=1
-ADMIN_USER=admin@your-system.com
-ADMIN_PASS=yourpassword
+TEST_TENANT_ID=1
+TEST_TENANT_B_ID=2
+E2E_ADMIN_USER=admin@your-tenant.com
+E2E_ADMIN_PASS=yourpassword
+E2E_TENANT_B_USER=admin@other-tenant.com
+E2E_TENANT_B_PASS=otherpassword
 CRON_SECRET=your-cron-secret
+DEBUG_API_TOKEN=your-debug-token
 \`\`\`
 
 ## Verdict

@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, specKey, specFileName, projectName FROM analyses WHERE id = 30002;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT id, specKey, specFileName, projectName FROM analyses WHERE id = 30002;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'speckey' in 'field list'"
+  ]
+}

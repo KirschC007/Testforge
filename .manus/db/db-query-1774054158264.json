@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, outputZipUrl, outputZipKey, status FROM analyses WHERE projectName = 'retz' ORDER BY id DESC LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT id, outputZipUrl, outputZipKey, status FROM analyses WHERE projectName = 'retz' ORDER BY id DESC LIMIT 1;",
+  "rows": [
+    {
+      "id": "30002",
+      "outputZipUrl": "NULL",
+      "outputZipKey": "NULL",
+      "status": "running"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\toutputZipUrl\toutputZipKey\tstatus\n30002\tNULL\tNULL\trunning\n",
+  "stderr": "",
+  "execution_time_ms": 186
+}

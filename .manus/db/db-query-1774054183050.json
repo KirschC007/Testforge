@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, status, progressLayer, progressMessage, JSON_LENGTH(resultJson) as hasResult FROM analyses WHERE id = 30002;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT id, status, progressLayer, progressMessage, JSON_LENGTH(resultJson) as hasResult FROM analyses WHERE id = 30002;",
+  "rows": [
+    {
+      "id": "30002",
+      "status": "running",
+      "progressLayer": "5",
+      "progressMessage": "Layer 5 fertig: 19 validierte Tests, 0 verworfen",
+      "hasResult": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\tprogressLayer\tprogressMessage\thasResult\n30002\trunning\t5\tLayer 5 fertig: 19 validierte Tests, 0 verworfen\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

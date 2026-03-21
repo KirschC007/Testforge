@@ -1,0 +1,15 @@
+{
+  "query": "SELECT specFileKey, specFileUrl, specFileName FROM analyses WHERE id = 30002;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT specFileKey, specFileUrl, specFileName FROM analyses WHERE id = 30002;",
+  "rows": [
+    {
+      "specFileKey": "NULL",
+      "specFileUrl": "NULL",
+      "specFileName": "testforge-level5-spec.md"
+    }
+  ],
+  "messages": [],
+  "stdout": "specFileKey\tspecFileUrl\tspecFileName\nNULL\tNULL\ttestforge-level5-spec.md\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}

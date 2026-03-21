@@ -1,0 +1,22 @@
+{
+  "query": "SELECT layer2Json->'$.proofTargets[0].behaviorId' as b0, layer2Json->'$.proofTargets[0].proofType' as t0, layer2Json->'$.proofTargets[1].behaviorId' as b1, layer2Json->'$.proofTargets[1].proofType' as t1, layer2Json->'$.proofTargets[2].behaviorId' as b2, layer2Json->'$.proofTargets[2].proofType' as t2, layer2Json->'$.proofTargets[3].behaviorId' as b3, layer2Json->'$.proofTargets[3].proofType' as t3, layer2Json->'$.proofTargets[4].behaviorId' as b4, layer2Json->'$.proofTargets[4].proofType' as t4 FROM analyses WHERE id = 30002;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT layer2Json->'$.proofTargets[0].behaviorId' as b0, layer2Json->'$.proofTargets[0].proofType' as t0, layer2Json->'$.proofTargets[1].behaviorId' as b1, layer2Json->'$.proofTargets[1].proofType' as t1, layer2Json->'$.proofTargets[2].behaviorId' as b2, layer2Json->'$.proofTargets[2].proofType' as t2, layer2Json->'$.proofTargets[3].behaviorId' as b3, layer2Json->'$.proofTargets[3].proofType' as t3, layer2Json->'$.proofTargets[4].behaviorId' as b4, layer2Json->'$.proofTargets[4].proofType' as t4 FROM analyses WHERE id = 30002;",
+  "rows": [
+    {
+      "b0": "\"B-004\"",
+      "t0": "\"csrf\"",
+      "b1": "\"B-004\"",
+      "t1": "\"boundary\"",
+      "b2": "\"B-006\"",
+      "t2": "\"csrf\"",
+      "b3": "\"B-010\"",
+      "t3": "\"csrf\"",
+      "b4": "\"B-016\"",
+      "t4": "\"idor\""
+    }
+  ],
+  "messages": [],
+  "stdout": "b0\tt0\tb1\tt1\tb2\tt2\tb3\tt3\tb4\tt4\n\"B-004\"\t\"csrf\"\t\"B-004\"\t\"boundary\"\t\"B-006\"\t\"csrf\"\t\"B-010\"\t\"csrf\"\t\"B-016\"\t\"idor\"\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}

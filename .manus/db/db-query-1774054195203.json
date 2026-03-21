@@ -1,0 +1,14 @@
+{
+  "query": "SELECT JSON_LENGTH(layer2Json->'$.proofTargets') as proofTargetCount, JSON_LENGTH(layer2Json->'$.behaviors') as behaviorCount FROM analyses WHERE id = 30002;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT JSON_LENGTH(layer2Json->'$.proofTargets') as proofTargetCount, JSON_LENGTH(layer2Json->'$.behaviors') as behaviorCount FROM analyses WHERE id = 30002;",
+  "rows": [
+    {
+      "proofTargetCount": "19",
+      "behaviorCount": "58"
+    }
+  ],
+  "messages": [],
+  "stdout": "proofTargetCount\tbehaviorCount\n19\t58\n",
+  "stderr": "",
+  "execution_time_ms": 207
+}
