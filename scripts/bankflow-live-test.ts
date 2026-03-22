@@ -9,6 +9,7 @@ import {
   generateHelpers,
   generateReport,
   assessSpecHealth,
+  mergeProofsToFile,
   type AnalysisResult,
   type AnalysisIR,
   type Behavior,
@@ -263,10 +264,16 @@ async function runBankFlowTest() {
   if (fs.existsSync(outDir)) fs.rmSync(outDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  for (const proof of rawProofs) {
-    const filePath = path.join(outDir, proof.filename);
+  // Build merged testFiles using mergeProofsToFile (same logic as runAnalysisJob)
+  const fileMap = new Map<string, typeof suite.proofs>();
+  for (const proof of suite.proofs) {
+    if (!fileMap.has(proof.filename)) fileMap.set(proof.filename, []);
+    fileMap.get(proof.filename)!.push(proof);
+  }
+  for (const [filename, proofs] of fileMap) {
+    const filePath = path.join(outDir, filename);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, proof.code || "");
+    fs.writeFileSync(filePath, mergeProofsToFile(proofs));
   }
 
   for (const [filename, content] of Object.entries(helpers)) {

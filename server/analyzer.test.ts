@@ -998,3 +998,188 @@ describe("assessSpecHealth — grade thresholds", () => {
     expect(health.summary).toContain("Excellent");
   });
 });
+
+// ─── Phase 30: Fix Regression Tests ─────────────────────────────────────────
+
+import {
+  generateHelpers,
+  generateProofs,
+} from "./analyzer";
+
+describe("Fix 1: factories.ts — no duplicate tenantField in payload", () => {
+  function makeBankFlowIR(): AnalysisIR {
+    return {
+      behaviors: [
+        { id: "B001", title: "accounts.create", subject: "bank_admin", action: "create", object: "account", tags: ["idor"], riskHints: ["403"], chapter: "Accounts", preconditions: [], postconditions: [], errorCases: [] },
+      ],
+      invariants: [],
+      ambiguities: [],
+      contradictions: [],
+      tenantModel: { tenantEntity: "bank", tenantIdField: "bankId" },
+      resources: [{ name: "account", table: "accounts", tenantKey: "bankId", operations: ["create", "read", "list"], hasPII: false }],
+      apiEndpoints: [{
+        name: "accounts.create",
+        method: "POST",
+        auth: "bank_admin",
+        relatedBehaviors: ["B001"],
+        inputFields: [
+          { name: "bankId", type: "number", required: true, isTenantKey: true } as EndpointField,
+          { name: "customerId", type: "number", required: true } as EndpointField,
+          { name: "accountType", type: "enum", required: true, enumValues: ["checking", "savings"] } as EndpointField,
+        ],
+        outputFields: ["id", "bankId"],
+      }],
+      authModel: { loginEndpoint: "/api/trpc/auth.login", csrfEndpoint: "/api/auth/csrf", roles: [{ name: "bank_admin", envUserVar: "E2E_USER", envPassVar: "E2E_PASS", defaultUser: "admin", defaultPass: "pass" }] },
+      enums: {},
+    };
+  }
+
+  it("CreateTestResourceOpts interface contains bankId exactly once", () => {
+    const ir = makeBankFlowIR();
+    const helpers = generateHelpers({ ir, qualityScore: 9, specType: "api-spec" });
+    const factories = (helpers as Record<string, string>)["helpers/factories.ts"] || "";
+    const interfaceMatch = factories.match(/interface CreateTestResourceOpts \{[^}]+\}/s);
+    expect(interfaceMatch).toBeTruthy();
+    const bankIdCount = (interfaceMatch![0].match(/bankId\?/g) || []).length;
+    expect(bankIdCount).toBe(1);
+  });
+
+  it("createTestResource payload does not have duplicate bankId lines", () => {
+    const ir = makeBankFlowIR();
+    const helpers = generateHelpers({ ir, qualityScore: 9, specType: "api-spec" });
+    const factories = (helpers as Record<string, string>)["helpers/factories.ts"] || "";
+    const mutationMatch = factories.match(/trpcMutation\(request,[\s\S]*?\}, cookieHeader\)/);
+    expect(mutationMatch).toBeTruthy();
+    const bankIdCount = (mutationMatch![0].match(/bankId:/g) || []).length;
+    expect(bankIdCount).toBe(1);
+  });
+});
+
+describe("Fix 2: business_logic — balance before/after test for financial side-effects", () => {
+  function makeBalanceIR(): AnalysisIR {
+    return {
+      behaviors: [
+        {
+          id: "B007",
+          title: "transactions.create deducts from fromAccount balance",
+          subject: "bank_admin",
+          action: "create",
+          object: "transaction",
+          tags: ["business-logic"],
+          riskHints: ["balance can never go below 0"],
+          chapter: "Transactions",
+          preconditions: [],
+          postconditions: ["Deducts amount from fromAccount.balance", "Credits amount to toAccount.balance"],
+          errorCases: [],
+        },
+      ],
+      invariants: [],
+      ambiguities: [],
+      contradictions: [],
+      tenantModel: { tenantEntity: "bank", tenantIdField: "bankId" },
+      resources: [{ name: "account", table: "accounts", tenantKey: "bankId", operations: ["create", "list"], hasPII: false }],
+      apiEndpoints: [
+        {
+          name: "transactions.create",
+          method: "POST",
+          auth: "bank_admin",
+          relatedBehaviors: ["B007"],
+          inputFields: [
+            { name: "bankId", type: "number", required: true, isTenantKey: true } as EndpointField,
+            { name: "fromAccountId", type: "number", required: true } as EndpointField,
+            { name: "toAccountId", type: "number", required: true } as EndpointField,
+            { name: "amount", type: "number", required: true, min: 0.01, max: 500000 } as EndpointField,
+            { name: "currency", type: "enum", required: true, enumValues: ["EUR", "USD"] } as EndpointField,
+          ],
+          outputFields: ["id", "status"],
+        },
+        {
+          name: "accounts.list",
+          method: "GET",
+          auth: "bank_admin",
+          relatedBehaviors: [],
+          inputFields: [{ name: "bankId", type: "number", required: true, isTenantKey: true } as EndpointField],
+          outputFields: ["accounts"],
+        },
+      ],
+      authModel: { loginEndpoint: "/api/trpc/auth.login", csrfEndpoint: "/api/auth/csrf", roles: [{ name: "bank_admin", envUserVar: "E2E_USER", envPassVar: "E2E_PASS", defaultUser: "admin", defaultPass: "pass" }] },
+      enums: {},
+    };
+  }
+
+  it("B007 with business-logic tag gets high risk level", () => {
+    const analysis = { ir: makeBalanceIR(), qualityScore: 9, specType: "api-spec" as const };
+    const riskModel = buildRiskModel(analysis);
+    const b007 = riskModel.behaviors.find(b => b.behavior.id === "B007");
+    expect(b007).toBeTruthy();
+    expect(b007!.riskLevel).toBe("high");
+  });
+
+  it("B007 generates a business_logic proof target", () => {
+    const analysis = { ir: makeBalanceIR(), qualityScore: 9, specType: "api-spec" as const };
+    const riskModel = buildRiskModel(analysis);
+    const blTarget = riskModel.proofTargets.find(t => t.proofType === "business_logic" && t.id.includes("B007"));
+    expect(blTarget).toBeTruthy();
+  });
+
+  it("business_logic proof target has balance-related side-effects", () => {
+    const analysis = { ir: makeBalanceIR(), qualityScore: 9, specType: "api-spec" as const };
+    const riskModel = buildRiskModel(analysis);
+    const blTarget = riskModel.proofTargets.find(t => t.proofType === "business_logic" && t.id.includes("B007"));
+    expect(blTarget?.sideEffects?.some(se => /balance|deduct/i.test(se))).toBe(true);
+  });
+
+  it("generated business_logic proof contains balanceBefore and balanceAfter", async () => {
+    const analysis = { ir: makeBalanceIR(), qualityScore: 9, specType: "api-spec" as const };
+    const riskModel = buildRiskModel(analysis);
+    const rawProofs = await generateProofs(riskModel, analysis);
+    const logicProof = rawProofs.find(p => p.filename.includes("logic") && p.code?.includes("B007"));
+    expect(logicProof).toBeTruthy();
+    expect(logicProof!.code).toContain("balanceBefore");
+    expect(logicProof!.code).toContain("balanceAfter");
+    expect(logicProof!.code).toContain("AMOUNT");
+  });
+});
+
+describe("Fix 3: getResourceByIdentifier — no TODO placeholder", () => {
+  it("uses list endpoint when available, no TODO_REPLACE placeholder", () => {
+    const ir: AnalysisIR = {
+      behaviors: [{ id: "B001", title: "accounts.create", subject: "admin", action: "create", object: "account", tags: ["idor"], riskHints: [], chapter: "Accounts", preconditions: [], postconditions: [], errorCases: [] }],
+      invariants: [],
+      ambiguities: [],
+      contradictions: [],
+      tenantModel: { tenantEntity: "workspace", tenantIdField: "workspaceId" },
+      resources: [{ name: "account", table: "accounts", tenantKey: "workspaceId", operations: ["create", "list"], hasPII: true }],
+      apiEndpoints: [
+        { name: "accounts.create", method: "POST", auth: "admin", relatedBehaviors: ["B001"], inputFields: [{ name: "workspaceId", type: "number", required: true, isTenantKey: true } as EndpointField, { name: "name", type: "string", required: true } as EndpointField], outputFields: ["id", "name"] },
+        { name: "accounts.list", method: "GET", auth: "admin", relatedBehaviors: [], inputFields: [{ name: "workspaceId", type: "number", required: true, isTenantKey: true } as EndpointField], outputFields: ["accounts"] },
+      ],
+      authModel: { loginEndpoint: "/api/trpc/auth.login", csrfEndpoint: "/api/auth/csrf", roles: [{ name: "admin", envUserVar: "E2E_USER", envPassVar: "E2E_PASS", defaultUser: "admin", defaultPass: "pass" }] },
+      enums: {},
+    };
+    const helpers = generateHelpers({ ir, qualityScore: 9, specType: "api-spec" });
+    const factories = (helpers as Record<string, string>)["helpers/factories.ts"] || "";
+    expect(factories).not.toContain("TODO_REPLACE_WITH_GET_BY_IDENTIFIER_ENDPOINT");
+    expect(factories).toContain("accounts.list");
+    expect(factories).toContain("getResourceByIdentifier");
+  });
+
+  it("omits TODO_REPLACE even when no list endpoint exists", () => {
+    const ir: AnalysisIR = {
+      behaviors: [{ id: "B001", title: "accounts.create", subject: "admin", action: "create", object: "account", tags: ["idor"], riskHints: [], chapter: "Accounts", preconditions: [], postconditions: [], errorCases: [] }],
+      invariants: [],
+      ambiguities: [],
+      contradictions: [],
+      tenantModel: { tenantEntity: "workspace", tenantIdField: "workspaceId" },
+      resources: [{ name: "account", table: "accounts", tenantKey: "workspaceId", operations: ["create"], hasPII: false }],
+      apiEndpoints: [
+        { name: "accounts.create", method: "POST", auth: "admin", relatedBehaviors: ["B001"], inputFields: [{ name: "workspaceId", type: "number", required: true, isTenantKey: true } as EndpointField], outputFields: ["id"] },
+      ],
+      authModel: { loginEndpoint: "/api/trpc/auth.login", csrfEndpoint: "/api/auth/csrf", roles: [{ name: "admin", envUserVar: "E2E_USER", envPassVar: "E2E_PASS", defaultUser: "admin", defaultPass: "pass" }] },
+      enums: {},
+    };
+    const helpers = generateHelpers({ ir, qualityScore: 9, specType: "api-spec" });
+    const factories = (helpers as Record<string, string>)["helpers/factories.ts"] || "";
+    expect(factories).not.toContain("TODO_REPLACE_WITH_GET_BY_IDENTIFIER_ENDPOINT");
+  });
+});

@@ -1029,6 +1029,11 @@ function assessRiskLevel(b: Behavior): RiskLevel {
   const combined = [...b.tags, ...b.riskHints].join(" ").toLowerCase();
   if (combined.includes("idor") || combined.includes("csrf") || combined.includes("cross-tenant") || combined.includes("bypass") || combined.includes("pii-leak") || combined.includes("dsgvo") || combined.includes("gdpr")) return "critical";
   if (combined.includes("no-show") || combined.includes("risk-scoring") || combined.includes("status") || combined.includes("state-change")) return "high";
+  // business-logic behaviors with financial/inventory side-effects are high risk
+  if (combined.includes("business-logic") || combined.includes("business_logic") ||
+      combined.includes("balance") || combined.includes("deduct") || combined.includes("credit") ||
+      combined.includes("restore") || combined.includes("stock") || combined.includes("inventory") ||
+      combined.includes("refund") || combined.includes("transfer")) return "high";
   if (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit")) return "medium";
   // api-response / spec-drift behaviors: at least medium (contract violations break clients)
   if (combined.includes("api-response") || combined.includes("response-schema") || combined.includes("spec-drift")) return "medium";
@@ -1057,6 +1062,11 @@ function determineProofTypes(b: Behavior): ProofType[] {
   const isRateLimit = combined.includes("rate-limit") || combined.includes("brute-force");
   const isStateMachine = tagsOnly.includes("state-machine") || hasArrowInTitle;
   if (!isRateLimit && !isStateMachine && (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit"))) types.add("boundary");
+  // Explicit business-logic tag: always add business_logic when tagged
+  if (combined.includes("business-logic") || combined.includes("business_logic") ||
+      combined.includes("side-effect") || combined.includes("side_effect")) {
+    types.add("business_logic");
+  }
   if (types.size === 0) types.add("business_logic");
   // spec_drift: add for behaviors tagged with api-response or that have an associated endpoint with outputFields
   // This generates tests that validate response shapes against Zod schemas
@@ -1271,10 +1281,14 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
   const base = { behaviorId: b.id, proofType: pt, riskLevel: sb.riskLevel };
   const endpoint = resolveEndpoint(b.id, pt, analysis);
 
-  // Extract side-effects from postconditions (field changes, counter increments)
-  const sideEffects = b.postconditions.filter(pc =>
-    pc.includes("+=") || pc.includes("=") || pc.includes("NOW()") || pc.includes("null") || pc.includes("count")
-  );
+  // Extract side-effects from postconditions (field changes, counter increments, balance changes)
+  const sideEffects = b.postconditions.filter(pc => {
+    const lpc = pc.toLowerCase();
+    return pc.includes("+=") || pc.includes("=") || pc.includes("NOW()") || pc.includes("null") ||
+      lpc.includes("count") || lpc.includes("balance") || lpc.includes("deduct") ||
+      lpc.includes("credit") || lpc.includes("restore") || lpc.includes("stock") ||
+      lpc.includes("refund") || lpc.includes("inventory");
+  });
 
   if (pt === "idor") {
     return {
@@ -1658,7 +1672,7 @@ export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST
 ${createEndpoint ? `
 export interface CreateTestResourceOpts {
   ${tenantField}?: number;
-${(createEndpoint.inputFields || []).map((f) => `  ${f.name}?: unknown;`).join("\n")}
+${(createEndpoint.inputFields || []).filter((f) => f.name !== tenantField).map((f) => `  ${f.name}?: unknown;`).join("\n")}
   [key: string]: unknown;
 }
 
@@ -1669,7 +1683,7 @@ export async function createTestResource(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await trpcMutation(request, "${createEndpoint.name}", {
     ${tenantField}: opts.${tenantField} ?? TEST_${tenantEntity.toUpperCase()}_ID,
-${(createEndpoint.inputFields || []).map((f) => {
+${(createEndpoint.inputFields || []).filter((f) => !f.isTenantKey && f.name !== tenantField).map((f) => {
   const fname = f.name;
   const fl = fname.toLowerCase();
   let defaultVal: string;
@@ -1726,19 +1740,22 @@ export async function listResources(
 ` : ""}
 
 ${piiResources.length > 0 ? (() => {
+  // Prefer a specific get-by-id/getby endpoint; fall back to list endpoint; omit if neither found
   const piiEndpoint = ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("getbyid") ||
+    e.name.toLowerCase().includes("getby") ||
+    e.name.toLowerCase().includes(".get") ||
     e.name.toLowerCase().includes("phone") ||
     e.name.toLowerCase().includes("guest") ||
-    e.name.toLowerCase().includes("user") ||
-    e.name.toLowerCase().includes("getby")
-  )?.name || "TODO_REPLACE_WITH_GET_BY_IDENTIFIER_ENDPOINT";
+    e.name.toLowerCase().includes("user")
+  )?.name || listEndpoint?.name || null;
+  if (!piiEndpoint) return ""; // Omit function entirely if no suitable endpoint found
   return `
 export async function getResourceByIdentifier(
   request: any,
   identifier: string | number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  // TODO: Update this function to use the correct identifier field for your resource
   const { data, error } = await trpcQuery(request, "${piiEndpoint}",
     { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, id: identifier }, cookieHeader);
   if (error) throw new Error(\`getResourceByIdentifier failed: \${JSON.stringify(error)}\`);
@@ -3607,7 +3624,33 @@ export function generateBusinessLogicTest(target: ProofTarget, analysis: Analysi
     se.toLowerCase().includes("restore") || se.toLowerCase().includes("refund"));
   const counterSideEffect = target.sideEffects?.find(se =>
     se.includes("+=") || se.toLowerCase().includes("count"));
-
+  // Balance side-effect: "deducts amount from X.balance", "credits amount to Y.balance"
+  const hasBalanceEffect = target.sideEffects?.some(se =>
+    se.toLowerCase().includes("balance") ||
+    se.toLowerCase().includes("deduct") ||
+    se.toLowerCase().includes("credit") ||
+    (se.toLowerCase().includes("restore") && se.toLowerCase().includes("amount"))
+  ) ?? false;
+  // Find the list endpoint for balance reads
+  const balanceListEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get")
+  )?.name || getEp;
+  // Find the transaction/transfer endpoint (the action endpoint for balance tests)
+  const balanceActionEp = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("transaction") ||
+      e.name.toLowerCase().includes("transfer") ||
+      e.name.toLowerCase().includes("payment")
+    )?.name || ep;
+  // Build balance action payload from the transaction endpoint's input fields
+  const balanceEpDef = analysis.ir.apiEndpoints.find(e => e.name === balanceActionEp);
+  const balancePayloadFields = (balanceEpDef?.inputFields || []).filter(f => !f.isTenantKey).map(f => {
+    const fl = f.name.toLowerCase();
+    if (fl.includes("fromaccount") || fl.includes("from_account")) return `    ${f.name}: fromAccount.id as number,`;
+    if (fl.includes("toaccount") || fl.includes("to_account")) return `    ${f.name}: toAccount.id as number,`;
+    if (fl.includes("amount")) return `    ${f.name}: AMOUNT,`;
+    return `    ${f.name}: ${getValidDefault(f, tenantConst)},`;
+  }).join("\n") || `    fromAccountId: fromAccount.id as number,\n    toAccountId: toAccount.id as number,\n    amount: AMOUNT,\n    currency: "EUR",`;
   // Side-effect setup block (BEFORE the action)
   // restoreSideEffect takes priority over stockSideEffect to avoid ambiguity
   const effectiveStockSideEffect = restoreSideEffect ? null : stockSideEffect;
@@ -3793,6 +3836,55 @@ test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async
 
   expect([401, 403]).toContain(status);
   // Kills: Remove auth middleware from ${actionEp}
+});` : hasBalanceEffect ? `test("${target.id}a — balance deducted after ${target.description.slice(0, 50)}", async ({ request }) => {
+  // Arrange: Create fromAccount and toAccount with known balances
+  const fromAccount = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const toAccount = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(fromAccount?.id).toBeDefined();
+  expect(toAccount?.id).toBeDefined();
+
+  // Read balance BEFORE transaction
+  const { data: fromBefore } = await trpcQuery(request, "${balanceListEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const balanceBefore = (Array.isArray(fromBefore) ? fromBefore : [fromBefore])
+    .find((a: unknown) => (a as Record<string, unknown>).id === fromAccount.id)
+    ?.balance as number ?? 0;
+  expect(typeof balanceBefore).toBe("number");
+  // Kills: Cannot read balance before transaction
+
+  // Act: Execute the transaction
+  const AMOUNT = 1;
+  const { status, data } = await trpcMutation(request, "${balanceActionEp}", {
+    ${tenantField}: ${tenantConst},
+${balancePayloadFields}
+  }, adminCookie);
+  expect(status).toBe(200);
+  // Kills: Remove success path in ${balanceActionEp}
+
+  // Read balance AFTER transaction
+  const { data: fromAfter } = await trpcQuery(request, "${balanceListEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const balanceAfter = (Array.isArray(fromAfter) ? fromAfter : [fromAfter])
+    .find((a: unknown) => (a as Record<string, unknown>).id === fromAccount.id)
+    ?.balance as number;
+
+  expect(balanceAfter).toBe(balanceBefore - AMOUNT);
+  // Kills: Not deducting amount from fromAccount.balance
+  expect(balanceAfter).toBeGreaterThanOrEqual(0);
+  // Kills: Allow negative balance (insufficient funds check missing)
+${killComments}
+});
+test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
+  const fromAccount = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const toAccount = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const { status } = await trpcMutation(request, "${balanceActionEp}", {
+    ${tenantField}: ${tenantConst},
+    fromAccountId: fromAccount.id as number,
+    toAccountId: toAccount.id as number,
+    amount: 1,
+  }, ""); // No cookie
+  expect([401, 403]).toContain(status);
+  // Kills: Remove auth middleware from ${balanceActionEp}
 });` : `test("${target.id}a — ${target.description.slice(0, 70)}", async ({ request }) => {
 ${preconditionComments}
   // Arrange: Create a real resource first
@@ -3810,23 +3902,19 @@ ${assertionLines || "  expect((data as Record<string, unknown>)?.id).toBeDefined
 ${sideEffectAssert}
 ${killComments}
 });
-
 test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
   const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const ${resourceIdField} = created.id as number;
-
   const { status } = await trpcMutation(request, "${actionEp}", {
     ${resourceIdField},
     ${tenantField}: ${tenantConst},
   }, "");
   expect([401, 403]).toContain(status); // Kills: Remove auth middleware from ${actionEp}
 });
-
 test("${target.id}c — ${target.description.slice(0, 60)} persists to DB", async ({ request }) => {
   const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const ${resourceIdField} = created.id as number;
   expect(${resourceIdField}).toBeDefined(); // Kills: Don't return id from ${actionEp}
-
   const { data: fetched, status } = await trpcQuery(request, "${getEp}",
     { ${tenantField}: ${tenantConst} }, adminCookie);
   expect(status).toBe(200); // Kills: Remove ${getEp} endpoint
@@ -4525,7 +4613,7 @@ function extractTestBody(code: string): string {
     .trim();
 }
 
-function mergeProofsToFile(proofs: ValidatedProof[]): string {
+export function mergeProofsToFile(proofs: ValidatedProof[]): string {
   // Collect all imports from all proofs and deduplicate
   // Collect imports per module path, merging named imports to avoid duplicates
   // e.g. two proofs importing { trpcMutation } and { trpcMutation, tomorrowStr } → one merged import
