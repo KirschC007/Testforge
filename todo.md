@@ -472,3 +472,11 @@
 - [x] UX-5: Landing Page — Concurrency, Idempotency, Auth-Matrix als neue Proof-Types hinzufügen
 - [x] UX-1: NewAnalysis Page — OpenAPI/Swagger Badge + Erklaerung
 - [x] TS-2: Rate-Limiting — max 5 Analysen/Tag pro User (Free-Tier)
+
+## Sprint 2: Smart Parser 3-Pass Integration (22.03.2026)
+- [x] SP-1: smart-parser.ts nach server/analyzer/ kopieren
+- [x] SP-2: server/analyzer/job-runner.ts ersetzen (3-Pfad-Routing: OpenAPI / Smart / Standard)
+- [x] SP-3: server/analyzer/index.ts aktualisieren (parseSpecSmart export)
+- [x] SP-4: TS-Fehler prüfen und beheben (5 Set-Iteration-Fehler + classifySection preauth-Bug)
+- [x] SP-5: Vitest-Tests für smart-parser schreiben (59 Tests)
+- [x] SP-6: 374/374 Tests grün, 0 TS-Fehler, Checkpoint

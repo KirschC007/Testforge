@@ -2,6 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import { generateProofs } from "./proof-generator";
 import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
 import { parseSpec } from "./llm-parser";
+import { parseSpecSmart } from "./smart-parser";
 import { runLLMChecker, assessSpecHealth, buildRiskModel } from "./risk-model";
 import { generateHelpers } from "./helpers-generator";
 import { validateProofs, runIndependentChecker, mergeProofsToFile } from "./validator";
@@ -46,20 +47,40 @@ export async function runAnalysisJob(
     llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
     console.log(`[TestForge] Schicht 1 (OpenAPI) done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
   } else {
-    // Standard LLM path
-    analysisResult = await parseSpec(specText);
-    console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
-    // LLM Checker: verify all behaviors (parallel)
-    await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
-    const t_checker = Date.now();
-    const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
-      analysisResult.ir.behaviors,
-      specText
-    );
-    analysisResult.ir.behaviors = checkedBehaviors;
-    llmCheckerStats = checkerStats;
-    console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
-    await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+    // LLM path — choose parser based on spec size
+    const SMART_PARSER_THRESHOLD = 50000; // 50KB+: use 3-pass smart parser
+    if (specText.length >= SMART_PARSER_THRESHOLD) {
+      // Smart Parser: 3-pass architecture for large specs
+      console.log(`[TestForge] Large spec (${specText.length} chars) — using Smart Parser v2.0 (3-pass)`);
+      await progress(1, `Große Spec erkannt (${Math.round(specText.length / 1024)}KB) — Smart Parser v2.0 (3-Pass-Architektur)...`);
+      analysisResult = await parseSpecSmart(specText);
+      // Smart Parser already does structural validation — LLM Checker adds value for anchor verification
+      await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+      const t_checker = Date.now();
+      const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+        analysisResult.ir.behaviors,
+        specText
+      );
+      analysisResult.ir.behaviors = checkedBehaviors;
+      llmCheckerStats = checkerStats;
+      console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+      await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+    } else {
+      // Standard 1-pass chunked parser for small specs
+      analysisResult = await parseSpec(specText);
+      console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+      // LLM Checker: verify all behaviors (parallel)
+      await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+      const t_checker = Date.now();
+      const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+        analysisResult.ir.behaviors,
+        specText
+      );
+      analysisResult.ir.behaviors = checkedBehaviors;
+      llmCheckerStats = checkerStats;
+      console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+      await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+    }
   }
   // Assess spec health (both paths)
   analysisResult.specHealth = assessSpecHealth(analysisResult.ir);

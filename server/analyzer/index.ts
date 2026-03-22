@@ -45,6 +45,9 @@ export type {
 // ─── LLM Parser ───────────────────────────────────────────────────────────────
 export { parseSpec, withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 
+// ─── Smart Parser (3-Pass for large specs) ────────────────────────────────────
+export { parseSpecSmart } from "./smart-parser";
+
 // ─── Risk Model ───────────────────────────────────────────────────────────────
 export {
   runLLMChecker,
