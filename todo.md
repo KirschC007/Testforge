@@ -323,3 +323,15 @@
 - [x] SpecHealthPanel.tsx: Design-Token-konsistent (keine hardcodierten slate-Farben)
 - [x] index.css: --tf-purple CSS-Variable hinzugefügt
 - [x] 72/72 Tests grün, 0 TS-Fehler
+
+## Phase 28: Finales Abschluss-Briefing (pasted_content_9.txt)
+- [x] Fix 1: payloadFields mit getValidDefault — bereits in Phase 24 implementiert (0 TODO_FIELDNAME)
+- [x] Fix 1b: factoriesTs Smart-Defaults — bereits in Phase 21 implementiert
+- [x] Fix 2: outputFields/schemasTs — bereits in Phase 21-22 implementiert
+- [x] Fix 3: spec_drift ProofType — bereits in Phase 21-22 implementiert
+- [x] Fix 4: Concurrency-Hint in generateLLMTest — bereits in Phase 22 implementiert
+- [x] generateRiskScoringTest: createPayload nutzt getValidDefault (Phase 26 Fix)
+- [x] Alle 6 Checks grün: 0 TODO_FIELDNAME, 8x Boundary, 18x arrayItemFields, 6x stockBefore, 2x zod, 6x schemasTs
+- [x] 72/72 Tests grün, 0 TS-Fehler
+- [x] BankFlow-Brace-Check: Braces=0 (balanced), generateSpecDriftTest korrekt
+- [x] 19x TODO_REPLACE_WITH_* sind korrekte Fallback-Werte (kein TODO_FIELDNAME)
