@@ -9,6 +9,7 @@ import {
   getAnalysisById,
   getAnalysesByUserId,
   updateAnalysis,
+  countAnalysesToday,
 } from "./db";
 import { runAnalysisJob, assessSpecHealth, type AnalysisIR } from "./analyzer";
 import { storagePut, storageGet } from "./storage";
@@ -227,6 +228,18 @@ export const appRouter = router({
         githubUrl: z.string().url().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // ─── Free-Tier Rate Limit ─────────────────────────────────────────────
+        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : 5;
+        if (DAILY_LIMIT !== Infinity) {
+          const todayCount = await countAnalysesToday(ctx.user.id);
+          if (todayCount >= DAILY_LIMIT) {
+            throw new TRPCError({
+              code: "TOO_MANY_REQUESTS",
+              message: `Daily limit reached: ${DAILY_LIMIT} analyses per day. Resets at UTC midnight.`,
+            });
+          }
+        }
+        // ─────────────────────────────────────────────────────────────────────
         const analysisId = await createAnalysis({
           userId: ctx.user.id,
           projectName: input.projectName,

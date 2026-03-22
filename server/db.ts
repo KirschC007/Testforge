@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, analyses, InsertAnalysis, Analysis } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -76,4 +76,17 @@ export async function updateAnalysis(id: number, data: Partial<InsertAnalysis>):
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(analyses).set(data).where(eq(analyses.id, id));
+}
+
+/** Count how many analyses a user has started today (UTC midnight boundary). */
+export async function countAnalysesToday(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  const rows = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(analyses)
+    .where(and(eq(analyses.userId, userId), gte(analyses.createdAt, todayUtc)));
+  return Number(rows[0]?.cnt ?? 0);
 }

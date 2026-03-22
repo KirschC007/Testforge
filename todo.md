@@ -465,3 +465,10 @@
 - [x] README Quick-Start um Schritt 4 (npm run validate) erweitert
 - [x] 39 neue Vitest-Tests in server/code-builder.test.ts — alle gruen
 - [x] Gesamt: 315/315 Tests gruen, 0 TS-Fehler
+
+## Sprint 1: Aufräumen + Sichtbarkeit (22.03.2026)
+- [x] FIX-1: analyzer.ts.bak existiert nicht (war nie erstellt), pipeline-types-reference.ts gelöscht
+- [x] FIX-2: todo.md bereinigen (erledigte Checkboxen in alten Phasen abhaken)
+- [x] UX-5: Landing Page — Concurrency, Idempotency, Auth-Matrix als neue Proof-Types hinzufügen
+- [x] UX-1: NewAnalysis Page — OpenAPI/Swagger Badge + Erklaerung
+- [x] TS-2: Rate-Limiting — max 5 Analysen/Tag pro User (Free-Tier)

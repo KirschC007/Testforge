@@ -6,6 +6,7 @@ import {
   Shield, Zap, FileCode2, GitBranch, Lock, ArrowRight,
   CheckCircle2, Terminal, Package, Star, Activity,
   AlertTriangle, Layers, Database, RefreshCw, Eye,
+  Cpu, Repeat2, Users,
 } from "lucide-react";
 
 // ─── Proof type definitions ────────────────────────────────────────────────
@@ -18,13 +19,16 @@ const PROOF_TYPES = [
   { id: "spec_drift",      label: "Spec Drift",       icon: <Eye className="w-4 h-4" />,         color: "var(--tf-green)",  desc: "Zod response schemas, field type validation" },
   { id: "dsgvo",           label: "DSGVO / GDPR",     icon: <Database className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "PII anonymization, data export isolation" },
   { id: "rate_limit",      label: "Rate Limit",       icon: <AlertTriangle className="w-4 h-4" />, color: "var(--tf-orange)", desc: "Auth brute-force, burst detection" },
+  { id: "concurrency",     label: "Concurrency",      icon: <Cpu className="w-4 h-4" />,          color: "var(--tf-red)",    desc: "Race conditions, double-booking, atomic operations" },
+  { id: "idempotency",     label: "Idempotency",      icon: <Repeat2 className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Duplicate requests, retry safety, deduplication" },
+  { id: "auth_matrix",     label: "Auth Matrix",      icon: <Users className="w-4 h-4" />,        color: "var(--tf-purple)", desc: "Role-based access: admin/user/unauthenticated/cross-tenant" },
 ];
 
 // ─── 5-Layer pipeline ─────────────────────────────────────────────────────
 const LAYERS = [
   { n: 1, label: "Spec Parse",        color: "var(--tf-blue)",   desc: "LLM extracts behaviors, endpoints, status machines, invariants, tenant keys" },
   { n: 2, label: "Risk Model",        color: "var(--tf-orange)", desc: "Tenant isolation vectors, CSRF surfaces, boundary constraints, side effects" },
-  { n: 3, label: "Test Generation",   color: "var(--tf-purple)", desc: "8 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config" },
+  { n: 3, label: "Test Generation",   color: "var(--tf-purple)", desc: "12 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config" },
   { n: 4, label: "LLM Verification",  color: "var(--tf-yellow)", desc: "Independent checker validates each test against the original spec" },
   { n: 5, label: "False-Green Guard", color: "var(--tf-green)",  desc: "8 mutation rules discard tests that can't catch real regressions" },
 ];
@@ -82,7 +86,7 @@ export default function Home() {
         <div className="container relative py-20 md:py-28 text-center">
           <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-full px-3 py-1 mb-6">
             <Zap className="w-3 h-3 text-[var(--tf-yellow)]" />
-            <span>8 Proof Types xb7 6 Test Layers xb7 Spec Health Score</span>       </div>
+            <span>12 Proof Types · 6 Test Layers · Spec Health Score</span>       </div>
 
           <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4 leading-tight">
             Proof-Grade Tests<br />
@@ -127,7 +131,7 @@ export default function Home() {
           {/* Quick stats */}
           <div className="flex items-center justify-center gap-8 mt-12 text-sm">
             {[
-              { v: "8",   l: "Proof Types" },
+              { v: "12",  l: "Proof Types" },
               { v: "6",   l: "Test Layers" },
               { v: "~2min", l: "Avg Analysis Time" },
               { v: "0",   l: "Config Required" },
@@ -145,13 +149,13 @@ export default function Home() {
       <section className="border-b border-border/50 py-16">
         <div className="container">
           <div className="text-center mb-10">
-            <h2 className="text-2xl font-bold mb-2">8 Proof Types — Automatically Detected</h2>
+            <h2 className="text-2xl font-bold mb-2">12 Proof Types — Automatically Detected</h2>
             <p className="text-muted-foreground text-sm max-w-lg mx-auto">
               TestForge reads your spec and determines which proof types apply to each endpoint.
               No manual configuration needed.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {PROOF_TYPES.map(pt => (
               <div key={pt.id} className="bg-card border border-border rounded-lg p-4 hover:border-border/80 transition-colors">
                 <div className="flex items-center gap-2 mb-2">

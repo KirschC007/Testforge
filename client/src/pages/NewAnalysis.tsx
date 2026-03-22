@@ -305,7 +305,10 @@ export default function NewAnalysis() {
                           <p className="text-sm text-muted-foreground">
                             Drop your spec here or <span className="text-primary">click to browse</span>
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1">PDF, Markdown, Word, TXT — max 10MB</p>
+                          <p className="text-xs text-muted-foreground mt-1">PDF, Markdown, Word, TXT, JSON, YAML — max 10MB</p>
+                          <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border" style={{ color: "var(--tf-green)", borderColor: "var(--tf-green)40", background: "var(--tf-green)10" }}>
+                            <span>⚡</span> OpenAPI 3.x / Swagger 2.x — deterministic, no LLM
+                          </div>
                         </>
                       )}
                       {fileError && (
@@ -314,7 +317,7 @@ export default function NewAnalysis() {
                         </div>
                       )}
                     </div>
-                    <input ref={fileRef} type="file" accept=".pdf,.md,.txt,.doc,.docx" className="hidden" onChange={handleFileChange} />
+                    <input ref={fileRef} type="file" accept=".pdf,.md,.txt,.doc,.docx,.json,.yaml,.yml" className="hidden" onChange={handleFileChange} />
 
                     {/* Paste area */}
                     <div className="space-y-1.5">
@@ -374,7 +377,7 @@ export default function NewAnalysis() {
               </Button>
 
               <p className="text-xs text-center text-muted-foreground">
-                Typical analysis time: 1–3 minutes · Supported: PDF, Markdown, Word, plain text
+                Typical analysis time: 1–3 min (LLM) · &lt;30s (OpenAPI/Swagger) · PDF, MD, DOCX, JSON, YAML
               </p>
             </form>
           </div>
