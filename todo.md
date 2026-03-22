@@ -203,3 +203,21 @@
 - [x] Fix 7: yesterdayStr bereits in api.ts exportiert und in Boundary-Imports verfügbar
 - [x] ShopCore Live-Test: 8/8 Checks grün (0 TODO_, 0 db-queries, 0 dot-notation, 12 createTestResource, 6 beforeAll, 251 Kills-Kommentare, 1 yesterdayStr, 0 TODO_REPLACE)
 - [x] 32/32 Unit-Tests grün, TypeScript 0 Errors
+
+## Phase 21: CI/CD-Ready Proof-Suite (Perfekte Beweise)
+- [ ] AJV: Response-Schema-Validation in Business-Logic + IDOR + DSGVO Tests (ajv als Inline-Dependency)
+- [ ] fast-check: Property-Tests für Business-Logik-Invarianten (Stock, Preis, Discount)
+- [ ] @xstate/test: Alle State-Machine-Pfade automatisch aus IR (inkl. Terminal-States + verbotene Übergänge)
+- [ ] CI/CD-Generator: playwright.config.ts + .github/workflows/testforge.yml + package.json im ZIP
+- [ ] ZIP-Struktur: entpacken → npm install → npx playwright test läuft ohne manuelle Konfiguration
+- [ ] ShopCore Live-Test: vollständiges ZIP, npm install, npx playwright test --dry-run grün
+
+## Phase 21/22: Perfektion-Briefing (7 Erweiterungen)
+- [x] E1+2: EndpointField Interface + Schicht-1-Prompt (bereits Phase 19 implementiert — verifiziert)
+- [x] E3: helpers/schemas.ts mit Zod-Schemas aus IR generieren (generateZodField + resource-based + endpoint-based schemas)
+- [x] E4: package.json mit zod dependency + helpers/index.ts re-export schemas
+- [x] E5: generateLLMTest userPrompt vollständig ersetzt (Array-Syntax, Side-Effects BEFORE/AFTER, Concurrency-Hint, Schema-Import-Hint)
+- [x] E6: generateHelpers factoriesTs spec-aware (createBody aus IR, kein guestName/partySize)
+- [x] E7: Neuer ProofType spec_drift + generateSpecDriftTest + buildProofTarget + determineProofTypes
+- [x] E8-E11: calcBoundaryValues auf BoundaryCase[] umgestellt, findBoundaryFieldForBehavior, buildArrayItemLiteral
+- [x] ShopCore Live-Test: alle 10 Checks grün (0 TODO_, 0 dot-notation, Zod-Schemas, spec_drift, yesterdayStr, zod in package.json)

@@ -125,7 +125,7 @@ export interface CheckResult {
 }
 
 export type RiskLevel = "critical" | "high" | "medium" | "low";
-export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring";
+export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift";
 
 export interface ScoredBehavior {
   behavior: Behavior;
@@ -211,6 +211,7 @@ export interface GeneratedHelpers {
   "helpers/auth.ts": string;
   "helpers/factories.ts": string;
   "helpers/reset.ts": string;
+  "helpers/schemas.ts": string;
   "helpers/index.ts": string;
   "playwright.config.ts": string;
   "package.json": string;
@@ -834,6 +835,8 @@ function assessRiskLevel(b: Behavior): RiskLevel {
   if (combined.includes("idor") || combined.includes("csrf") || combined.includes("cross-tenant") || combined.includes("bypass") || combined.includes("pii-leak") || combined.includes("dsgvo") || combined.includes("gdpr")) return "critical";
   if (combined.includes("no-show") || combined.includes("risk-scoring") || combined.includes("status") || combined.includes("state-change")) return "high";
   if (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit")) return "medium";
+  // api-response / spec-drift behaviors: at least medium (contract violations break clients)
+  if (combined.includes("api-response") || combined.includes("response-schema") || combined.includes("spec-drift")) return "medium";
   return "low";
 }
 
@@ -860,6 +863,11 @@ function determineProofTypes(b: Behavior): ProofType[] {
   const isStateMachine = tagsOnly.includes("state-machine") || hasArrowInTitle;
   if (!isRateLimit && !isStateMachine && (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit"))) types.add("boundary");
   if (types.size === 0) types.add("business_logic");
+  // spec_drift: add for behaviors tagged with api-response or that have an associated endpoint with outputFields
+  // This generates tests that validate response shapes against Zod schemas
+  if (combined.includes("api-response") || combined.includes("response-schema") || combined.includes("spec-drift")) {
+    types.add("spec_drift");
+  }
   return Array.from(types);
 }
 
@@ -888,6 +896,7 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     risk_scoring: ["risk", "scoring"],
     business_logic: ["create", "update"],
     rate_limit: [],
+    spec_drift: ["get", "list", "create", "update"],
   };
 
   const kws = keywords[proofType] || [];
@@ -1262,6 +1271,47 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
     };
   }
 
+  if (pt === "spec_drift") {
+    // Find the endpoint with outputFields to build schema validation assertions
+    const epDef = endpoint ? analysis.ir.apiEndpoints.find(e => e.name === endpoint) : null;
+    const outputFields = epDef?.outputFields || [];
+    const inputFields = epDef?.inputFields || [];
+    const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+    const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+    const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+    // Build resolvedPayload for the query
+    const resolvedPayload: Record<string, unknown> = {};
+    for (const f of inputFields) {
+      resolvedPayload[f.name] = getValidDefault(f, tenantConst);
+    }
+    const schemaName = endpoint ? `${endpoint.replace(/\./g, '_')}ResponseSchema` : null;
+    return {
+      ...base,
+      id: `PROOF-${b.id}-DRIFT`,
+      description: `API response shape for ${endpoint || b.object} matches spec (Zod validation)`,
+      preconditions: ["Authenticated user", "At least one resource exists"],
+      assertions: [
+        { type: "http_status", target: "response", operator: "eq", value: 200, rationale: "Endpoint must return 200" },
+        { type: "field_value", target: "response.data", operator: "not_null", value: null, rationale: "Response data must not be null" },
+        ...outputFields.slice(0, 3).map(f => ({
+          type: "field_value" as const,
+          target: `response.data.${f}`,
+          operator: "not_null" as const,
+          value: null,
+          rationale: `Spec requires field '${f}' in response`,
+        })),
+      ],
+      mutationTargets: [
+        { description: `Remove '${outputFields[0] || 'id'}' field from ${endpoint || b.object} response`, expectedKill: true },
+        { description: `Return wrong type for response fields (e.g. string instead of number)`, expectedKill: true },
+        ...outputFields.slice(1, 3).map(f => ({ description: `Omit '${f}' from response`, expectedKill: true })),
+      ],
+      endpoint,
+      sideEffects,
+      resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
+    };
+  }
+
   return null;
 }
 
@@ -1442,7 +1492,10 @@ ${(createEndpoint.inputFields || []).map((f) => {
   else if (fl.includes('priority')) defaultVal = `\"medium\"`;
   else if (fl.includes('count') || fl.includes('size') || fl.includes('num')) defaultVal = '1';
   else if (fl.includes('id') || fl.includes('workspace') || fl.includes('tenant')) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  else defaultVal = `\"test-${fname}\"`;
+    else {
+    // Generic fallback: use getValidDefault logic for unknown fields
+    defaultVal = `"test-${fname}-\${Date.now()}"`;
+  }
   return `    ${fname}: opts.${fname} ?? ${defaultVal},`;
 }).join("\n")}
     ...opts,
@@ -1528,11 +1581,100 @@ export async function resetTestTenant(request: any): Promise<void> {
 }
 `;
 
+  // Build Zod schemas from IR — resource-based + endpoint-based
+  const schemasTs = (() => {
+    // Recursive Zod field generator
+    function generateZodField(f: EndpointField): string {
+      let base: string;
+      switch (f.type) {
+        case "string":
+          base = "z.string()";
+          if (f.min !== undefined) base += `.min(${f.min})`;
+          if (f.max !== undefined) base += `.max(${f.max})`;
+          break;
+        case "number":
+          base = "z.number()";
+          if (f.min !== undefined) base += `.min(${f.min})`;
+          if (f.max !== undefined) base += `.max(${f.max})`;
+          break;
+        case "boolean":
+          base = "z.boolean()";
+          break;
+        case "date":
+          base = `z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).or(z.string().datetime({ offset: true }))`;
+          break;
+        case "enum":
+          base = `z.enum([${f.enumValues?.map(v => `"${v}"`).join(", ") || '"unknown"'}])`;
+          break;
+        case "array":
+          if (f.arrayItemType === "object" && f.arrayItemFields?.length) {
+            const objFields = f.arrayItemFields
+              .map(af => `    ${af.name}: ${generateZodField(af)}`)
+              .join(",\n");
+            base = `z.array(z.object({\n${objFields}\n  }))`;
+          } else {
+            base = "z.array(z.unknown())";
+          }
+          if (f.min !== undefined) base += `.min(${f.min})`;
+          if (f.max !== undefined) base += `.max(${f.max})`;
+          break;
+        default:
+          base = "z.unknown()";
+      }
+      return f.required ? base : `${base}.optional()`;
+    }
+
+    // Resource-based schemas (for response validation)
+    const resourceSchemaBlocks = ir.resources.map(resource => {
+      const createEp = ir.apiEndpoints.find(e =>
+        e.name.toLowerCase().includes(resource.name.toLowerCase()) &&
+        e.name.toLowerCase().includes("create")
+      );
+      if (!createEp?.inputFields?.length) return "";
+
+      const resourceName = resource.name.charAt(0).toUpperCase() + resource.name.slice(1);
+      const schemaName = `${resourceName}Schema`;
+
+      // Response schema: input fields + id + timestamps
+      const fields: EndpointField[] = [
+        { name: "id", type: "number", required: true },
+        ...createEp.inputFields,
+        { name: "createdAt", type: "number", required: false },
+        { name: "updatedAt", type: "number", required: false },
+      ];
+      const fieldLines = fields
+        .map(f => `  ${f.name}: ${generateZodField(f)}`)
+        .join(",\n");
+
+      return `// Response schema for ${resource.name}\nexport const ${schemaName} = z.object({\n${fieldLines},\n}).passthrough();\nexport type ${resourceName} = z.infer<typeof ${schemaName}>;`;
+    }).filter(Boolean).join("\n\n");
+
+    // Endpoint-based input schemas (for spec_drift tests)
+    const endpointSchemaBlocks = ir.apiEndpoints
+      .filter(e => e.inputFields && e.inputFields.length > 0)
+      .map(ep => {
+        const schemaName = ep.name.replace(/\./g, "_") + "Schema";
+        const fields = (ep.inputFields || []).filter(f => !f.isTenantKey);
+        const fieldLines = fields.map(f => `  ${f.name}: ${generateZodField(f)}`).join(",\n");
+        const outputFields = ep.outputFields || [];
+        const responseFields = outputFields.length > 0
+          ? outputFields.map(fname => `  ${fname}: z.unknown()`).join(",\n")
+          : "  id: z.number().or(z.string())";
+        return `// Input schema for ${ep.name}\nexport const ${schemaName} = z.object({\n${fieldLines}\n});\nexport const ${ep.name.replace(/\./g, "_")}ResponseSchema = z.object({\n${responseFields}\n}).passthrough();`;
+      }).join("\n\n");
+
+    const hasSchemas = resourceSchemaBlocks || endpointSchemaBlocks;
+    if (!hasSchemas) return `// GENERATED by TestForge v3.0 — Response schemas\nimport { z } from "zod";\n\n// No endpoints with typed fields detected in spec\nexport const schemas = {};\nexport function validateSchema<T>(schema: import("zod").ZodType<T>, data: unknown): T {\n  const result = schema.safeParse(data);\n  if (!result.success) throw new Error(\`Schema validation failed:\\n\${result.error.toString()}\`);\n  return result.data;\n}\n`;
+
+    return `// GENERATED by TestForge v3.0 — Zod response & input schemas\n// Usage: const validated = validateSchema(BookingSchema, data);\nimport { z } from "zod";\n\n${resourceSchemaBlocks}\n\n${endpointSchemaBlocks}\n\n// Validate helper — throws on schema mismatch\nexport function validateSchema<T>(schema: z.ZodType<T>, data: unknown): T {\n  const result = schema.safeParse(data);\n  if (!result.success) {\n    throw new Error(\`Schema validation failed:\\n\${result.error.toString()}\`);\n  }\n  return result.data;\n}\n`;
+  })()
+
   const indexTs = `// GENERATED by TestForge v3.0 — Helper exports
 export * from "./api";
 export * from "./auth";
 export * from "./factories";
 export * from "./reset";
+export * from "./schemas";
 `;
 
   const playwrightConfig = `// GENERATED by TestForge v3.0
@@ -1566,6 +1708,9 @@ export default defineConfig({
       "test:integration": "playwright test tests/integration/",
       "test:compliance": "playwright test tests/compliance/",
       "test:list": "playwright test --list",
+    },
+    dependencies: {
+      zod: "^3.22.0",
     },
     devDependencies: {
       "@playwright/test": "^1.41.0",
@@ -1633,6 +1778,7 @@ ${roles.map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n  
     "helpers/auth.ts": authTs,
     "helpers/factories.ts": factoriesTs,
     "helpers/reset.ts": resetTs,
+    "helpers/schemas.ts": schemasTs,
     "helpers/index.ts": indexTs,
     "playwright.config.ts": playwrightConfig,
     "package.json": packageJson,
@@ -1719,6 +1865,7 @@ function getFilename(pt: ProofType): string {
     risk_scoring: "tests/integration/risk-scoring.spec.ts",
     boundary: "tests/business/boundary.spec.ts",
     business_logic: "tests/business/logic.spec.ts",
+    spec_drift: "tests/integration/spec-drift.spec.ts",
   };
   return map[pt];
 }
@@ -1767,65 +1914,90 @@ function getValidDefault(f: EndpointField, tenantConst: string): string {
   }
 }
 
+export interface BoundaryCase {
+  label: string;
+  value: string;
+  valid: boolean;
+}
+
 /**
- * Returns boundary test values for a field based on its type and constraints.
- * Returns { belowMin, min, max, aboveMax, nullVal } as TypeScript expressions.
+ * Returns boundary test cases for a field based on its type and constraints.
+ * Returns BoundaryCase[] with label, value (TypeScript expression), and valid flag.
  */
-function calcBoundaryValues(f: EndpointField): {
-  belowMin: string; min: string; max: string; aboveMax: string; nullVal: string;
-} {
-  const fl = f.name.toLowerCase();
+export function calcBoundaryValues(f: EndpointField): BoundaryCase[] {
   switch (f.type) {
     case "number": {
       const min = f.min ?? 0;
-      const max = f.max ?? 9999;
-      const isPrice = fl.includes("price") || fl.includes("amount") || fl.includes("cost");
-      if (isPrice) {
-        return {
-          belowMin: String(min - 0.01),
-          min: String(min),
-          max: String(max),
-          aboveMax: String(max + 0.01),
-          nullVal: "null",
-        };
-      }
-      return {
-        belowMin: String(min - 1),
-        min: String(min),
-        max: String(max),
-        aboveMax: String(max + 1),
-        nullVal: "null",
-      };
+      const max = f.max ?? 100;
+      const fl = f.name.toLowerCase();
+      const isDecimal = !Number.isInteger(min) || !Number.isInteger(max) ||
+        fl.includes("price") || fl.includes("amount") || fl.includes("cost") || fl.includes("fee");
+      const step = isDecimal ? 0.01 : 1;
+      const fmt = (n: number) => isDecimal ? n.toFixed(2) : String(n);
+      return [
+        { label: `${fmt(min)} (minimum)`, value: fmt(min), valid: true },
+        { label: `${fmt(max)} (maximum)`, value: fmt(max), valid: true },
+        { label: `${fmt(+(min - step).toFixed(2))} (below minimum)`, value: fmt(+(min - step).toFixed(2)), valid: false },
+        { label: `${fmt(+(max + step).toFixed(2))} (above maximum)`, value: fmt(+(max + step).toFixed(2)), valid: false },
+        { label: `null`, value: `null`, valid: false },
+      ];
     }
     case "string": {
       const min = f.min ?? 1;
-      const max = f.max ?? 255;
-      return {
-        belowMin: min > 1 ? `"${'A'.repeat(min - 1)}"` : `""`,
-        min: `"${'A'.repeat(min)}"`,
-        max: `"A".repeat(${max})`,
-        aboveMax: `"A".repeat(${max + 1})`,
-        nullVal: "null",
-      };
+      const max = f.max ?? 200;
+      return [
+        { label: `"A".repeat(${min}) (minimum)`, value: `"A".repeat(${min})`, valid: true },
+        { label: `"A".repeat(${max}) (maximum)`, value: `"A".repeat(${max})`, valid: true },
+        { label: `"" (below minimum)`, value: `""`, valid: false },
+        { label: `"A".repeat(${max + 1}) (above maximum)`, value: `"A".repeat(${max + 1})`, valid: false },
+        { label: `null`, value: `null`, valid: false },
+      ];
     }
+    case "date": return [
+      { label: `tomorrowStr() (future = valid)`, value: `tomorrowStr()`, valid: true },
+      { label: `yesterdayStr() (past = invalid)`, value: `yesterdayStr()`, valid: false },
+      { label: `null`, value: `null`, valid: false },
+    ];
     case "array": {
       const min = f.min ?? 1;
       const max = f.max ?? 50;
-      // Build a realistic array item (object or number)
-      const itemExpr = (f.arrayItemType === "object" && f.arrayItemFields?.length)
-        ? `{ ${f.arrayItemFields.map(af => `${af.name}: ${af.type === "number" ? (af.min !== undefined ? Math.max(af.min, 1) : 1) : `"test-${af.name}"`}`).join(", ")} }`
-        : (f.arrayItemType === "number" ? "1" : `"item"`);
-      return {
-        belowMin: min > 1 ? `Array(${min - 1}).fill(${itemExpr})` : "[]",
-        min: `[${itemExpr}]`,
-        max: `Array(${max}).fill(${itemExpr})`,
-        aboveMax: `Array(${max + 1}).fill(${itemExpr})`,
-        nullVal: "null",
-      };
+      const item = buildArrayItemLiteral(f);
+      return [
+        { label: `[${item}] (minimum 1 item)`, value: `[${item}]`, valid: true },
+        { label: `Array(${max}).fill(${item}) (maximum ${max} items)`, value: `Array(${max}).fill(${item})`, valid: true },
+        { label: `[] (empty = below minimum)`, value: `[]`, valid: false },
+        { label: `Array(${max + 1}).fill(${item}) (above maximum)`, value: `Array(${max + 1}).fill(${item})`, valid: false },
+        { label: `null`, value: `null`, valid: false },
+      ];
     }
-    default:
-      return { belowMin: `""`, min: `"a"`, max: `"A".repeat(255)`, aboveMax: `"A".repeat(256)`, nullVal: "null" };
+    case "enum": {
+      const valid = f.enumValues?.[0] ?? "valid";
+      return [
+        { label: `"${valid}" (valid enum)`, value: `"${valid}"`, valid: true },
+        { label: `"__invalid__" (invalid enum)`, value: `"__invalid__"`, valid: false },
+        { label: `null`, value: `null`, valid: false },
+      ];
+    }
+    default: return [
+      { label: `"valid"`, value: `"valid"`, valid: true },
+      { label: `null`, value: `null`, valid: false },
+    ];
   }
+}
+
+/**
+ * Builds a TypeScript array item literal for nested array fields.
+ */
+export function buildArrayItemLiteral(f: EndpointField): string {
+  if (f.arrayItemType === "object" && f.arrayItemFields?.length) {
+    const fields = f.arrayItemFields.map(af => {
+      const val = af.type === "number" ? (af.min !== undefined ? Math.max(af.min, 1) : 1) : `"test-${af.name}"`;
+      return `${af.name}: ${val}`;
+    }).join(", ");
+    return `{ ${fields} }`;
+  }
+  if (f.arrayItemType === "number") return "1";
+  return `"item"`;
 }
 
 /**
@@ -1863,6 +2035,48 @@ function findBoundaryField(fields: EndpointField[], preferredName?: string): End
   // 4. First non-tenant, non-id field
   const nonTenant = fields.find(f => !f.isTenantKey && f.name !== "id");
   return nonTenant || fields[0];
+}
+
+/**
+ * Finds the best boundary field for a behavior using semantic keyword matching.
+ * This is the new behavior-aware version that matches the spec's field lookup logic.
+ * Priority:
+ *   1) isBoundaryField=true field whose name appears in behavior title
+ *   2) Semantic keyword match (price, stock, name, items, quantity, etc.)
+ *   3) First isBoundaryField=true field as fallback
+ */
+export function findBoundaryFieldForBehavior(
+  behavior: Behavior,
+  endpointDef: APIEndpoint | undefined
+): EndpointField | undefined {
+  if (!endpointDef?.inputFields?.length) return undefined;
+  const titleLower = behavior.title.toLowerCase();
+
+  // 1. Field name appears directly in behavior title
+  const direct = endpointDef.inputFields.find(f =>
+    f.isBoundaryField && titleLower.includes(f.name.toLowerCase()));
+  if (direct) return direct;
+
+  // 2. Semantic keyword matching
+  const semanticMap: Record<string, string[]> = {
+    price:    ["price", "cost", "amount", "fee", "total"],
+    stock:    ["stock", "inventory", "quantity"],
+    name:     ["name", "title", "label"],
+    items:    ["items", "array", "list"],
+    quantity: ["quantity", "qty", "count"],
+    pageSize: ["page", "pagesize", "limit", "per_page"],
+    sku:      ["sku", "code"],
+  };
+  for (const [fieldName, keywords] of Object.entries(semanticMap)) {
+    if (keywords.some(kw => titleLower.includes(kw))) {
+      const match = endpointDef.inputFields.find(f =>
+        f.isBoundaryField && f.name.toLowerCase() === fieldName);
+      if (match) return match;
+    }
+  }
+
+  // 3. First isBoundaryField=true as fallback
+  return endpointDef.inputFields.find(f => f.isBoundaryField);
 }
 
 // ─── Test Generators ────────────────────────────────────────────────────────────
@@ -2753,7 +2967,11 @@ ${isHardDelete ? `  // Hard-delete: record must NOT be recoverable
 `;
 }
 
-function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): string {
+/**
+ * Legacy boundary test generator — used as fallback when no isBoundaryField is found in IR.
+ * Uses constraint-based extraction from behavior text.
+ */
+function generateBoundaryTestLegacy(target: ProofTarget, analysis: AnalysisResult): string {
   const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
@@ -2763,12 +2981,9 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
 
-  // Determine endpoint: use resolved endpoint from IR, or TODO placeholder
   const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
   const hasEndpoint = !!target.endpoint;
 
-  // Goldstandard: Use constraints from ProofTarget (extracted by extractConstraints in Layer 2)
-  // Pick the most relevant constraint: prefer non-enum, non-id fields, non-rate-limit fields
   const RATE_LIMIT_NOISE_FIELDS = new Set(["workspace", "request", "minute", "second", "hour", "day", "requests"]);
   const primaryConstraint = target.constraints?.find(c =>
     c.type !== "enum" &&
@@ -2776,70 +2991,47 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase())
   ) || target.constraints?.find(c => c.type !== "enum") || target.constraints?.[0];
 
-  // Extract field name: prefer from constraint, then from behavior text
   const fieldFromConstraint = primaryConstraint?.field;
-  // Extract field from behavior title:
-  // "title exceeds 200" → "title", "dueDate is in the past" → "dueDate"
-  // "taskIds array is empty" → "taskIds" (word before array/list)
   const titleText = behavior?.title || "";
   const arrayEmptyTitleMatch = titleText.match(/(\w+)\s+(?:array|list|ids?)\s+is\s+empty/i);
   const fieldFromTitle = arrayEmptyTitleMatch?.[1] ||
     titleText.match(/(\w+)\s+(?:exceeds?|is\s+empty|is\s+in\s+the\s+past|must\s+be|above|below|between|boundary|limit|range)/i)?.[1];
-  // Extract field from error case: "title > 200 chars" → "title", "empty title -> 400" → skip
   const fieldFromError = behavior?.errorCases[0]?.match(/^([a-zA-Z][a-zA-Z0-9_]*)\s*(?:>|<|=|exceeds?|is\s+empty|must)/i)?.[1];
   const fieldFromAssertion = target.assertions.find(a => a.type === "field_value")?.target.split(".").pop();
-  // Avoid noise words as field names
   const NOISE_FIELD_NAMES = new Set(["empty", "not", "length", "size", "array", "list", "count", "value", "request", "returns", "return", "if", "system", "api"]);
   const rawFieldName = fieldFromConstraint || fieldFromTitle || fieldFromError || fieldFromAssertion;
   const fieldName = (rawFieldName && !NOISE_FIELD_NAMES.has(rawFieldName.toLowerCase())) ? rawFieldName : "value";
 
-  // Use constraint values if available, otherwise fall back to text extraction
   const allText = [...(behavior?.errorCases || []), ...(behavior?.postconditions || []), target.description].join(" ");
   const minMatch = allText.match(/(\d+)\s*(?:minimum|min|\(min|≥|>=|mindestens)/i);
   const maxMatch = allText.match(/(\d+)\s*(?:maximum|max|\(max|≤|<=|maximal)/i);
   const gtAssertions = target.assertions.filter(a => a.operator === "gt" || a.operator === "lte");
   const min = primaryConstraint?.min ?? (minMatch ? parseInt(minMatch[1]) : (gtAssertions[0] ? Number(gtAssertions[0].value) + 1 : 1));
-  // max is optional: only set if explicitly known from constraint or text (no fallback to 100)
   const maxRaw: number | undefined = primaryConstraint?.max ?? (maxMatch ? parseInt(maxMatch[1]) : (gtAssertions[1] ? Number(gtAssertions[1].value) : undefined));
-  const max = maxRaw ?? 100; // used for array/string generation; hasMax controls whether max-tests are generated
-  const hasMax = maxRaw !== undefined; // only generate max-boundary tests if max is explicitly known
+  const max = maxRaw ?? 100;
+  const hasMax = maxRaw !== undefined;
 
-  // Determine type from constraint or text
   const isStringField = primaryConstraint?.type === "string" || allText.toLowerCase().includes("length") || allText.toLowerCase().includes("char");
   const isDateField = primaryConstraint?.type === "date" || allText.toLowerCase().includes("date") || allText.toLowerCase().includes("future");
   const isArrayField = primaryConstraint?.type === "array" || allText.toLowerCase().includes("array") || allText.toLowerCase().includes("items");
 
-  // Build payload using only fields known from IR
-  // Prefer the endpoint that matches the target's endpoint, then fall back to create/add
-  const targetEndpointDef = target.endpoint
-    ? analysis.ir.apiEndpoints.find(e => e.name === target.endpoint)
-    : undefined;
-  const createEndpoint = targetEndpointDef
-    || analysis.ir.apiEndpoints.find(e =>
-        e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
+  const targetEndpointDef = target.endpoint ? analysis.ir.apiEndpoints.find(e => e.name === target.endpoint) : undefined;
+  const createEndpoint = targetEndpointDef || analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
-
-  // CRITICAL: If fieldName is not in knownFields, try to find a better constraint whose field IS in knownFields
-  // e.g. B-010 has constraints [{field:"date"}, {field:"dueDate"}] — prefer "dueDate" since it's in knownFields
   const knownFieldNames = knownFields.map(f => f.name);
   let resolvedFieldName = fieldName;
   if (!knownFieldNames.includes(fieldName) && knownFields.length > 0) {
     const betterConstraint = target.constraints?.find(c =>
-      c.type !== "enum" &&
-      !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase()) &&
-      knownFieldNames.includes(c.field)
-    );
+      c.type !== "enum" && !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase()) && knownFieldNames.includes(c.field));
     if (betterConstraint) resolvedFieldName = betterConstraint.field;
   }
   const fieldInKnown = knownFieldNames.includes(resolvedFieldName);
   const effectiveFields: EndpointField[] = fieldInKnown || knownFields.length === 0
     ? knownFields
-    : [...knownFields, { name: resolvedFieldName, type: "string", required: true }]; // append boundary field if missing
-  // Use resolvedFieldName everywhere below
+    : [...knownFields, { name: resolvedFieldName, type: "string", required: true }];
   const finalFieldName = resolvedFieldName;
 
-  // Build boundary values using the typed EndpointField from IR (if available)
-  // Fall back to constraint-based extraction for backward compatibility
   const boundaryField: EndpointField = knownFields.find(f => f.name === finalFieldName) || {
     name: finalFieldName,
     type: isDateField ? "date" : isStringField ? "string" : isArrayField ? "array" : "number",
@@ -2847,40 +3039,34 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     min,
     max: hasMax ? max : undefined,
   };
-  const bv = calcBoundaryValues(boundaryField);
-  function boundaryValue(bound: "min" | "max" | "below_min" | "above_max" | "null"): string {
-    if (bound === "null") return bv.nullVal;
-    if (bound === "min") return bv.min;
-    if (bound === "max") return bv.max;
-    if (bound === "below_min") return bv.belowMin;
-    if (bound === "above_max") return bv.aboveMax;
-    return bv.nullVal;
-  }
+  const boundaryCases = calcBoundaryValues(boundaryField);
+  const payloadFnName = `basePayload_${target.id.replace(/-/g, "_")}`;
 
-  // Build a realistic base payload: known fields get sensible defaults, boundary field is injected via function
-  // Uses getValidDefault + buildArrayItem for semantically correct values (no "test-price", "test-stock")
   function buildPayloadLine(f: EndpointField, isBoundaryFieldArg: boolean): string {
     const fname = f.name;
     if (isBoundaryFieldArg) return `    ${fname}: boundaryValue,`;
-    // Use getValidDefault for all non-boundary fields — it handles all types correctly
     const defaultVal = getValidDefault(f, tenantConst);
-    // For array fields: use buildArrayItem to get proper object syntax
     if (f.type === "array" && f.arrayItemType === "object" && f.arrayItemFields?.length) {
       const item = buildArrayItem(f, tenantConst);
       return `    ${fname}: [${item}],`;
     }
-    // For date fields: use tomorrowStr()
     if (f.type === "date" || f.name.toLowerCase().includes("date")) return `    ${fname}: tomorrowStr(),`;
     return `    ${fname}: ${defaultVal},`;
   }
 
   const payloadLines = effectiveFields.length > 0
     ? effectiveFields.map(f => buildPayloadLine(f, f.name === finalFieldName)).join("\n")
-    : `    ${tenantField}: ${tenantConst},\n    ${finalFieldName}: boundaryValue, // TODO: Add other required fields for ${endpoint}`;
+    : `    ${tenantField}: ${tenantConst},\n    ${finalFieldName}: boundaryValue,`;
 
   const needsTomorrowStr = isDateField || effectiveFields.some(f => f.name.toLowerCase().includes("date"));
-  // Use a unique payload function name per test to avoid conflicts when merged into one file
-  const payloadFnName = `basePayload_${target.id.replace(/-/g, "_")}`;
+
+  // Generate test cases from BoundaryCase[]
+  const validCases = boundaryCases.filter(bc => bc.valid);
+  const invalidCases = boundaryCases.filter(bc => !bc.valid);
+  const testCasesStr = [
+    ...validCases.map((bc, i) => `\ntest("${target.id}${String.fromCharCode(97 + i)} — ${finalFieldName}=${bc.label}", async ({ request }) => {\n  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${bc.value}), adminCookie);\n  expect(status).toBe(200);\n  // Kills: Change >= to > in ${finalFieldName} validation (off-by-one)\n});`),
+    ...invalidCases.map((bc, i) => `\ntest("${target.id}${String.fromCharCode(97 + validCases.length + i)} — ${finalFieldName}=${bc.label}", async ({ request }) => {\n  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${bc.value}), adminCookie);\n  expect([400, 422]).toContain(status);\n  // Kills: Remove ${finalFieldName} boundary validation\n});`),
+  ].join("\n");
 
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation${needsTomorrowStr ? ", tomorrowStr, yesterdayStr" : ""} } from "../../helpers/api";
@@ -2889,9 +3075,7 @@ import { ${tenantConst} } from "../../helpers/factories";
 
 // ${target.id} — Boundary: ${target.description}
 // Risk: ${target.riskLevel}
-// Spec: ${behavior?.chapter || behavior?.specAnchor || "Validation"}
-// Behavior: ${behavior?.title || target.description}
-${!hasEndpoint ? "// ⚠️  TODO: No endpoint was found in spec. Replace TODO_REPLACE_WITH_YOUR_ENDPOINT with the actual endpoint." : ""}
+${!hasEndpoint ? "// ⚠️  TODO: No endpoint found. Replace TODO_REPLACE_WITH_YOUR_ENDPOINT." : ""}
 
 let adminCookie: string;
 
@@ -2899,39 +3083,79 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-const ${payloadFnName} = (boundaryValue: unknown) => ({
-${payloadLines}
+const ${payloadFnName} = (boundaryValue: unknown) => ({\n${payloadLines}\n});
+${testCasesStr}\n`;
+}
+
+function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId)!;
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  const endpointDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+
+  // Use new behavior-aware findBoundaryField with semantic keyword matching
+  const boundaryField = findBoundaryFieldForBehavior(behavior, endpointDef);
+
+  if (!boundaryField) {
+    // Fallback: legacy constraint-based approach
+    return generateBoundaryTestLegacy(target, analysis);
+  }
+
+  // All other required fields with valid defaults
+  const otherFields = (endpointDef?.inputFields || [])
+    .filter(f => f.required && f.name !== boundaryField.name)
+    .map(f => {
+      if (f.type === "array" && f.arrayItemType === "object" && f.arrayItemFields?.length) {
+        return `    ${f.name}: [${buildArrayItemLiteral(f)}]`;
+      }
+      if (f.type === "date" || f.name.toLowerCase().includes("date")) return `    ${f.name}: tomorrowStr()`;
+      return `    ${f.name}: ${getValidDefault(f, tenantConst)}`;
+    })
+    .join(",\n");
+
+  const boundaryCases = calcBoundaryValues(boundaryField);
+  const varName = `basePayload_${target.id.replace(/-/g, "_")}`;
+
+  const testCases = boundaryCases.map((bc, idx) => {
+    const letter = String.fromCharCode(97 + idx);
+    const statusLine = bc.valid
+      ? `  expect(status).toBe(200);`
+      : `  expect([400, 422]).toContain(status);`;
+    const killLine = bc.valid
+      ? `  // Kills: Change >= to > in ${boundaryField.name} validation (off-by-one)`
+      : `  // Kills: Remove ${boundaryField.name} boundary validation`;
+    return `\ntest("${target.id}${letter} — ${boundaryField.name}=${bc.label}", async ({ request }) => {\n  const { status } = await trpcMutation(request, "${endpoint}", ${varName}(${bc.value}), adminCookie);\n${statusLine}\n${killLine}\n});`;
+  }).join("\n");
+
+  const needsDates = boundaryField.type === "date" ||
+    (endpointDef?.inputFields || []).some(f => f.type === "date" || f.name.toLowerCase().includes("date"));
+  const dateImport = needsDates ? ", tomorrowStr, yesterdayStr" : "";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation${dateImport} } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Boundary: ${target.description}
+// Risk: ${target.riskLevel}
+// Boundary Field: ${boundaryField.name} (${boundaryField.type}${boundaryField.min !== undefined ? `, min: ${boundaryField.min}` : ""}${boundaryField.max !== undefined ? `, max: ${boundaryField.max}` : ""})
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
 });
 
-test("${target.id}a — ${finalFieldName}=${boundaryValue("min")} (minimum) is allowed", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("min")}), adminCookie);
-  expect(status).toBe(200);
-  // Kills: Change >= to > in ${finalFieldName} validation (off-by-one)
+const ${varName} = (boundaryValue: unknown) => ({\n${otherFields ? otherFields + "," : ""}
+    ${boundaryField.name}: boundaryValue,
 });
-${hasMax ? `
-test("${target.id}b — ${finalFieldName}=${boundaryValue("max")} (maximum) is allowed", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("max")}), adminCookie);
-  expect(status).toBe(200);
-  // Kills: Change <= to < in ${finalFieldName} validation (off-by-one)
-});
-` : ""}
-test("${target.id}c — ${finalFieldName}=${boundaryValue("below_min")} (below minimum) is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("below_min")}), adminCookie);
-  expect([400, 422]).toContain(status);
-  // Kills: Remove ${finalFieldName} >= ${min} validation
-});
-${hasMax ? `
-test("${target.id}d — ${finalFieldName}=${boundaryValue("above_max")} (above maximum) is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(${boundaryValue("above_max")}), adminCookie);
-  expect([400, 422]).toContain(status);
-  // Kills: Remove ${finalFieldName} <= ${max} validation
-});
-` : ""}
-test("${target.id}e — ${finalFieldName}=null is rejected", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${endpoint}", ${payloadFnName}(null), adminCookie);
-  expect([400, 422]).toContain(status);
-  // Kills: Skip null check on ${finalFieldName}
-});
+${testCases}
 `;
 }
 
@@ -3286,6 +3510,116 @@ test("${target.id} — Rate limit resets after window expires", async ({ request
 `;
 }
 
+function generateSpecDriftTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
+  const roleFnName = adminRole
+    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    : "getAdminCookie";
+
+  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+  const outputFields = epDef?.outputFields || [];
+  const inputFields = epDef?.inputFields || [];
+
+  // Determine if this is a query (GET) or mutation (POST/PUT)
+  const isQuery = !endpoint.toLowerCase().includes("create") &&
+    !endpoint.toLowerCase().includes("update") &&
+    !endpoint.toLowerCase().includes("delete") &&
+    !endpoint.toLowerCase().includes("cancel");
+
+  // Build the schema name from the endpoint
+  const schemaName = endpoint.replace(/\./g, "_") + "ResponseSchema";
+
+  // Build query payload from input fields
+  const queryPayloadLines = inputFields
+    .filter(f => !f.isTenantKey)
+    .map(f => "    " + f.name + ": " + getValidDefault(f, tenantConst) + ",")
+    .join("\n");
+
+  // Build field assertions from outputFields
+  const fieldAssertions = outputFields.length > 0
+    ? outputFields.slice(0, 5).map(f =>
+        "  expect(record?." + f + ").toBeDefined(); // Kills: Remove '" + f + "' from " + endpoint + " response"
+      ).join("\n")
+    : "  expect(record?.id).toBeDefined(); // Kills: Remove 'id' from " + endpoint + " response";
+
+  // Build mutation kill comments
+  const killComments = target.mutationTargets.map(m => "  // Kills: " + m.description).join("\n");
+
+  const importLine = isQuery
+    ? "import { trpcQuery } from \"../../helpers/api\";"
+    : "import { trpcMutation, trpcQuery } from \"../../helpers/api\";";
+
+  const payloadExtra = queryPayloadLines ? ",\n" + queryPayloadLines : "";
+
+  const lines: string[] = [
+    "import { test, expect } from \"@playwright/test\";",
+    importLine,
+    "import { " + roleFnName + " } from \"../../helpers/auth\";",
+    "import { " + tenantConst + ", createTestResource } from \"../../helpers/factories\";",
+    "import { " + schemaName + " } from \"../../helpers/schemas\";",
+    "",
+    "// " + target.id + " \u2014 Spec Drift: " + target.description,
+    "// Risk: " + target.riskLevel,
+    "// Spec: " + (behavior?.chapter || behavior?.specAnchor || "API Contract"),
+    "// Behavior: " + (behavior?.title || target.description),
+    "// Purpose: Validates that the API response shape matches the spec-derived Zod schema.",
+    "//          Catches when implementation drifts from the spec (missing fields, wrong types).",
+    "",
+    "let adminCookie: string;",
+    "",
+    "test.beforeAll(async ({ request }) => {",
+    "  adminCookie = await " + roleFnName + "(request);",
+    "});",
+    "",
+    "test(\"" + target.id + "a \u2014 " + endpoint + " response shape matches spec schema\", async ({ request }) => {",
+    "  // Arrange: Ensure at least one resource exists",
+    "  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;",
+    "  expect(resource?.id).toBeDefined();",
+    "  // Kills: " + (target.mutationTargets[0]?.description || "Remove 'id' field from " + endpoint + " response"),
+    "",
+    "  // Act: Call the endpoint",
+    "  const { status, data } = await trpcQuery(request, \"" + endpoint + "\",",
+    "    { " + tenantField + ": " + tenantConst + payloadExtra + " }, adminCookie);",
+    "  expect(status).toBe(200);",
+    "  // Kills: " + (target.mutationTargets[1]?.description || "Return wrong type for response fields"),
+    "",
+    "  // Assert: Validate response shape with Zod schema",
+    "  const records = Array.isArray(data) ? data : [data];",
+    "  expect(records.length).toBeGreaterThan(0);",
+    "  // Kills: Return empty array when resources exist",
+    "",
+    "  const record = records[0] as Record<string, unknown>;",
+    "",
+    "  // Zod schema validation \u2014 catches spec drift (missing/wrong-type fields)",
+    "  const parseResult = " + schemaName + ".safeParse(record);",
+    "  if (!parseResult.success) {",
+    "    throw new Error(\"Spec drift detected in " + endpoint + ": \" + parseResult.error.message);",
+    "  }",
+    "  // Kills: Return response that doesn't match spec schema",
+    "",
+    "  // Field-level assertions (belt-and-suspenders)",
+    fieldAssertions,
+    killComments,
+    "});",
+    "",
+    "test(\"" + target.id + "b \u2014 " + endpoint + " returns correct HTTP status for invalid input\", async ({ request }) => {",
+    "  // Send request with missing required fields",
+    "  const { status: badStatus } = await trpcQuery(request, \"" + endpoint + "\",",
+    "    { " + tenantField + ": -1 }, adminCookie);",
+    "  // Should return error status, not 200 with empty data",
+    "  expect([400, 404, 422]).toContain(badStatus);",
+    "  // Kills: Return 200 with empty array for invalid tenant ID",
+    "});",
+  ];
+
+  return lines.join("\n") + "\n";
+}
+
 const LAYER3_FEW_SHOT_EXAMPLE = [
   "--- FEW-SHOT EXAMPLE (follow this structure exactly) ---",
   "Proof target: Item quantity boundary (1-100)",
@@ -3360,11 +3694,36 @@ async function generateLLMTest(target: ProofTarget, analysis: AnalysisResult): P
           ? Object.entries(target.resolvedPayload).map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`).join(",\n")
           : endpointDef?.inputFields.map(f => `  ${f.name}: ${getValidDefault(f, `TEST_${(analysis.ir.tenantModel?.tenantEntity || "tenant").toUpperCase()}_ID`)}`).join(",\n") || "";
 
-        // Build side-effect instructions
+        // Build side-effect instructions with before/after comparison
         const sideEffects = target.sideEffects || [];
         const sideEffectInstructions = sideEffects.length > 0
-          ? `SIDE EFFECTS — you MUST verify EACH of these after the action:\n${sideEffects.map((se, i) => `${i + 1}. ${se}\n   → Read state BEFORE the action, then assert the change AFTER`).join("\n")}`
+          ? `SIDE EFFECTS — you MUST verify EACH with BEFORE/AFTER comparison:\n${sideEffects.map((se, i) => {
+            const fieldMatch = se.match(/(\w+)\s*(?:\+=|-=|\+\+|--)/);
+            const field = fieldMatch?.[1];
+            if (field && (se.includes("+=") || se.includes("-=") || se.includes("++"))) {
+              return `${i + 1}. ${se}\n   \u2192 BEFORE: const ${field}Before = resource.${field} as number;\n   \u2192 AFTER:  const ${field}After = (await getResource(...)).${field} as number;\n   \u2192 ASSERT: expect(${field}After).toBe(${field}Before ${se.includes("-") ? "-" : "+"} quantity);\n   \u2192 // Kills: Not updating ${field} in ${target.endpoint}`;
+            }
+            if (se.includes("NOW()") || se.includes("At =")) {
+              const ts = se.split("=")[0].trim();
+              return `${i + 1}. ${se}\n   \u2192 ASSERT: expect(after.${ts}).not.toBeNull();\n   \u2192 // Kills: Not setting ${ts} timestamp`;
+            }
+            return `${i + 1}. ${se}\n   \u2192 Read state BEFORE the action, then assert the change AFTER`;
+          }).join("\n")}`
           : "No side effects to verify.";
+
+        // Schema import hint
+        const firstResource = analysis.ir.resources[0];
+        const schemaImportHint = firstResource
+          ? `SCHEMA VALIDATION — import and use after successful API call:\nimport { ${firstResource.name.charAt(0).toUpperCase() + firstResource.name.slice(1)}Schema, validateSchema } from "../../helpers/schemas";\n// After a successful API call:\nconst validated = validateSchema(${firstResource.name.charAt(0).toUpperCase() + firstResource.name.slice(1)}Schema, data);\nexpect(validated.id).toBeDefined(); // Kills: Return wrong shape`
+          : "";
+
+        // Concurrency hint for stock/inventory side effects
+        const hasStockEffect = sideEffects.some(se =>
+          /stock|inventory|count|balance|quota|limit/i.test(se)
+        );
+        const concurrencyHint = hasStockEffect && target.proofType === 'business_logic'
+          ? `\nCONCURRENCY INVARIANT (add as a separate test block):\n- Run 5 concurrent requests with Promise.all()\n- After all complete, verify the resource count/stock is exactly correct (no double-spend)\n- Kills: Race condition in stock decrement`
+          : "";
 
         return `Generate a Gold Standard Playwright test for this proof target:
 
@@ -3372,17 +3731,17 @@ ID: ${target.id}
 Behavior: ${target.description}
 Risk Level: ${target.riskLevel}
 Proof Type: ${target.proofType}
-Endpoint: ${target.endpoint || "UNKNOWN — infer from behavior description"}
+Endpoint: ${target.endpoint || "UNKNOWN \u2014 infer from behavior description"}
 Tenant Field: ${tenantField}
 Preconditions: ${target.preconditions.join("; ")}
 
-Endpoint Input Schema (use ONLY these field names — NEVER invent others):
+Endpoint Input Schema (use ONLY these field names \u2014 NEVER invent others):
 {
 ${validPayloadLines}
 }
 
 CRITICAL RULES FOR PAYLOAD:
-- Use ONLY the field names listed above — never invent other field names
+- Use ONLY the field names listed above \u2014 never invent other field names
 - For array fields: use proper array syntax with objects, NEVER dot notation
   CORRECT:   items: [{ productId: 1, quantity: 2 }]
   INCORRECT: items.productId: 1  (this is not valid TypeScript)
@@ -3390,15 +3749,21 @@ CRITICAL RULES FOR PAYLOAD:
 - For number fields: use a number literal, not a string
 
 ${sideEffectInstructions}
-
+${schemaImportHint ? "\n" + schemaImportHint + "\n" : ""}
 Required Assertions:
 ${target.assertions.map(a => `- ${a.target} ${a.operator} ${JSON.stringify(a.value)}: ${a.rationale}`).join("\n")}
 
 Mutation Targets (kill ALL with '// Kills:' comments):
 ${target.mutationTargets.map((m, i) => `${i + 1}. ${m.description}`).join("\n")}
 
+AVAILABLE IMPORTS:
+- from "../../helpers/api": trpcMutation, trpcQuery, BASE_URL, tomorrowStr, yesterdayStr
+- from "../../helpers/auth": ${roleFnName}
+- from "../../helpers/factories": TEST_${tenantEntity.toUpperCase()}_ID, createTestResource, getResource, listResources
+- from "../../helpers/schemas": ${firstResource ? `${firstResource.name.charAt(0).toUpperCase() + firstResource.name.slice(1)}Schema, validateSchema` : "validateSchema"}
+
 Spec context: ${analysis.specType}
-Spec chapter: ${analysis.ir.behaviors.find(b => b.id === target.behaviorId)?.chapter || "unknown"}`;
+Spec chapter: ${analysis.ir.behaviors.find(b => b.id === target.behaviorId)?.chapter || "unknown"}${concurrencyHint}`;
       })(),
       },
     ],
@@ -3422,6 +3787,7 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     risk_scoring: generateRiskScoringTest,
     business_logic: generateBusinessLogicTest,
     rate_limit: generateRateLimitTest,
+    spec_drift: generateSpecDriftTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);

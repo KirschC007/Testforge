@@ -8,6 +8,7 @@ import {
   type RawProof,
   type Behavior,
   type AnalysisIR,
+  type EndpointField,
 } from "./analyzer";
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────────
@@ -41,9 +42,40 @@ function makeAnalysisResult(behaviors: Behavior[] = [makeBehavior()]): AnalysisR
         { name: "reservations", table: "reservations", tenantKey: "restaurantId", operations: ["read", "create", "update"], hasPII: true },
       ],
       apiEndpoints: [
-        { name: "reservations.create", method: "POST /api/trpc/reservations.create", auth: "requireRestaurantAuth", relatedBehaviors: ["B001"], inputFields: ["restaurantId", "guestName", "partySize"] },
-        { name: "reservations.list", method: "GET /api/trpc/reservations.list", auth: "requireRestaurantAuth", relatedBehaviors: [], inputFields: ["restaurantId"] },
-        { name: "reservations.updateStatus", method: "POST /api/trpc/reservations.updateStatus", auth: "requireRestaurantAuth", relatedBehaviors: [], inputFields: ["id", "restaurantId", "status"] },
+        {
+          name: "reservations.create",
+          method: "POST /api/trpc/reservations.create",
+          auth: "requireRestaurantAuth",
+          relatedBehaviors: ["B001"],
+          inputFields: [
+            { name: "restaurantId", type: "number", required: true, isTenantKey: true },
+            { name: "guestName", type: "string", required: true },
+            { name: "partySize", type: "number", required: true, min: 1, max: 20 },
+          ] as EndpointField[],
+          outputFields: ["id", "restaurantId", "guestName", "partySize", "status", "createdAt"],
+        },
+        {
+          name: "reservations.list",
+          method: "GET /api/trpc/reservations.list",
+          auth: "requireRestaurantAuth",
+          relatedBehaviors: [],
+          inputFields: [
+            { name: "restaurantId", type: "number", required: true, isTenantKey: true },
+          ] as EndpointField[],
+          outputFields: ["id", "restaurantId", "guestName", "partySize", "status"],
+        },
+        {
+          name: "reservations.updateStatus",
+          method: "POST /api/trpc/reservations.updateStatus",
+          auth: "requireRestaurantAuth",
+          relatedBehaviors: [],
+          inputFields: [
+            { name: "id", type: "number", required: true },
+            { name: "restaurantId", type: "number", required: true, isTenantKey: true },
+            { name: "status", type: "enum", required: true, enumValues: ["pending", "confirmed", "cancelled"] },
+          ] as EndpointField[],
+          outputFields: ["id", "status", "updatedAt"],
+        },
       ],
       authModel: {
         loginEndpoint: "/api/trpc/auth.login",
@@ -458,3 +490,251 @@ describe("extractConstraints", () => {
     expect(c?.type).toBe("date");
     expect(c?.min).toBe(1); // must be future
   });
+
+// ─── E7: spec_drift ProofType ─────────────────────────────────────────────────
+
+describe("spec_drift ProofType", () => {
+  it("assigns spec_drift proof type to behaviors tagged with api-response", () => {
+    const b = makeBehavior({ tags: ["api-response"], riskHints: [] });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    expect(model.behaviors[0].proofTypes).toContain("spec_drift");
+  });
+
+  it("assigns spec_drift proof type to behaviors tagged with response-schema", () => {
+    const b = makeBehavior({ tags: ["response-schema"], riskHints: [] });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    expect(model.behaviors[0].proofTypes).toContain("spec_drift");
+  });
+
+  it("assigns spec_drift proof type to behaviors tagged with spec-drift", () => {
+    const b = makeBehavior({ tags: ["spec-drift"], riskHints: [] });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    expect(model.behaviors[0].proofTypes).toContain("spec_drift");
+  });
+
+  it("does NOT assign spec_drift to behaviors without api-response tag", () => {
+    const b = makeBehavior({ tags: ["security", "multi-tenant"], riskHints: ["idor"] });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    expect(model.behaviors[0].proofTypes).not.toContain("spec_drift");
+  });
+
+  it("creates a spec_drift ProofTarget with correct structure", () => {
+    const b = makeBehavior({
+      id: "B-DRIFT-001",
+      tags: ["api-response"],
+      riskHints: [],
+      title: "orders.list returns correct response shape",
+    });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    const driftTarget = model.proofTargets.find(t => t.proofType === "spec_drift");
+    expect(driftTarget).toBeDefined();
+    expect(driftTarget?.id).toMatch(/DRIFT/);
+    expect(driftTarget?.description).toContain("spec");
+    expect(driftTarget?.mutationTargets.length).toBeGreaterThan(0);
+    expect(driftTarget?.assertions.length).toBeGreaterThan(0);
+  });
+
+  it("spec_drift ProofTarget includes http_status assertion", () => {
+    const b = makeBehavior({ tags: ["api-response"], riskHints: [] });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    const driftTarget = model.proofTargets.find(t => t.proofType === "spec_drift");
+    const statusAssertion = driftTarget?.assertions.find(a => a.type === "http_status");
+    expect(statusAssertion).toBeDefined();
+    expect(statusAssertion?.value).toBe(200);
+  });
+
+  it("spec_drift ProofTarget has mutation targets that kill on field removal", () => {
+    const b = makeBehavior({ tags: ["api-response"], riskHints: [] });
+    const analysis = makeAnalysisResult([b]);
+    const model = buildRiskModel(analysis);
+
+    const driftTarget = model.proofTargets.find(t => t.proofType === "spec_drift");
+    expect(driftTarget?.mutationTargets.every(m => m.expectedKill)).toBe(true);
+  });
+});
+
+// ─── E8-E11: calcBoundaryValues + findBoundaryFieldForBehavior ────────────────
+
+import {
+  calcBoundaryValues,
+  findBoundaryFieldForBehavior,
+  buildArrayItemLiteral,
+  type BoundaryCase,
+  type APIEndpoint,
+} from "./analyzer";
+
+describe("calcBoundaryValues — BoundaryCase[] format", () => {
+  it("returns 5 cases for number field with min/max", () => {
+    const f: EndpointField = { name: "price", type: "number", required: true, min: 0.01, max: 999999.99 };
+    const cases = calcBoundaryValues(f);
+    expect(cases).toHaveLength(5);
+    expect(cases.filter(c => c.valid)).toHaveLength(2);
+    expect(cases.filter(c => !c.valid)).toHaveLength(3);
+  });
+
+  it("uses decimal step for price fields", () => {
+    const f: EndpointField = { name: "price", type: "number", required: true, min: 0.01, max: 999999.99 };
+    const cases = calcBoundaryValues(f);
+    const minCase = cases.find(c => c.valid && c.label.includes("minimum"));
+    const aboveMax = cases.find(c => !c.valid && c.label.includes("above maximum"));
+    expect(minCase?.value).toBe("0.01");
+    expect(aboveMax?.value).toBe("1000000.00");
+  });
+
+  it("uses integer step for stock fields", () => {
+    const f: EndpointField = { name: "stock", type: "number", required: true, min: 0, max: 10000 };
+    const cases = calcBoundaryValues(f);
+    const aboveMax = cases.find(c => !c.valid && c.label.includes("above maximum"));
+    expect(aboveMax?.value).toBe("10001");
+  });
+
+  it("returns 5 cases for string field with min/max", () => {
+    const f: EndpointField = { name: "name", type: "string", required: true, min: 1, max: 100 };
+    const cases = calcBoundaryValues(f);
+    expect(cases).toHaveLength(5);
+    const belowMin = cases.find(c => !c.valid && c.label.includes("below minimum"));
+    expect(belowMin?.value).toBe(`""`);
+    const aboveMax = cases.find(c => !c.valid && c.label.includes("above maximum"));
+    expect(aboveMax?.value).toBe(`"A".repeat(101)`);
+  });
+
+  it("returns 3 cases for date field", () => {
+    const f: EndpointField = { name: "dueDate", type: "date", required: true };
+    const cases = calcBoundaryValues(f);
+    expect(cases).toHaveLength(3);
+    const validCase = cases.find(c => c.valid);
+    expect(validCase?.value).toBe("tomorrowStr()");
+    const pastCase = cases.find(c => !c.valid && c.label.includes("past"));
+    expect(pastCase?.value).toBe("yesterdayStr()");
+  });
+
+  it("returns 5 cases for array field with min/max", () => {
+    const f: EndpointField = {
+      name: "items", type: "array", required: true, min: 1, max: 50,
+      arrayItemType: "object",
+      arrayItemFields: [
+        { name: "productId", type: "number", required: true },
+        { name: "quantity", type: "number", required: true, min: 1 },
+      ],
+    };
+    const cases = calcBoundaryValues(f);
+    expect(cases).toHaveLength(5);
+    const emptyCase = cases.find(c => !c.valid && c.label.includes("empty"));
+    expect(emptyCase?.value).toBe("[]");
+    const aboveMax = cases.find(c => !c.valid && c.label.includes("above maximum"));
+    expect(aboveMax?.value).toBe("Array(51).fill({ productId: 1, quantity: 1 })");
+  });
+
+  it("returns 3 cases for enum field", () => {
+    const f: EndpointField = { name: "priority", type: "enum", required: true, enumValues: ["low", "medium", "high"] };
+    const cases = calcBoundaryValues(f);
+    expect(cases).toHaveLength(3);
+    const validCase = cases.find(c => c.valid);
+    expect(validCase?.value).toBe(`"low"`);
+    const invalidCase = cases.find(c => !c.valid && c.label.includes("invalid"));
+    expect(invalidCase?.value).toBe(`"__invalid__"`);
+  });
+
+  it("all valid cases have valid=true", () => {
+    const f: EndpointField = { name: "count", type: "number", required: true, min: 1, max: 100 };
+    const cases = calcBoundaryValues(f);
+    expect(cases.every(c => typeof c.valid === "boolean")).toBe(true);
+    expect(cases.every(c => typeof c.label === "string")).toBe(true);
+    expect(cases.every(c => typeof c.value === "string")).toBe(true);
+  });
+});
+
+describe("buildArrayItemLiteral", () => {
+  it("builds object literal for object array items", () => {
+    const f: EndpointField = {
+      name: "items", type: "array", required: true,
+      arrayItemType: "object",
+      arrayItemFields: [
+        { name: "productId", type: "number", required: true },
+        { name: "quantity", type: "number", required: true, min: 1, max: 100 },
+      ],
+    };
+    const result = buildArrayItemLiteral(f);
+    expect(result).toContain("productId:");
+    expect(result).toContain("quantity:");
+    expect(result).toMatch(/\{.*\}/);
+  });
+
+  it("returns '1' for number array items", () => {
+    const f: EndpointField = { name: "ids", type: "array", required: true, arrayItemType: "number" };
+    expect(buildArrayItemLiteral(f)).toBe("1");
+  });
+
+  it("returns '\"item\"' for untyped array items", () => {
+    const f: EndpointField = { name: "tags", type: "array", required: true };
+    expect(buildArrayItemLiteral(f)).toBe(`"item"`);
+  });
+});
+
+describe("findBoundaryFieldForBehavior", () => {
+  function makeEndpoint(fields: EndpointField[]): APIEndpoint {
+    return {
+      name: "products.create",
+      method: "POST /api/trpc/products.create",
+      auth: "requireAuth",
+      relatedBehaviors: [],
+      inputFields: fields,
+    };
+  }
+
+  it("finds field by name in behavior title", () => {
+    const b = makeBehavior({ title: "System rejects price below 0.01", riskHints: [] });
+    const ep = makeEndpoint([
+      { name: "shopId", type: "number", required: true, isTenantKey: true },
+      { name: "price", type: "number", required: true, min: 0.01, max: 999999.99, isBoundaryField: true },
+      { name: "name", type: "string", required: true, min: 1, max: 100, isBoundaryField: true },
+    ]);
+    const result = findBoundaryFieldForBehavior(b, ep);
+    expect(result?.name).toBe("price");
+  });
+
+  it("uses semantic keyword matching for stock", () => {
+    const b = makeBehavior({ title: "System rejects inventory above 10000", riskHints: [] });
+    const ep = makeEndpoint([
+      { name: "shopId", type: "number", required: true, isTenantKey: true },
+      { name: "stock", type: "number", required: true, min: 0, max: 10000, isBoundaryField: true },
+    ]);
+    const result = findBoundaryFieldForBehavior(b, ep);
+    expect(result?.name).toBe("stock");
+  });
+
+  it("falls back to first isBoundaryField when no keyword match", () => {
+    const b = makeBehavior({ title: "System validates input constraints", riskHints: [] });
+    const ep = makeEndpoint([
+      { name: "shopId", type: "number", required: true, isTenantKey: true },
+      { name: "sku", type: "string", required: true, min: 3, max: 50, isBoundaryField: true },
+    ]);
+    const result = findBoundaryFieldForBehavior(b, ep);
+    expect(result?.name).toBe("sku");
+  });
+
+  it("returns undefined when no endpoint provided", () => {
+    const b = makeBehavior({ riskHints: [] });
+    const result = findBoundaryFieldForBehavior(b, undefined);
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when endpoint has no inputFields", () => {
+    const b = makeBehavior({ riskHints: [] });
+    const ep = makeEndpoint([]);
+    const result = findBoundaryFieldForBehavior(b, ep);
+    expect(result).toBeUndefined();
+  });
+});
