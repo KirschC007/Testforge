@@ -1,6 +1,4 @@
-import { CheckCircle, XCircle, AlertCircle, Info } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { CheckCircle2, XCircle, AlertCircle, Info, Star } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export interface SpecHealthDimension {
@@ -25,46 +23,47 @@ interface SpecHealthPanelProps {
   compact?: boolean;
 }
 
-function gradeColor(grade: string) {
+function gradeColor(grade: string): { text: string; bg: string; border: string } {
   switch (grade) {
-    case "A": return "text-emerald-400 bg-emerald-400/10 border-emerald-400/30";
-    case "B": return "text-blue-400 bg-blue-400/10 border-blue-400/30";
-    case "C": return "text-yellow-400 bg-yellow-400/10 border-yellow-400/30";
-    case "D": return "text-orange-400 bg-orange-400/10 border-orange-400/30";
-    case "F": return "text-red-400 bg-red-400/10 border-red-400/30";
-    default: return "text-slate-400 bg-slate-400/10 border-slate-400/30";
+    case "A": return { text: "text-[var(--tf-green)]",  bg: "bg-[var(--tf-green)]/10",  border: "border-[var(--tf-green)]/30" };
+    case "B": return { text: "text-[var(--tf-blue)]",   bg: "bg-[var(--tf-blue)]/10",   border: "border-[var(--tf-blue)]/30" };
+    case "C": return { text: "text-[var(--tf-yellow)]", bg: "bg-[var(--tf-yellow)]/10", border: "border-[var(--tf-yellow)]/30" };
+    case "D": return { text: "text-[var(--tf-orange)]", bg: "bg-[var(--tf-orange)]/10", border: "border-[var(--tf-orange)]/30" };
+    case "F": return { text: "text-[var(--tf-red)]",    bg: "bg-[var(--tf-red)]/10",    border: "border-[var(--tf-red)]/30" };
+    default:  return { text: "text-muted-foreground",   bg: "bg-muted",                 border: "border-border" };
   }
 }
 
-function scoreBarColor(score: number, maxScore: number) {
+function barColor(score: number, maxScore: number): string {
   const ratio = score / maxScore;
-  if (ratio >= 0.9) return "bg-emerald-500";
-  if (ratio >= 0.7) return "bg-blue-500";
-  if (ratio >= 0.5) return "bg-yellow-500";
-  if (ratio >= 0.3) return "bg-orange-500";
-  return "bg-red-500";
+  if (ratio >= 0.9) return "var(--tf-green)";
+  if (ratio >= 0.7) return "var(--tf-blue)";
+  if (ratio >= 0.5) return "var(--tf-yellow)";
+  if (ratio >= 0.3) return "var(--tf-orange)";
+  return "var(--tf-red)";
 }
 
 export function SpecHealthPanel({ specHealth, compact = false }: SpecHealthPanelProps) {
   const failedCount = specHealth.dimensions.filter(d => !d.passed).length;
+  const gc = gradeColor(specHealth.grade);
 
   if (compact) {
     return (
-      <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-        <div className={`text-2xl font-black w-10 h-10 rounded-lg border flex items-center justify-center ${gradeColor(specHealth.grade)}`}>
+      <div className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
+        <div className={`text-xl font-black w-9 h-9 rounded-lg border flex items-center justify-center ${gc.text} ${gc.bg} ${gc.border}`}>
           {specHealth.grade}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-200">Spec Health</span>
-            <span className="text-xs text-slate-400">{specHealth.score}/100</span>
+            <span className="text-sm font-semibold">Spec Health</span>
+            <span className="text-xs text-muted-foreground">{specHealth.score}/100</span>
           </div>
-          <p className="text-xs text-slate-400 truncate">{specHealth.summary}</p>
+          <p className="text-xs text-muted-foreground truncate">{specHealth.summary}</p>
         </div>
         {failedCount > 0 && (
-          <Badge variant="outline" className="text-orange-400 border-orange-400/30 text-xs shrink-0">
+          <span className="text-xs text-[var(--tf-orange)] border border-[var(--tf-orange)]/30 px-2 py-0.5 rounded shrink-0">
             {failedCount} issue{failedCount > 1 ? "s" : ""}
-          </Badge>
+          </span>
         )}
       </div>
     );
@@ -72,76 +71,89 @@ export function SpecHealthPanel({ specHealth, compact = false }: SpecHealthPanel
 
   return (
     <TooltipProvider>
-      <Card className="bg-slate-800/50 border-slate-700/50">
-        <CardHeader className="pb-3">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-border">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-slate-200 text-base font-semibold flex items-center gap-2">
-              <span>Spec Health</span>
+            <div className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-[var(--tf-yellow)]" />
+              <h3 className="font-semibold text-sm">Spec Health Score</h3>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-3.5 w-3.5 text-slate-500 cursor-help" />
+                  <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  <p className="text-xs">Bewertet die Vollständigkeit deiner Spec in 6 Dimensionen. Bessere Specs erzeugen präzisere Tests mit weniger TODO_-Platzhaltern.</p>
+                  <p className="text-xs">Bewertet die Vollständigkeit deiner Spec in 6 Dimensionen. Bessere Specs erzeugen präzisere Tests mit typisierten Payloads statt TODO_-Platzhaltern.</p>
                 </TooltipContent>
               </Tooltip>
-            </CardTitle>
+            </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <div className="text-2xl font-black text-slate-100">{specHealth.score}</div>
-                <div className="text-xs text-slate-500">/ 100</div>
+                <div className="text-2xl font-bold font-mono">{specHealth.score}</div>
+                <div className="text-xs text-muted-foreground">/ 100 pts</div>
               </div>
-              <div className={`text-3xl font-black w-12 h-12 rounded-xl border-2 flex items-center justify-center ${gradeColor(specHealth.grade)}`}>
+              <div className={`text-2xl font-black w-11 h-11 rounded-xl border-2 flex items-center justify-center font-mono ${gc.text} ${gc.bg} ${gc.border}`}>
                 {specHealth.grade}
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">{specHealth.summary}</p>
-        </CardHeader>
-        <CardContent className="space-y-2.5">
+          <p className="text-xs text-muted-foreground mt-2">{specHealth.summary}</p>
+        </div>
+
+        {/* Dimensions */}
+        <div className="p-5 space-y-3">
           {specHealth.dimensions.map((dim) => (
             <Tooltip key={dim.name}>
               <TooltipTrigger asChild>
                 <div className="cursor-help">
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
-                      {dim.passed ? (
-                        <CheckCircle className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                      ) : (
-                        <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                      )}
-                      <span className="text-xs font-medium text-slate-300">{dim.label}</span>
+                      {dim.passed
+                        ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--tf-green)] shrink-0" />
+                        : <XCircle className="w-3.5 h-3.5 text-[var(--tf-red)] shrink-0" />
+                      }
+                      <span className="text-xs font-medium">{dim.label}</span>
                     </div>
-                    <span className="text-xs text-slate-500">{dim.score}/{dim.maxScore}</span>
+                    <span className="text-xs font-mono text-muted-foreground">{dim.score}/{dim.maxScore}pts</span>
                   </div>
-                  <div className="w-full bg-slate-700/50 rounded-full h-1.5">
+                  <div className="w-full bg-muted rounded-full h-1.5">
                     <div
-                      className={`h-1.5 rounded-full transition-all ${scoreBarColor(dim.score, dim.maxScore)}`}
-                      style={{ width: `${(dim.score / dim.maxScore) * 100}%` }}
+                      className="h-1.5 rounded-full transition-all"
+                      style={{
+                        width: `${(dim.score / dim.maxScore) * 100}%`,
+                        background: barColor(dim.score, dim.maxScore),
+                      }}
                     />
                   </div>
                   {dim.detail && (
-                    <p className="text-xs text-slate-500 mt-0.5">{dim.detail}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{dim.detail}</p>
                   )}
                 </div>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
-                <div className="space-y-1">
-                  {!dim.passed && (
-                    <div className="flex items-start gap-1.5">
-                      <AlertCircle className="h-3 w-3 text-yellow-400 shrink-0 mt-0.5" />
-                      <p className="text-xs text-yellow-200">{dim.tip}</p>
-                    </div>
-                  )}
-                  {dim.passed && (
-                    <p className="text-xs text-emerald-300">✓ Passed</p>
-                  )}
-                </div>
+                {!dim.passed ? (
+                  <div className="flex items-start gap-1.5">
+                    <AlertCircle className="w-3 h-3 text-[var(--tf-yellow)] shrink-0 mt-0.5" />
+                    <p className="text-xs">{dim.tip}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--tf-green)]">✓ Passed — {dim.tip}</p>
+                )}
               </TooltipContent>
             </Tooltip>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Footer tip */}
+        {failedCount > 0 && (
+          <div className="px-5 py-3 border-t border-border bg-[var(--tf-orange)]/5">
+            <p className="text-xs text-muted-foreground">
+              <span className="text-[var(--tf-orange)] font-medium">{failedCount} dimension{failedCount > 1 ? "s" : ""} can be improved</span>
+              {" "}— hover each bar for specific tips on how to improve your spec.
+            </p>
+          </div>
+        )}
+      </div>
     </TooltipProvider>
   );
 }

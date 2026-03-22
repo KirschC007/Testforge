@@ -1,335 +1,382 @@
-import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { getLoginUrl } from "@/const";
 import {
-  Shield,
-  Zap,
-  FileSearch,
-  GitBranch,
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-  ArrowRight,
-  Lock,
-  Database,
-  Code2,
+  Shield, Zap, FileCode2, GitBranch, Lock, ArrowRight,
+  CheckCircle2, Terminal, Package, Star, Activity,
+  AlertTriangle, Layers, Database, RefreshCw, Eye,
 } from "lucide-react";
 
+// ─── Proof type definitions ────────────────────────────────────────────────
+const PROOF_TYPES = [
+  { id: "idor",            label: "IDOR",             icon: <Lock className="w-4 h-4" />,        color: "var(--tf-red)",    desc: "Cross-tenant isolation, ownership checks" },
+  { id: "csrf",            label: "CSRF",             icon: <Shield className="w-4 h-4" />,      color: "var(--tf-orange)", desc: "State-mutating endpoints, token validation" },
+  { id: "boundary",        label: "Boundary",         icon: <Activity className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "Min/max/null/overflow with decimal precision" },
+  { id: "business_logic",  label: "Business Logic",   icon: <Layers className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Before/after state, stock decrements, counters" },
+  { id: "status_transition", label: "Status Machine", icon: <RefreshCw className="w-4 h-4" />,   color: "var(--tf-purple)", desc: "Valid transitions, skip-prevention, terminal states" },
+  { id: "spec_drift",      label: "Spec Drift",       icon: <Eye className="w-4 h-4" />,         color: "var(--tf-green)",  desc: "Zod response schemas, field type validation" },
+  { id: "dsgvo",           label: "DSGVO / GDPR",     icon: <Database className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "PII anonymization, data export isolation" },
+  { id: "rate_limit",      label: "Rate Limit",       icon: <AlertTriangle className="w-4 h-4" />, color: "var(--tf-orange)", desc: "Auth brute-force, burst detection" },
+];
+
+// ─── 5-Layer pipeline ─────────────────────────────────────────────────────
+const LAYERS = [
+  { n: 1, label: "Spec Parse",        color: "var(--tf-blue)",   desc: "LLM extracts behaviors, endpoints, status machines, invariants, tenant keys" },
+  { n: 2, label: "Risk Model",        color: "var(--tf-orange)", desc: "Tenant isolation vectors, CSRF surfaces, boundary constraints, side effects" },
+  { n: 3, label: "Test Generation",   color: "var(--tf-purple)", desc: "8 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config" },
+  { n: 4, label: "LLM Verification",  color: "var(--tf-yellow)", desc: "Independent checker validates each test against the original spec" },
+  { n: 5, label: "False-Green Guard", color: "var(--tf-green)",  desc: "8 mutation rules discard tests that can't catch real regressions" },
+];
+
+// ─── ZIP output items ─────────────────────────────────────────────────────
+const ZIP_ITEMS = [
+  "tests/security/   — IDOR, CSRF, Rate-Limit, Spec-Drift",
+  "tests/business/   — Business Logic, Boundary Value",
+  "tests/compliance/ — DSGVO/GDPR, Data Retention",
+  "helpers/          — api.ts, auth.ts, factories.ts, schemas.ts",
+  ".github/workflows/testforge.yml — CI/CD pipeline",
+  "playwright.config.ts + tsconfig.json + package.json",
+  "README.md + .env.example",
+];
+
 export default function Home() {
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Nav */}
-      <nav className="border-b border-border/50 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
-        <div className="container flex items-center justify-between h-14">
+      {/* ── Nav ─────────────────────────────────────────────────────── */}
+      <nav className="border-b border-border/50 h-14 flex items-center sticky top-0 z-50 bg-background/80 backdrop-blur-sm">
+        <div className="container flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-primary flex items-center justify-center">
-              <Shield className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <span className="font-semibold text-sm tracking-tight">TestForge</span>
-            <Badge variant="secondary" className="text-xs font-mono">BETA</Badge>
+            <Shield className="w-5 h-5 text-primary" />
+            <span className="font-bold text-sm tracking-tight">TestForge</span>
+            <span className="text-xs text-muted-foreground ml-1 hidden sm:inline">by Manus</span>
           </div>
-          <div className="flex items-center gap-3">
-            {isAuthenticated ? (
-              <>
+          <div className="flex items-center gap-2">
+            {!loading && (
+              isAuthenticated ? (
                 <Link href="/dashboard">
-                  <Button variant="ghost" size="sm">Dashboard</Button>
+                  <Button size="sm" className="gap-1.5">
+                    Dashboard <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
                 </Link>
-                <Link href="/analysis/new">
-                  <Button size="sm">New Analysis</Button>
-                </Link>
-              </>
-            ) : (
-              <a href={getLoginUrl()}>
-                <Button size="sm">Sign In</Button>
-              </a>
+              ) : (
+                <a href={getLoginUrl()}>
+                  <Button size="sm">Sign In</Button>
+                </a>
+              )
             )}
           </div>
         </div>
       </nav>
 
-      {/* Hero */}
+      {/* ── Hero ────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-border/50">
         {/* Grid background */}
-        <div className="absolute inset-0 opacity-30"
-          style={{
-            backgroundImage: "linear-gradient(oklch(0.25 0.01 240 / 0.5) 1px, transparent 1px), linear-gradient(90deg, oklch(0.25 0.01 240 / 0.5) 1px, transparent 1px)",
-            backgroundSize: "40px 40px"
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ backgroundImage: "linear-gradient(var(--tf-grid) 1px, transparent 1px), linear-gradient(90deg, var(--tf-grid) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
+        {/* Glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full blur-3xl opacity-10"
+          style={{ background: "radial-gradient(ellipse, var(--tf-blue) 0%, transparent 70%)" }} />
 
-        <div className="container relative py-24 lg:py-32">
-          <div className="max-w-3xl">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="w-2 h-2 rounded-full bg-[var(--tf-green)] animate-pulse" />
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Quality Compiler for SaaS</span>
-            </div>
+        <div className="container relative py-20 md:py-28 text-center">
+          <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-full px-3 py-1 mb-6">
+            <Zap className="w-3 h-3 text-[var(--tf-yellow)]" />
+            <span>8 Proof Types · 5-Layer Pipeline · Spec Health Score</span>
+          </div>
 
-            <h1 className="text-4xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
-              From Spec to{" "}
-              <span className="text-primary">Proof-Grade</span>
-              <br />Test Suite in Minutes
-            </h1>
+          <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4 leading-tight">
+            Proof-Grade Tests<br />
+            <span style={{ color: "var(--tf-blue)" }}>from your API Spec</span>
+          </h1>
 
-            <p className="text-lg text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-              Upload your specification. TestForge extracts every testable behavior, builds a risk model,
-              generates TypeScript/Playwright tests with hard assertions, and validates them against
-              7 False-Green rules — automatically.
-            </p>
+          <p className="text-muted-foreground text-lg max-w-xl mx-auto mb-8">
+            Upload any API specification. TestForge extracts behaviors, builds a risk model,
+            and generates a ready-to-run Playwright test suite — with CI/CD config included.
+          </p>
 
-            <div className="flex flex-wrap items-center gap-3">
-              {isAuthenticated ? (
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            {isAuthenticated ? (
+              <>
                 <Link href="/analysis/new">
                   <Button size="lg" className="gap-2">
-                    Start Analysis <ArrowRight className="w-4 h-4" />
+                    <FileCode2 className="w-4 h-4" /> Start Analysis
                   </Button>
                 </Link>
-              ) : (
+                <Link href="/analysis/new?demo=1">
+                  <Button size="lg" variant="outline" className="gap-2">
+                    <Terminal className="w-4 h-4" /> Try Demo Spec
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
                 <a href={getLoginUrl()}>
                   <Button size="lg" className="gap-2">
-                    Get Started Free <ArrowRight className="w-4 h-4" />
+                    <Shield className="w-4 h-4" /> Get Started Free
                   </Button>
                 </a>
-              )}
-              <Link href="/analysis/new?demo=1">
-                <Button variant="outline" size="lg" className="gap-2 font-mono text-sm">
-                  <Code2 className="w-4 h-4" />
-                  Try Demo Spec
-                </Button>
-              </Link>
-            </div>
-
-            <div className="flex flex-wrap gap-6 mt-10 text-sm text-muted-foreground">
-              {["PDF / Markdown / Word", "TypeScript + Playwright", "IDOR · CSRF · Spec-Drift", "CI/CD Ready ZIP"].map(f => (
-                <div key={f} className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--tf-green)]" />
-                  {f}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* The Problem */}
-      <section className="border-b border-border/50 py-20">
-        <div className="container">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <h2 className="text-2xl font-bold mb-4">The Problem with Existing Tests</h2>
-              <p className="text-muted-foreground mb-6 leading-relaxed">
-                Most test suites look comprehensive but prove nothing. They pass when the system is broken.
-                They fail when the system is fine. They give false confidence before every release.
-              </p>
-              <div className="space-y-3">
-                {[
-                  { bad: true, text: 'expect([200, 400, 403]).toContain(status) — always green' },
-                  { bad: true, text: 'if (data?.id) { expect(data.id).toBeTruthy() } — soft assertion' },
-                  { bad: true, text: 'IDOR test with hardcoded restaurantId: 999 — fake test' },
-                  { bad: false, text: 'expect([401, 403]).toContain(status) + DB side-effect check' },
-                  { bad: false, text: 'expect(guest.noShowRisk).toBeGreaterThan(0) after precondition' },
-                  { bad: false, text: 'Positive control: verify legitimate access still works' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-2.5">
-                    {item.bad
-                      ? <XCircle className="w-4 h-4 text-[var(--tf-red)] mt-0.5 shrink-0" />
-                      : <CheckCircle2 className="w-4 h-4 text-[var(--tf-green)] mt-0.5 shrink-0" />
-                    }
-                    <code className={`text-xs font-mono ${item.bad ? "text-muted-foreground line-through" : "text-foreground"}`}>
-                      {item.text}
-                    </code>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                { value: "629", label: "False-Green patterns in a typical 800-test suite", color: "var(--tf-red)" },
-                { value: "0%", label: "Unit test coverage in most SaaS E2E test suites", color: "var(--tf-orange)" },
-                { value: "7", label: "Validation rules that catch always-green tests", color: "var(--tf-blue)" },
-                { value: "10x", label: "More proof-value per test after TestForge", color: "var(--tf-green)" },
-              ].map((stat, i) => (
-                <div key={i} className="bg-card border border-border rounded-lg p-5">
-                  <div className="text-3xl font-bold font-mono mb-1" style={{ color: stat.color }}>{stat.value}</div>
-                  <div className="text-xs text-muted-foreground leading-relaxed">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section className="border-b border-border/50 py-20">
-        <div className="container">
-          <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold mb-3">Five Layers. Zero Setup.</h2>
-            <p className="text-muted-foreground max-w-xl mx-auto">
-              TestForge runs your specification through a five-layer quality compiler.
-              Each layer builds on the previous one — and the output runs immediately.
-            </p>
+                <a href={getLoginUrl()}>
+                  <Button size="lg" variant="outline" className="gap-2">
+                    <Terminal className="w-4 h-4" /> Try Demo Spec
+                  </Button>
+                </a>
+              </>
+            )}
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Quick stats */}
+          <div className="flex items-center justify-center gap-8 mt-12 text-sm">
             {[
-              {
-                layer: "Schicht 1",
-                icon: FileSearch,
-                title: "Spec Understanding",
-                desc: "LLM extracts behaviors, API endpoints, auth model, invariants, and ambiguities. Full spec coverage — no chunk limits.",
-                color: "var(--tf-blue)",
-              },
-              {
-                layer: "Schicht 2",
-                icon: Zap,
-                title: "LLM Checker",
-                desc: "Every behavior verified against the spec with a confidence score. Hallucinations flagged and rejected before test generation.",
-                color: "var(--tf-yellow)",
-              },
-              {
-                layer: "Schicht 3",
-                icon: Database,
-                title: "Risk Model",
-                desc: "Behaviors scored Critical/High/Medium/Low. IDOR vectors, CSRF endpoints, status transitions, boundary values identified.",
-                color: "var(--tf-orange)",
-              },
-              {
-                layer: "Schicht 4",
-                icon: Code2,
-                title: "Proof Generation",
-                desc: "Tests with real endpoints from spec, DB side-effect checks, positive controls. Auto-generated helpers — run npx playwright test immediately.",
-                color: "var(--tf-purple)",
-              },
-              {
-                layer: "Schicht 5",
-                icon: Shield,
-                title: "Independent Checker",
-                desc: "7 False-Green rules reject tests that pass even when the feature is broken. Mutation score calculated. Discarded proofs explained.",
-                color: "var(--tf-green)",
-              },
-            ].map((step, i) => (
-              <div key={i} className="relative bg-card border border-border rounded-lg p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: `${step.color}20` }}>
-                    <step.icon className="w-4 h-4" style={{ color: step.color }} />
-                  </div>
-                  <span className="text-xs font-mono text-muted-foreground">{step.layer}</span>
-                </div>
-                <h3 className="font-semibold text-sm mb-2">{step.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
-                {i < 4 && (
-                  <ChevronRight className="absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-border hidden lg:block" />
-                )}
+              { v: "8",   l: "Proof Types" },
+              { v: "5",   l: "Analysis Layers" },
+              { v: "~2min", l: "Avg Analysis Time" },
+              { v: "0",   l: "Config Required" },
+            ].map(s => (
+              <div key={s.l} className="text-center">
+                <div className="text-xl font-bold font-mono" style={{ color: "var(--tf-blue)" }}>{s.v}</div>
+                <div className="text-xs text-muted-foreground">{s.l}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Output */}
-      <section className="border-b border-border/50 py-20">
+      {/* ── Proof Types Grid ────────────────────────────────────────── */}
+      <section className="border-b border-border/50 py-16">
         <div className="container">
-          <div className="grid lg:grid-cols-2 gap-12 items-start">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold mb-2">8 Proof Types — Automatically Detected</h2>
+            <p className="text-muted-foreground text-sm max-w-lg mx-auto">
+              TestForge reads your spec and determines which proof types apply to each endpoint.
+              No manual configuration needed.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {PROOF_TYPES.map(pt => (
+              <div key={pt.id} className="bg-card border border-border rounded-lg p-4 hover:border-border/80 transition-colors">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                    style={{ color: pt.color, background: `${pt.color}18` }}>
+                    {pt.icon}
+                  </div>
+                  <span className="text-sm font-semibold">{pt.label}</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{pt.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 5-Layer Pipeline ────────────────────────────────────────── */}
+      <section className="border-b border-border/50 py-16">
+        <div className="container">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold mb-2">5-Layer Analysis Pipeline</h2>
+            <p className="text-muted-foreground text-sm max-w-lg mx-auto">
+              Each layer builds on the previous. The result is a test suite with a provable mutation score —
+              not just coverage numbers.
+            </p>
+          </div>
+          <div className="max-w-2xl mx-auto space-y-2">
+            {LAYERS.map((layer, i) => (
+              <div key={layer.n} className="flex items-start gap-4">
+                {/* Connector */}
+                <div className="flex flex-col items-center shrink-0">
+                  <div className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold"
+                    style={{ borderColor: layer.color, color: layer.color, background: `${layer.color}12` }}>
+                    {layer.n}
+                  </div>
+                  {i < LAYERS.length - 1 && (
+                    <div className="w-px h-6 mt-1" style={{ background: `${layer.color}40` }} />
+                  )}
+                </div>
+                <div className="pb-4">
+                  <div className="text-sm font-semibold mb-0.5" style={{ color: layer.color }}>
+                    Layer {layer.n} — {layer.label}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{layer.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Spec Health + ZIP Output ─────────────────────────────────── */}
+      <section className="border-b border-border/50 py-16">
+        <div className="container">
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* Spec Health */}
             <div>
-              <h2 className="text-2xl font-bold mb-4">What You Get</h2>
-              <p className="text-muted-foreground mb-6 leading-relaxed">
-                A ZIP with 8 ready-to-run files. <code className="font-mono text-xs bg-muted px-1 rounded">npm install &amp;&amp; npx playwright test</code> — no configuration required.
-                Helpers are auto-generated from your spec: login endpoint, CSRF tokens, tenant factories, DB reset.
+              <div className="flex items-center gap-2 mb-4">
+                <Star className="w-5 h-5 text-[var(--tf-yellow)]" />
+                <h2 className="text-xl font-bold">Spec Health Score</h2>
+              </div>
+              <p className="text-muted-foreground text-sm mb-5">
+                Before generating tests, TestForge evaluates your spec's completeness across 6 dimensions.
+                Better specs produce more precise tests — no TODO_ placeholders.
               </p>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {[
-                  { icon: Lock, title: "Security Tests", desc: "IDOR, CSRF, rate-limit — real endpoints from spec, DB side-effect checks, positive controls", color: "var(--tf-red)" },
-                  { icon: Shield, title: "DSGVO / Compliance", desc: "Anonymization, consent withdrawal, PII absence — spec-derived assertions", color: "var(--tf-blue)" },
-                  { icon: GitBranch, title: "Status Transitions + Boundary", desc: "Every state machine transition tested. Boundary values (n-1, n, n+1) for every numeric field", color: "var(--tf-orange)" },
-                  { icon: Zap, title: "Auto-Generated Helpers", desc: "helpers/api.ts, auth.ts, factories.ts, reset.ts, playwright.config.ts, GitHub Action — all generated", color: "var(--tf-yellow)" },
-                ].map((item, i) => (
-                  <div key={i} className="flex gap-3">
-                    <div className="w-8 h-8 rounded shrink-0 flex items-center justify-center" style={{ background: `${item.color}20` }}>
-                      <item.icon className="w-4 h-4" style={{ color: item.color }} />
+                  { label: "Typed Fields",         score: 20, max: 20, passed: true,  detail: "All inputFields have type annotations" },
+                  { label: "Enum Values",           score: 15, max: 15, passed: true,  detail: "Status enums fully enumerated" },
+                  { label: "Boundary Constraints",  score: 10, max: 20, passed: false, detail: "Some fields missing min/max" },
+                  { label: "Auth Model",            score: 15, max: 15, passed: true,  detail: "Bearer token + tenant isolation defined" },
+                  { label: "Tenant Model",          score: 15, max: 15, passed: true,  detail: "shopId as tenant key identified" },
+                  { label: "Response Shape",        score: 10, max: 15, passed: false, detail: "Some endpoints missing outputFields" },
+                ].map(dim => (
+                  <div key={dim.label}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        {dim.passed
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--tf-green)] shrink-0" />
+                          : <AlertTriangle className="w-3.5 h-3.5 text-[var(--tf-orange)] shrink-0" />
+                        }
+                        <span className="text-xs font-medium">{dim.label}</span>
+                      </div>
+                      <span className="text-xs font-mono text-muted-foreground">{dim.score}/{dim.max}</span>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium">{item.title}</div>
-                      <div className="text-xs text-muted-foreground">{item.desc}</div>
+                    <div className="w-full bg-muted rounded-full h-1.5">
+                      <div className="h-1.5 rounded-full" style={{
+                        width: `${(dim.score / dim.max) * 100}%`,
+                        background: dim.passed ? "var(--tf-green)" : "var(--tf-orange)"
+                      }} />
                     </div>
                   </div>
                 ))}
               </div>
+              <div className="mt-4 flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                <div className="text-2xl font-black font-mono" style={{ color: "var(--tf-blue)" }}>85</div>
+                <div>
+                  <div className="text-sm font-semibold">Score B — Good</div>
+                  <div className="text-xs text-muted-foreground">Add boundary constraints to reach Grade A</div>
+                </div>
+                <div className="ml-auto text-2xl font-black w-10 h-10 rounded-xl border-2 flex items-center justify-center"
+                  style={{ color: "var(--tf-blue)", background: "var(--tf-blue)/10", borderColor: "var(--tf-blue)/30" }}>
+                  B
+                </div>
+              </div>
             </div>
 
-            {/* Mock report preview */}
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
-              <div className="border-b border-border px-4 py-2.5 flex items-center gap-2">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-[var(--tf-red)]" />
-                  <div className="w-3 h-3 rounded-full bg-[var(--tf-yellow)]" />
-                  <div className="w-3 h-3 rounded-full bg-[var(--tf-green)]" />
-                </div>
-                <span className="text-xs font-mono text-muted-foreground ml-2">testforge-report.md</span>
+            {/* ZIP Output */}
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Package className="w-5 h-5 text-[var(--tf-green)]" />
+                <h2 className="text-xl font-bold">Ready-to-Run ZIP Output</h2>
               </div>
-              <div className="p-4 font-mono text-xs space-y-2 text-muted-foreground">
-                <div className="text-foreground font-bold"># TestForge Report — hey-listen v8</div>
-                <div className="text-muted-foreground">Generated: 2026-03-21 | Mutation Score: 8.7/10.0</div>
-                <div className="mt-3 text-foreground font-semibold">## Verdict</div>
-                <div><span className="text-[var(--tf-green)]">✓</span> 41/44 proofs passed validation</div>
-                <div className="grid grid-cols-2 gap-x-4 mt-2">
-                  <div>Behaviors: <span className="text-foreground">52</span></div>
-                  <div>LLM Checker: <span className="text-[var(--tf-green)]">49 approved</span></div>
-                  <div>IDOR Vectors: <span className="text-[var(--tf-orange)]">7</span></div>
-                  <div>Status Transitions: <span className="text-foreground">18</span></div>
-                  <div>Boundary Tests: <span className="text-foreground">12</span></div>
-                  <div>CSRF Endpoints: <span className="text-[var(--tf-orange)]">4</span></div>
+              <p className="text-muted-foreground text-sm mb-5">
+                The output ZIP contains everything needed to run your tests immediately.
+                No manual setup, no missing dependencies.
+              </p>
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-border bg-muted/30">
+                  <div className="font-mono text-xs text-[var(--tf-green)]">
+                    $ unzip testforge-output.zip &amp;&amp; npm install &amp;&amp; npm test
+                  </div>
                 </div>
-                <div className="mt-3 text-foreground font-semibold">## Output Files (ZIP)</div>
-                <div><span className="text-[var(--tf-green)]">✓</span> helpers/api.ts — loginAndGetCookie, trpcMutation</div>
-                <div><span className="text-[var(--tf-green)]">✓</span> helpers/auth.ts — CSRF token, session helpers</div>
-                <div><span className="text-[var(--tf-green)]">✓</span> helpers/factories.ts — createTestTenant, createReservation</div>
-                <div><span className="text-[var(--tf-green)]">✓</span> .github/workflows/testforge.yml — CI ready</div>
-                <div className="mt-3 text-foreground font-semibold">## Discarded (False-Green)</div>
-                <div><span className="text-[var(--tf-red)]">✗</span> PROOF-B003-CSRF: broad_status_code</div>
-                <div><span className="text-[var(--tf-red)]">✗</span> PROOF-B007-IDOR: no_positive_control</div>
+                <div className="p-4 space-y-1.5">
+                  {ZIP_ITEMS.map(item => (
+                    <div key={item} className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0 mt-1.5" />
+                      <span className="text-xs font-mono text-muted-foreground">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                {[
+                  { v: "npm install", l: "Step 1" },
+                  { v: "npm test",    l: "Step 2" },
+                  { v: "Done ✓",     l: "Step 3" },
+                ].map(s => (
+                  <div key={s.l} className="bg-card border border-border rounded-lg p-3">
+                    <div className="text-xs font-mono font-bold text-foreground">{s.v}</div>
+                    <div className="text-xs text-muted-foreground">{s.l}</div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-20">
-        <div className="container text-center">
-          <h2 className="text-2xl font-bold mb-4">Ready to prove your system works?</h2>
-          <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-            Upload your spec and get a complete test suite in under 3 minutes.
-          </p>
-          {isAuthenticated ? (
-            <Link href="/analysis/new">
-              <Button size="lg" className="gap-2">
-                Start Your First Analysis <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
-          ) : (
-            <a href={getLoginUrl()}>
-              <Button size="lg" className="gap-2">
-                Get Started Free <ArrowRight className="w-4 h-4" />
-              </Button>
-            </a>
-          )}
+      {/* ── How it works ────────────────────────────────────────────── */}
+      <section className="border-b border-border/50 py-16">
+        <div className="container">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold mb-2">How it Works</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto">
+            {[
+              {
+                n: "01", icon: <FileCode2 className="w-6 h-6" />, color: "var(--tf-blue)",
+                title: "Upload your Spec",
+                desc: "PDF, Markdown, Word, or plain text. TestForge accepts any format and extracts the relevant information automatically.",
+              },
+              {
+                n: "02", icon: <Layers className="w-6 h-6" />, color: "var(--tf-purple)",
+                title: "5-Layer Analysis",
+                desc: "The pipeline parses behaviors, builds a risk model, generates tests, verifies them, and filters false-greens — in ~2 minutes.",
+              },
+              {
+                n: "03", icon: <GitBranch className="w-6 h-6" />, color: "var(--tf-green)",
+                title: "Download & Run",
+                desc: "Get a ZIP with Playwright tests, CI/CD pipeline, Zod schemas, and a full setup guide. npm install → npm test.",
+              },
+            ].map(step => (
+              <div key={step.n} className="bg-card border border-border rounded-lg p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ color: step.color, background: `${step.color}15` }}>
+                    {step.icon}
+                  </div>
+                  <span className="text-xs font-mono text-muted-foreground">{step.n}</span>
+                </div>
+                <h3 className="font-semibold text-sm mb-1.5">{step.title}</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Footer */}
+      {/* ── CTA ─────────────────────────────────────────────────────── */}
+      <section className="py-20">
+        <div className="container text-center">
+          <h2 className="text-3xl font-black mb-4">Ready to forge your tests?</h2>
+          <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+            Upload your first spec and get a proof-grade test suite in minutes.
+            No credit card, no setup.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            {isAuthenticated ? (
+              <Link href="/analysis/new">
+                <Button size="lg" className="gap-2">
+                  <FileCode2 className="w-4 h-4" /> Start Your First Analysis
+                </Button>
+              </Link>
+            ) : (
+              <a href={getLoginUrl()}>
+                <Button size="lg" className="gap-2">
+                  <Shield className="w-4 h-4" /> Sign In to Get Started
+                </Button>
+              </a>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────────── */}
       <footer className="border-t border-border/50 py-6">
         <div className="container flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <Shield className="w-3.5 h-3.5" />
-            <span>TestForge — Quality Compiler for SaaS</span>
+            <span>TestForge</span>
           </div>
-          <span className="font-mono">v1.0.0-beta</span>
+          <span>Built with Manus</span>
         </div>
       </footer>
     </div>

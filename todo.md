@@ -305,3 +305,21 @@
 - [x] Check 7: spec_drift in templateMap
 - [x] Check 8: 0 test-price/test-stock/test-sku
 - [x] 72/72 Tests grün, 0 TS-Fehler
+
+## Phase 27: Vollständiges UI-Redesign
+
+- [x] Home.tsx: Hero mit Badge, 8 Proof Types Grid, 5-Layer Pipeline, Spec Health Preview, ZIP Output, How it Works, CTA
+- [x] Home.tsx: Spec Health Score Erklärung als interaktive Karte mit Balken-Diagramm
+- [x] Home.tsx: ZIP Output Sektion mit Dateibaum und 3-Schritte-Anleitung
+- [x] Dashboard.tsx: Spec Health Grade-Badge (A/B/C/D/F) in jeder Analyse-Karte
+- [x] Dashboard.tsx: Proof-Typ-Breakdown als Mini-Balken (IDOR/CSRF/Boundary etc.)
+- [x] Dashboard.tsx: Stats-Row oben (Total/Running/Completed/Avg Score)
+- [x] Dashboard.tsx: Filter-Tabs (All/Running/Completed/Failed)
+- [x] NewAnalysis.tsx: 5-Layer Pipeline Visualisierung mit Farben und Icons
+- [x] NewAnalysis.tsx: 8 Proof Types Grid, ZIP Output Preview, Spec Health Tip
+- [x] AnalysisDetail.tsx: Spec Health Panel ganz oben (vor Metrics-Row)
+- [x] AnalysisDetail.tsx: Proof-Kategorien mit farbigen Icons und Counts
+- [x] AnalysisDetail.tsx: ZIP-Inhalts-Vorschau (ZipContentsPreview)
+- [x] SpecHealthPanel.tsx: Design-Token-konsistent (keine hardcodierten slate-Farben)
+- [x] index.css: --tf-purple CSS-Variable hinzugefügt
+- [x] 72/72 Tests grün, 0 TS-Fehler

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -381,6 +381,11 @@ export default function AnalysisDetail() {
         {/* Completed */}
         {analysis.status === "completed" && suite && (
           <div className="space-y-6">
+            {/* Spec Health Panel — top priority */}
+            {specHealth && (
+              <SpecHealthPanel specHealth={specHealth} />
+            )}
+
             {/* Metrics Row */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <MetricCard
@@ -412,11 +417,6 @@ export default function AnalysisDetail() {
                 color="var(--tf-blue)"
               />
             </div>
-
-            {/* Spec Health Panel */}
-            {specHealth && (
-              <SpecHealthPanel specHealth={specHealth} />
-            )}
 
             {/* Ambiguities */}
             {ir?.ambiguities?.length > 0 && (
