@@ -153,6 +153,7 @@ export interface ProofTarget {
   checkVerdict?: CheckVerdict;
   checkConfidence?: number;
   constraints?: FieldConstraint[];  // Boundary constraints extracted from spec
+  transitionIndex?: number;          // For status_transition: which transition from statusMachine to use
 }
 
 export interface RiskModel {
@@ -719,13 +720,20 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
   });
 
   const proofTargets: ProofTarget[] = [];
+  let statusTransitionCounter = 0; // Increments per status_transition target to assign different transitions
   for (const sb of behaviors) {
     // Only generate proof targets for priority 0 (critical/high) and 1 (medium)
     // Low-risk behaviors (priority 2) don't get proof targets
     if (sb.priority === 2) continue;
     for (const pt of sb.proofTypes) {
       const target = buildProofTarget(sb, pt, analysis);
-      if (target) proofTargets.push(target);
+      if (target) {
+        // Assign unique transitionIndex to each status_transition target
+        if (pt === "status_transition") {
+          target.transitionIndex = statusTransitionCounter++;
+        }
+        proofTargets.push(target);
+      }
     }
   }
 
@@ -2082,8 +2090,14 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const endpoint = target.endpoint || analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("status") || e.name.toLowerCase().includes("update"))?.name || "TODO_REPLACE_WITH_STATUS_ENDPOINT";
   const hasEndpoint = !!target.endpoint;
-  const getEndpoint = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
+  // Find a GET endpoint to verify status after transition
+  // Prefer getById, but fall back to any list/get endpoint (orders.list, products.list, etc.)
+  const getEndpoint = (
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby")) ??
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))
+  )?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
 
   // Goldstandard: Use statusMachine from IR if available, otherwise fall back to text extraction
   const sm = analysis.ir.statusMachine;
@@ -2096,15 +2110,22 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const postcondMatch = !titleMatch && !precondMatch && behavior?.postconditions.join(" ").match(arrowPattern);
   const errorMatch = !titleMatch && !precondMatch && !postcondMatch && behavior?.errorCases.join(" ").match(arrowPattern);
 
-  // If statusMachine is known from IR, use the first transition as default
+  // If statusMachine is known from IR, use transitions in round-robin based on transitionIndex
+  // This ensures each proof target gets a DIFFERENT transition (not all todo→in_progress)
+  const allTransitions = sm?.transitions || [];
+  const transitionIdx = target.transitionIndex ?? 0;
+  const assignedTransition = allTransitions.length > 0
+    ? allTransitions[transitionIdx % allTransitions.length]
+    : null;
   const firstTransition = sm?.transitions?.[0];
-  // Validate extracted status values against known states — if not a valid state, fall back to firstTransition
+  // Validate extracted status values against known states — if not a valid state, fall back to assignedTransition
   const knownStates = new Set(sm?.states || []);
   const isValidState = (s: string | undefined): s is string => !!s && (knownStates.size === 0 || knownStates.has(s));
   const rawFromStatus: string | undefined = titleMatch?.[1] || (precondMatch ? precondMatch[1] : undefined) || (postcondMatch ? postcondMatch[1] : undefined) || (errorMatch ? errorMatch[1] : undefined) || undefined;
   const rawToStatus: string | undefined = titleMatch?.[2] || (postcondMatch ? postcondMatch[2] : undefined) || (errorMatch ? errorMatch[2] : undefined) || undefined;
-  const fromStatus = (isValidState(rawFromStatus) ? rawFromStatus : firstTransition?.[0] || "pending") as string;
-  const toStatus = (isValidState(rawToStatus) ? rawToStatus : firstTransition?.[1] || "completed") as string;
+  // Use assignedTransition (from transitionIndex) as fallback to ensure diversity
+  const fromStatus = (isValidState(rawFromStatus) ? rawFromStatus : assignedTransition?.[0] || firstTransition?.[0] || "pending") as string;
+  const toStatus = (isValidState(rawToStatus) ? rawToStatus : assignedTransition?.[1] || firstTransition?.[1] || "completed") as string;
 
   // Find a skip-target: a state that is NOT directly reachable from fromStatus
   // Goldstandard: use statusMachine.forbidden or statusMachine.states to find skip candidates
@@ -2239,17 +2260,57 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
     (behavior?.action || '').toLowerCase().includes('export') ||
     (target.endpoint || '').toLowerCase().includes('export');
 
+  // Detect if this is a hard-delete behavior (permanently deletes) vs soft-delete/anonymize
+  // Declared early so it can be used in endpoint detection below
+  const isHardDelete = (behavior?.title || '').toLowerCase().includes('permanently') ||
+    (behavior?.postconditions || []).some(p => p.toLowerCase().includes('permanently') || p.toLowerCase().includes('all') && p.toLowerCase().includes('deleted'));
+
+  // Detect if behavior title mentions workspace-level deleteAll
+  const isWorkspaceDeleteAll = (behavior?.title || '').toLowerCase().includes('deleteall') ||
+    (behavior?.title || '').toLowerCase().includes('delete all') ||
+    (behavior?.specAnchor || '').toLowerCase().includes('deleteall') ||
+    (behavior?.specAnchor || '').toLowerCase().includes('delete all');
+
   // Use resolved endpoint from IR, or TODO placeholder
-  const endpoint = target.endpoint || (() => {
+  // CRITICAL: For hard-delete behaviors, prefer workspace.deleteAll over tasks.delete
+  const endpoint = (() => {
     if (isExportBehavior) {
-      return analysis.ir.apiEndpoints.find(e =>
-        e.name.toLowerCase().includes('export') || e.name.toLowerCase().includes('download'))?.name || 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
+      // Export: prefer export endpoint from IR
+      return target.endpoint?.toLowerCase().includes('export')
+        ? target.endpoint
+        : analysis.ir.apiEndpoints.find(e =>
+            e.name.toLowerCase().includes('export') || e.name.toLowerCase().includes('download'))?.name
+          || target.endpoint
+          || 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
     }
+    if (isWorkspaceDeleteAll || (isHardDelete && !target.endpoint?.toLowerCase().includes('delete'))) {
+      // Workspace-level hard delete: prefer workspace.deleteAll
+      const deleteAllEp = analysis.ir.apiEndpoints.find(e =>
+        e.name.toLowerCase().includes('deleteall') ||
+        (e.name.toLowerCase().includes('delete') && e.name.toLowerCase().includes('all')) ||
+        (e.name.toLowerCase().includes('workspace') && e.name.toLowerCase().includes('delete')))?.name;
+      if (deleteAllEp) return deleteAllEp;
+    }
+    if (isHardDelete && target.endpoint) {
+      // Hard-delete: if target.endpoint is a single-resource delete (tasks.delete)
+      // but a workspace-level deleteAll exists, prefer that
+      const deleteAllEp = analysis.ir.apiEndpoints.find(e =>
+        e.name.toLowerCase().includes('deleteall') ||
+        (e.name.toLowerCase().includes('workspace') && e.name.toLowerCase().includes('delete')))?.name;
+      if (deleteAllEp && target.endpoint !== deleteAllEp &&
+          !target.endpoint.toLowerCase().includes('workspace')) {
+        return deleteAllEp;
+      }
+      return target.endpoint;
+    }
+    if (target.endpoint) return target.endpoint;
+    // Fallback: find any GDPR/delete endpoint
     return analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes('gdpr') || e.name.toLowerCase().includes('delete') ||
-      e.name.toLowerCase().includes('dsgvo') || e.name.toLowerCase().includes('anon'))?.name || 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT';
+      e.name.toLowerCase().includes('dsgvo') || e.name.toLowerCase().includes('anon'))?.name
+      || 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT';
   })();
-  const hasEndpoint = !!target.endpoint;
+  const hasEndpoint = endpoint !== 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT' && endpoint !== 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
 
   // Find list endpoint for history check
   const listEndpoint = analysis.ir.apiEndpoints.find(e =>
@@ -2285,10 +2346,6 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
     })
     .filter((f): f is string => !!f && f.length > 2 && !['data','export','workspace','task','member'].includes(f));
   const piiFields = Array.from(new Set([...piiFromPostconds, ...(titlePiiMatch ? [titlePiiMatch.toLowerCase()] : []), ...piiResourceFields]));
-
-  // Detect if this is a hard-delete behavior (permanently deletes) vs soft-delete/anonymize
-  const isHardDelete = (behavior?.title || '').toLowerCase().includes('permanently') ||
-    (behavior?.postconditions || []).some(p => p.toLowerCase().includes('permanently') || p.toLowerCase().includes('all') && p.toLowerCase().includes('deleted'));
 
   // Determine the identifier field used for GDPR deletion
   const idField = behavior?.preconditions.join(" ").match(/by\s+(\w+)/i)?.[1] || "id";
@@ -2770,7 +2827,9 @@ function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult
   // Determine if this behavior is about delete or bulkDelete
   const behaviorTitle = (behavior?.title || target.description).toLowerCase();
   const isDelete = behaviorTitle.includes("delete") || behaviorTitle.includes("remove");
-  const isBulkDelete = behaviorTitle.includes("bulk");
+  // isBulkDelete: check both behavior title AND target.endpoint (e.g. tasks.bulkDelete)
+  const isBulkDelete = behaviorTitle.includes("bulk") ||
+    (target.endpoint?.toLowerCase().includes("bulk") ?? false);
   const actionEp = isBulkDelete ? (bulkDeleteEp || deleteEp || ep) : isDelete ? (deleteEp || ep) : ep;
 
   // Build the resource ID field name (taskId, reservationId, etc.)

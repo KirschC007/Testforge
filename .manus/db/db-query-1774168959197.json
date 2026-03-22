@@ -1,0 +1,55 @@
+{
+  "query": "SELECT id, status, projectName, createdAt, validatedProofCount, behaviorCount, outputZipUrl \nFROM analyses \nORDER BY createdAt DESC \nLIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute SELECT id, status, projectName, createdAt, validatedProofCount, behaviorCount, outputZipUrl \nFROM analyses \nORDER BY createdAt DESC \nLIMIT 5;",
+  "rows": [
+    {
+      "id": "60002",
+      "status": "completed",
+      "projectName": "Test",
+      "createdAt": "2026-03-21 09:23:14",
+      "validatedProofCount": "32",
+      "behaviorCount": "61",
+      "outputZipUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663452212555/UFergRv2GrnhdSxgSgsvDU/analyses/60002/testforge-output.zip"
+    },
+    {
+      "id": "60001",
+      "status": "failed",
+      "projectName": "Test",
+      "createdAt": "2026-03-21 09:18:03",
+      "validatedProofCount": "NULL",
+      "behaviorCount": "NULL",
+      "outputZipUrl": "NULL"
+    },
+    {
+      "id": "30002",
+      "status": "cancelled",
+      "projectName": "retz",
+      "createdAt": "2026-03-21 00:42:30",
+      "validatedProofCount": "NULL",
+      "behaviorCount": "NULL",
+      "outputZipUrl": "NULL"
+    },
+    {
+      "id": "30001",
+      "status": "cancelled",
+      "projectName": "fghj",
+      "createdAt": "2026-03-21 00:20:58",
+      "validatedProofCount": "NULL",
+      "behaviorCount": "NULL",
+      "outputZipUrl": "NULL"
+    },
+    {
+      "id": "5",
+      "status": "cancelled",
+      "projectName": "test",
+      "createdAt": "2026-03-20 20:47:31",
+      "validatedProofCount": "NULL",
+      "behaviorCount": "NULL",
+      "outputZipUrl": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\tprojectName\tcreatedAt\tvalidatedProofCount\tbehaviorCount\toutputZipUrl\n60002\tcompleted\tTest\t2026-03-21 09:23:14\t32\t61\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663452212555/UFergRv2GrnhdSxgSgsvDU/analyses/60002/testforge-output.zip\n60001\tfailed\tTest\t2026-03-21 09:18:03\tNULL\tNULL\tNULL\n30002\tcancelled\tretz\t2026-03-21 00:42:30\tNULL\tNULL\tNULL\n30001\tcancelled\tfghj\t2026-03-21 00:20:58\tNULL\tNULL\tNULL\n5\tcancelled\ttest\t2026-03-20 20:47:31\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 491
+}

@@ -162,3 +162,11 @@
 - [x] Bug 2: CSRF — checkTypeScriptSyntax blockiert db-queries + TODO_ Literals, LLM-Tests fallen auf Template-Generator zurück
 - [x] Erfolgs-Kriterien: 5 grep-Checks grün (0 TODO_, 0 db-queries, 0 doppeltes workspaceId)
 - [x] Pipeline-Verifikation: 46 Behaviors, 34 validierte Tests, 32/32 Unit-Tests grün
+
+## Phase 18: Finales Perfektions-Briefing
+- [x] Fix 1: bulkDelete BL-Test — isBulkDelete prüft auch target.endpoint; TaskManager: 9 bulkDelete-Treffer
+- [x] Fix 2: DSGVO workspace.deleteAll — isHardDelete+isWorkspaceDeleteAll-Routing; ShopCore: 14 customers.anonymize/shop.exportData-Treffer
+- [x] Fix 3: Status-Transition Deduplizierung — transitionIndex + assignedTransition; ShopCore: 3 verschiedene Status-Werte
+- [x] Fix 4: getEndpoint-Fallback für Status-Transition — orders.list als Fallback wenn kein getById
+- [x] Live-Test gegen ShopCore-Spec — 5/5 Checks grün (0 TODO_, 0 db-queries, 14 DSGVO-Endpoints, 3 Status-Werte)
+- [x] Output + Selbst-Einschätzung geliefert
