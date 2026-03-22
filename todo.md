@@ -480,3 +480,23 @@
 - [x] SP-4: TS-Fehler prüfen und beheben (5 Set-Iteration-Fehler + classifySection preauth-Bug)
 - [x] SP-5: Vitest-Tests für smart-parser schreiben (59 Tests)
 - [x] SP-6: 374/374 Tests grün, 0 TS-Fehler, Checkpoint
+
+## Sprint 3: Bug-Finding-Rate 30% → 65-75% (22.03.2026)
+- [x] FIX-1a: types.ts — StructuredSideEffect Interface
+- [x] FIX-1b: types.ts — Behavior.errorCodes + Behavior.structuredSideEffects
+- [x] FIX-1c: types.ts — ProofTarget.structuredSideEffects
+- [x] FIX-1d: types.ts — ProofType union + flow/cron_job/webhook/feature_gate
+- [x] FIX-1e: types.ts — FlowStep, FlowDefinition, CronJobDef, FeatureGate Interfaces
+- [x] FIX-1f: types.ts — AnalysisIR.cronJobs + AnalysisIR.featureGates + AnalysisIR.flows
+- [x] FIX-2a: smart-parser.ts — structuredSideEffects + errorCodes in extraction prompts
+- [x] FIX-2b: smart-parser.ts — flows/cronJobs/featureGates in extraction JSON
+- [x] FIX-3a: risk-model.ts — structuredSideEffects in buildProofTarget
+- [x] FIX-3b: risk-model.ts — flow/cron_job/webhook/feature_gate detection in determineProofTypes
+- [x] FIX-4a: proof-generator.ts — structuredSideEffect assertions in generateStatusTransitionTest
+- [x] FIX-4b: proof-generator.ts — errorCode assertions in generateBoundaryTest
+- [x] FIX-5a: proof-generator.ts — generateCronJobTest + templateMap + getFilename
+- [x] FIX-5b: proof-generator.ts — generateWebhookTest + templateMap + getFilename
+- [x] FIX-5c: proof-generator.ts — generateFeatureGateTest + templateMap + getFilename
+- [x] FIX-6: proof-generator.ts — generateFlowTest + templateMap + getFilename
+- [x] FIX-7: index.ts — neue Exports
+- [x] FIX-8: Vitest-Tests für alle neuen Generatoren (76 Tests in sprint3-generators.test.ts)

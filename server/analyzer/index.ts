@@ -40,6 +40,11 @@ export type {
   ExtendedTestFile,
   ExtendedTestSuite,
   AnalysisJobResult,
+  StructuredSideEffect,
+  FlowStep,
+  FlowDefinition,
+  CronJobDef,
+  FeatureGate,
 } from "./types";
 
 // ─── LLM Parser ───────────────────────────────────────────────────────────────
@@ -73,6 +78,10 @@ export {
   generateConcurrencyTest,
   generateIdempotencyTest,
   generateAuthMatrixTest,
+  generateFlowTest,
+  generateCronJobTest,
+  generateWebhookTest,
+  generateFeatureGateTest,
   generateProofs,
 } from "./proof-generator";
 

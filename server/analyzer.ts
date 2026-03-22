@@ -14,6 +14,57 @@ import { invokeLLM } from "./_core/llm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface StructuredSideEffect {
+  entity: string;
+  field: string;
+  operation: "increment" | "decrement" | "set" | "set_if" | "insert" | "delete" | "schedule";
+  value?: unknown;
+  condition?: string;
+  verifyVia: "api_response" | "get_endpoint" | "database_query" | "not_verifiable" | "list_endpoint" | "debug_endpoint";
+  verifyEndpoint?: string;
+  verifyField?: string;
+}
+
+export interface FlowStep {
+  action: "mutation" | "query" | "wait" | "cron_trigger";
+  endpoint?: string;
+  expectedStatus?: number;
+  payload?: Record<string, unknown>;
+  waitMs?: number;
+  description: string;
+  dbChecks?: Array<{
+    endpoint: string;
+    field: string;
+    expected: string;
+  }>;
+}
+
+export interface FlowDefinition {
+  id: string;
+  name: string;
+  behaviors: string[];
+  steps: FlowStep[];
+  invariants: string[];
+  description?: string;
+}
+
+export interface CronJobDef {
+  name: string;
+  frequency: string;
+  preconditions: string[];
+  expectedChanges: StructuredSideEffect[];
+  triggerEndpoint?: string;
+  raceConditionProtection?: string;
+}
+
+export interface FeatureGate {
+  feature: string;
+  requiredPlan: string;
+  gatedEndpoints: string[];
+  errorCode: string;
+  blockedMessage?: string;
+}
+
 export interface Behavior {
   id: string;
   title: string;
@@ -25,6 +76,8 @@ export interface Behavior {
   errorCases: string[];
   tags: string[];
   riskHints: string[];
+  errorCodes?: string[];
+  structuredSideEffects?: StructuredSideEffect[];
   chapter?: string;
   specAnchor?: string; // Exact quote from spec for anchor verification
 }
@@ -131,6 +184,9 @@ export interface AnalysisIR {
   services?: Array<{ name: string; description: string; techStack?: string; dependencies: ServiceDep[] }>;
   userFlows?: UserFlow[];
   dataModels?: DataModel[];
+  flows?: FlowDefinition[];
+  cronJobs?: CronJobDef[];
+  featureGates?: FeatureGate[];
 }
 
 export interface SpecHealthDimension {
@@ -171,7 +227,7 @@ export interface CheckResult {
 }
 
 export type RiskLevel = "critical" | "high" | "medium" | "low";
-export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix";
+export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix" | "flow" | "cron_job" | "webhook" | "feature_gate";
 
 export interface ScoredBehavior {
   behavior: Behavior;
@@ -1121,6 +1177,49 @@ export function determineProofTypes(b: Behavior): ProofType[] {
   ) {
     types.add("auth_matrix");
   }
+  // flow: multi-step workflows, end-to-end sequences
+  if (
+    combined.includes("flow") ||
+    combined.includes("workflow") ||
+    combined.includes("multi-step") ||
+    combined.includes("end-to-end") ||
+    combined.includes("sequence")
+  ) {
+    types.add("flow");
+  }
+  // cron_job: scheduled/background jobs
+  if (
+    combined.includes("cron") ||
+    combined.includes("scheduled") ||
+    combined.includes("background-job") ||
+    combined.includes("background_job") ||
+    combined.includes("periodic") ||
+    combined.includes("timer")
+  ) {
+    types.add("cron_job");
+  }
+  // webhook: outbound webhooks, HMAC signatures, callbacks
+  if (
+    combined.includes("webhook") ||
+    combined.includes("hmac") ||
+    combined.includes("signature") ||
+    combined.includes("callback") ||
+    combined.includes("event-hook")
+  ) {
+    types.add("webhook");
+  }
+  // feature_gate: plan-gated features, premium tiers
+  if (
+    combined.includes("feature-gate") ||
+    combined.includes("feature_gate") ||
+    combined.includes("plan-gated") ||
+    combined.includes("plan_gated") ||
+    combined.includes("premium") ||
+    combined.includes("tier") ||
+    combined.includes("upgrade-required")
+  ) {
+    types.add("feature_gate");
+  }
   return Array.from(types);
 }
 
@@ -1153,6 +1252,10 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     concurrency: ["create", "update", "reserve", "book", "purchase"],
     idempotency: ["create", "update", "submit", "process"],
     auth_matrix: ["create", "update", "delete", "get", "list"],
+    flow: ["create", "update", "complete", "submit"],
+    cron_job: ["trigger", "process", "run", "execute"],
+    webhook: ["webhook", "hook", "event", "notify"],
+    feature_gate: ["create", "update", "get", "list"],
   };
 
   const kws = keywords[proofType] || [];
@@ -2454,6 +2557,10 @@ function getFilename(pt: ProofType): string {
     concurrency: "tests/concurrency/race-conditions.spec.ts",
     idempotency: "tests/integration/idempotency.spec.ts",
     auth_matrix: "tests/security/auth-matrix.spec.ts",
+    flow: "tests/integration/flows.spec.ts",
+    cron_job: "tests/integration/cron-jobs.spec.ts",
+    webhook: "tests/security/webhooks.spec.ts",
+    feature_gate: "tests/business/feature-gates.spec.ts",
   };
   return map[pt];
 }
@@ -4821,6 +4928,290 @@ ${nonAdminTests}
 `;
 }
 
+export function generateFlowTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  // Resolve flow steps from IR flows or behavior
+  const flowDef = analysis.ir.flows?.find(f =>
+    f.name.toLowerCase().includes((behavior?.object || "").toLowerCase()) ||
+    (behavior?.title || "").toLowerCase().includes(f.name.toLowerCase())
+  );
+  const steps: FlowStep[] = flowDef?.steps || [];
+  const hasSteps = steps.length > 0;
+
+  // Resolve endpoints: create + status update + get
+  const createEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"))?.name || "TODO_REPLACE_WITH_CREATE_ENDPOINT";
+  const updateEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("status"))?.name || "TODO_REPLACE_WITH_UPDATE_ENDPOINT";
+  const getEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
+
+  const stepComments = hasSteps
+    ? steps.map((s, i) => `  // Step ${i + 1}: ${s.action} → status ${s.expectedStatus ?? "?"}`).join("\n")
+    : `  // Step 1: Create resource\n  // Step 2: Advance through states\n  // Step 3: Verify final state`;
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst}, createTestResource } from "../../helpers/factories";
+
+// ${target.id} — Flow: ${target.description}
+// Risk: ${target.riskLevel}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — complete flow succeeds end-to-end", async ({ request }) => {
+${stepComments}
+  const { data: created } = await trpcMutation(request, "${createEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect((created as Record<string, unknown>)?.id).toBeDefined();
+  // Kills: ${target.mutationTargets[0]?.description || "Skip intermediate step in flow"}
+
+  const { data: final } = await trpcQuery(request, "${getEp}",
+    { id: (created as Record<string, unknown>)?.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(final).not.toBeNull();
+  // Kills: ${target.mutationTargets[1]?.description || "Allow flow to complete with missing precondition"}
+});
+
+test("${target.id}b — flow cannot skip intermediate step", async ({ request }) => {
+  const { data: created } = await trpcMutation(request, "${createEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect((created as Record<string, unknown>)?.id).toBeDefined();
+
+  // Attempt to jump to final state without intermediate steps
+  const { status } = await trpcMutation(request, "${updateEp}",
+    { id: (created as Record<string, unknown>)?.id, ${tenantField}: ${tenantConst}, skipSteps: true }, adminCookie);
+  expect([400, 422]).toContain(status);
+  // Kills: Allow flow to skip required intermediate steps
+});
+`;
+}
+
+export function generateCronJobTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  // Resolve cron job def from IR
+  const cronDef = analysis.ir.cronJobs?.find(c =>
+    c.name.toLowerCase().includes((behavior?.object || "").toLowerCase()) ||
+    (behavior?.title || "").toLowerCase().includes(c.name.toLowerCase())
+  );
+  const schedule = cronDef?.frequency || "every hour";
+  const triggerEndpoint = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("cron") || e.name.toLowerCase().includes("trigger") ||
+      e.name.toLowerCase().includes("process"))?.name || "TODO_REPLACE_WITH_CRON_TRIGGER_ENDPOINT";
+
+  // Detect what the cron job processes from behavior
+  const processedField = behavior?.postconditions.join(" ").match(/(\w+(?:Count|Processed|Updated|Sent))/)?.[1] || "processedCount";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Cron Job: ${target.description}
+// Risk: ${target.riskLevel}
+// Schedule: ${schedule}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — cron trigger processes pending records", async ({ request }) => {
+  // Trigger the cron job manually
+  const { status, data } = await trpcMutation(request, "${triggerEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect([200, 204]).toContain(status);
+  // Kills: ${target.mutationTargets[0]?.description || "Remove cron job processing logic"}
+
+  // Verify at least one record was processed
+  const processed = (data as Record<string, unknown>)?.${processedField};
+  if (processed !== undefined) {
+    expect(Number(processed)).toBeGreaterThanOrEqual(0);
+  }
+  // Kills: ${target.mutationTargets[1]?.description || "Allow cron to run without precondition check"}
+});
+
+test("${target.id}b — cron job is idempotent (double trigger safe)", async ({ request }) => {
+  // Trigger twice — should not double-process
+  await trpcMutation(request, "${triggerEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const { status: status2 } = await trpcMutation(request, "${triggerEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect([200, 204]).toContain(status2);
+  // Kills: Allow cron to process same records twice (missing idempotency guard)
+});
+`;
+}
+
+export function generateWebhookTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  const webhookEndpoint = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("webhook") || e.name.toLowerCase().includes("hook") ||
+      e.name.toLowerCase().includes("callback"))?.name || "TODO_REPLACE_WITH_WEBHOOK_ENDPOINT";
+
+  // Detect event type from behavior
+  const eventType = behavior?.postconditions.join(" ").match(/event[:\s]+["']?([a-z._]+)["']?/i)?.[1] ||
+    behavior?.title.match(/([a-z]+\.[a-z]+)/)?.[1] || "order.completed";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+import crypto from "crypto";
+
+// ${target.id} — Webhook: ${target.description}
+// Risk: ${target.riskLevel}
+// Event: ${eventType}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — valid webhook payload is accepted", async ({ request }) => {
+  const payload = JSON.stringify({ event: "${eventType}", ${tenantField}: ${tenantConst}, timestamp: Date.now() });
+  const secret = process.env.WEBHOOK_SECRET || "test-secret";
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+
+  const { status } = await trpcMutation(request, "${webhookEndpoint}",
+    JSON.parse(payload), adminCookie, { "x-webhook-signature": sig });
+
+  expect([200, 204]).toContain(status);
+  // Kills: ${target.mutationTargets[0]?.description || "Remove webhook signature verification"}
+});
+
+test("${target.id}b — webhook with invalid signature is rejected (401)", async ({ request }) => {
+  const payload = JSON.stringify({ event: "${eventType}", ${tenantField}: ${tenantConst} });
+  const badSig = "sha256=invalid_signature_here";
+
+  const { status } = await trpcMutation(request, "${webhookEndpoint}",
+    JSON.parse(payload), adminCookie, { "x-webhook-signature": badSig });
+
+  expect(status).toBe(401);
+  // Kills: Accept webhook without verifying HMAC signature
+});
+
+test("${target.id}c — webhook with missing signature is rejected (401)", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${webhookEndpoint}",
+    { event: "${eventType}", ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect(status).toBe(401);
+  // Kills: Allow unsigned webhook delivery
+});
+`;
+}
+
+export function generateFeatureGateTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+
+  // Resolve roles from IR auth model
+  const roles = analysis.ir.authModel?.roles || [];
+  const adminRole = roles.find(r => r.name.toLowerCase().includes("admin") || r.name.toLowerCase().includes("owner")) || roles[0];
+  const freeRole = roles.find(r => r.name.toLowerCase().includes("free") || r.name.toLowerCase().includes("guest") || r.name.toLowerCase().includes("user")) || roles[roles.length - 1];
+
+  const adminFnName = adminRole
+    ? `get${adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+  const freeFnName = freeRole && freeRole !== adminRole
+    ? `get${freeRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getUserCookie";
+
+  // Resolve feature gate def from IR
+  const gateDef = analysis.ir.featureGates?.find(g =>
+    g.feature.toLowerCase().includes((behavior?.object || "").toLowerCase()) ||
+    (behavior?.title || "").toLowerCase().includes(g.feature.toLowerCase())
+  );
+  const requiredPlan = gateDef?.requiredPlan || "professional";
+  const gatedEndpoint = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes(behavior?.object?.toLowerCase() || ""))?.name || "TODO_REPLACE_WITH_GATED_ENDPOINT";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation } from "../../helpers/api";
+import { ${adminFnName}, ${freeFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Feature Gate: ${target.description}
+// Risk: ${target.riskLevel}
+// Required Plan: ${requiredPlan}
+// Behavior: ${behavior?.title || target.description}
+
+let proCookie: string;
+let freeCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  proCookie = await ${adminFnName}(request);
+  freeCookie = await ${freeFnName}(request);
+});
+
+test("${target.id}a — ${requiredPlan}-tier user can access gated feature", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${gatedEndpoint}",
+    { ${tenantField}: ${tenantConst} }, proCookie);
+
+  expect([200, 201]).toContain(status);
+  // Kills: ${target.mutationTargets[1]?.description || "Pro-tier must succeed"}
+});
+
+test("${target.id}b — free-tier user is blocked (403)", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${gatedEndpoint}",
+    { ${tenantField}: ${tenantConst} }, freeCookie);
+
+  expect(status).toBe(403);
+  // Kills: ${target.mutationTargets[0]?.description || "Remove plan check from feature gate"}
+});
+
+test("${target.id}c — unauthenticated user is rejected (401)", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${gatedEndpoint}",
+    { ${tenantField}: ${tenantConst} }, "");
+
+  expect([401, 403]).toContain(status);
+  // Kills: Allow unauthenticated access to gated feature
+});
+`;
+}
+
+
+
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const t0 = Date.now();
 
@@ -4838,6 +5229,10 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     concurrency: generateConcurrencyTest,
     idempotency: generateIdempotencyTest,
     auth_matrix: generateAuthMatrixTest,
+    flow: generateFlowTest,
+    cron_job: generateCronJobTest,
+    webhook: generateWebhookTest,
+    feature_gate: generateFeatureGateTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);

@@ -330,7 +330,7 @@ async function extractFromChunkGroup(
     auth: "Focus on extracting auth-related behaviors: login, logout, session management, password policies, role-based access. Extract the auth model with all roles.",
     security: "Focus on extracting security behaviors: CSRF protection, rate limiting, input validation, XSS prevention. Tag appropriately.",
     dsgvo: "Focus on extracting DSGVO/GDPR behaviors: data anonymization, deletion, export, retention, consent. Include which PII fields must be anonymized.",
-    "business-logic": "Focus on extracting business logic behaviors: booking rules, validation steps, cron jobs, notifications, payment flows. Include all side-effects.",
+    "business-logic": "Focus on extracting business logic behaviors: booking rules, validation steps, cron jobs, notifications, payment flows. For EACH side-effect (counter increment, timestamp update, SMS trigger, audit log insert, Stripe charge): add a structuredSideEffect entry with entity, field, operation, verifyVia. Also extract cronJobs and flows if present. Include errorCodes for each error case.",
     "edge-cases": "Focus on extracting edge case behaviors: race conditions, concurrent access, error recovery. Tag with appropriate risk hints.",
     schema: "Focus on extracting data models, field constraints (min/max/required), relationships, and PII flags. Also extract any validation rules mentioned in field descriptions.",
     other: "Extract any testable behaviors from this section.",
@@ -350,20 +350,23 @@ Rules:
 1. Extract behaviors as Subject-Verb-Object triples with specAnchor (verbatim quote 10-30 words)
 2. For EACH endpoint: extract FULL inputFields as EndpointField objects with type, min, max, enumValues, isTenantKey, isBoundaryField
 3. Use behavior IDs that include the section topic: e.g. "B-STATUS-001", "B-IDOR-001", "B-DSGVO-001"
-4. Include ALL side-effects in postconditions (counter increments, timestamp updates, SMS triggers, audit logs)
+4. Include ALL side-effects in postconditions AND as structuredSideEffects entries (entity, field, operation, verifyVia). For DB side-effects: set verifyVia to "get_endpoint" or "list_endpoint" and provide verifyEndpoint+verifyField+verifyExpected. For non-verifiable: set verifyVia to "not_verifiable".
 5. Tag behaviors correctly: "authorization"+"security" for IDOR, "dsgvo" for PII, "state-machine" for transitions, "csrf" for CSRF, "rate-limiting" for rate limits
 6. For status transitions: create ONE behavior per transition (not one behavior for all transitions)
 7. For forbidden transitions: create explicit rejection behaviors with HTTP 400/422 expected
+8. For each errorCase: extract the exact error code string (e.g. "VALIDATION_GUEST_NAME_REQUIRED", "INVALID_STATUS_TRANSITION") into errorCodes array
 
 Return JSON:
-- behaviors: [{id, title, subject, action, object, preconditions, postconditions, errorCases, tags, riskHints, chapter, specAnchor}]
+- behaviors: [{id, title, subject, action, object, preconditions, postconditions, errorCases, tags, riskHints, chapter, specAnchor, structuredSideEffects: [{entity, field, operation, value?, condition?, verifyVia, verifyEndpoint?, verifyField?, verifyExpected?}]?, errorCodes: string[]?}]
 - apiEndpoints: [{name, method, auth, relatedBehaviors, inputFields: EndpointField[], outputFields: string[]}]
 - resources: [{name, table, tenantKey, operations, hasPII}]
 - invariants: [{id, description, alwaysTrue, violationConsequence}]
 - ambiguities: [{behaviorId, problem, question, impact}]
 - tenantModel, authModel, enums, statusMachine — ONLY if this section contains NEW info not in the context above
 - qualityScore: 0-10
-
+- cronJobs: [{name, frequency, triggerEndpoint?, preconditions, expectedChanges: [{entity, field, operation, value?, condition?, verifyVia, verifyEndpoint?, verifyField?, verifyExpected?}], raceConditionProtection?}]? (ONLY if this section describes cron/scheduled jobs)
+- featureGates: [{feature, requiredPlan, gatedEndpoints, errorCode}]? (ONLY if this section describes plan-based feature gates)
+- flows: [{id, name, behaviors: string[], steps: [{action, endpoint?, payload?, expectedStatus?, dbChecks?, description}], invariants: string[]}]? (ONLY if this section describes multi-step flows)
 Output ONLY valid JSON. No markdown.`;
 
   const response = await invokeLLM({
@@ -604,6 +607,7 @@ export async function parseSpecSmart(specText: string): Promise<AnalysisResult> 
     tenantModel: null, resources: [], apiEndpoints: [], authModel: null,
     enums: {}, statusMachine: null,
     services: [], userFlows: [], dataModels: [],
+    cronJobs: [], featureGates: [], flows: [],
   };
   let totalQuality = 0;
 
@@ -620,6 +624,9 @@ export async function parseSpecSmart(specText: string): Promise<AnalysisResult> 
     if ((r as any).services) merged.services!.push(...(r as any).services);
     if ((r as any).userFlows) merged.userFlows!.push(...(r as any).userFlows);
     if ((r as any).dataModels) merged.dataModels!.push(...(r as any).dataModels);
+    if ((r as any).cronJobs) merged.cronJobs!.push(...(r as any).cronJobs);
+    if ((r as any).featureGates) merged.featureGates!.push(...(r as any).featureGates);
+    if ((r as any).flows) merged.flows!.push(...(r as any).flows);
     // Merge enums
     if (r.enums && typeof r.enums === "object") {
       for (const [key, vals] of Object.entries(r.enums)) {

@@ -13,6 +13,19 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** Sprint 3: Structured side-effect for precise test assertion generation */
+export interface StructuredSideEffect {
+  entity: string;          // "guests", "reservations", "audit_logs", "sms_logs"
+  field: string;           // "visitCount", "lastVisit", "isStammgast", "*" (for INSERT)
+  operation: "increment" | "decrement" | "set" | "set_if" | "insert" | "delete" | "schedule";
+  value?: unknown;         // 1, "DATE(NOW())", true, "no_show_fee"
+  condition?: string;      // "visitCount >= 5", "smsFeedbackEnabled = 1" (undefined = always)
+  verifyVia: "api_response" | "get_endpoint" | "list_endpoint" | "debug_endpoint" | "database_query" | "not_verifiable";
+  verifyEndpoint?: string; // "guests.getByPhone", "audit_logs.list"
+  verifyField?: string;    // "visitCount", "action"
+  verifyExpected?: string; // "countBefore + 1", "status_change", "> 0"
+}
+
 export interface Behavior {
   id: string;
   title: string;
@@ -26,6 +39,8 @@ export interface Behavior {
   riskHints: string[];
   chapter?: string;
   specAnchor?: string; // Exact quote from spec for anchor verification
+  structuredSideEffects?: StructuredSideEffect[];  // Structured side-effects for test generation
+  errorCodes?: string[];                            // Exact error codes: "VALIDATION_GUEST_NAME_REQUIRED"
 }
 
 export interface EndpointField {
@@ -130,6 +145,10 @@ export interface AnalysisIR {
   services?: Array<{ name: string; description: string; techStack?: string; dependencies: ServiceDep[] }>;
   userFlows?: UserFlow[];
   dataModels?: DataModel[];
+  // Sprint 3: new extraction targets
+  cronJobs?: CronJobDef[];
+  featureGates?: FeatureGate[];
+  flows?: FlowDefinition[];
 }
 
 export interface SpecHealthDimension {
@@ -170,7 +189,7 @@ export interface CheckResult {
 }
 
 export type RiskLevel = "critical" | "high" | "medium" | "low";
-export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix";
+export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix" | "flow" | "cron_job" | "webhook" | "feature_gate";
 
 export interface ScoredBehavior {
   behavior: Behavior;
@@ -214,6 +233,8 @@ export interface ProofTarget {
   constraints?: FieldConstraint[];  // Boundary constraints extracted from spec
   transitionIndex?: number;          // For status_transition: which transition from statusMachine to use
   resolvedPayload?: Record<string, unknown>; // Pre-built valid payload for LLM hint
+  structuredSideEffects?: StructuredSideEffect[];  // Passed through from Behavior for test generation
+  errorCodes?: string[];             // Exact error codes for assertion generation
 }
 
 export interface RiskModel {
@@ -265,6 +286,44 @@ export interface GeneratedHelpers {
   "README.md": string;
   ".env.example": string;
   "validate-payloads.mjs": string;
+}
+
+
+export interface FlowStep {
+  action: "mutation" | "query" | "wait" | "cron_trigger";
+  endpoint?: string;
+  payload?: Record<string, unknown>;
+  expectedStatus?: number;
+  dbChecks?: Array<{
+    endpoint: string;
+    field: string;
+    expected: string;  // TypeScript expression
+  }>;
+  description: string;
+}
+
+export interface FlowDefinition {
+  id: string;
+  name: string;               // "No-Show + Stripe Capture Flow"
+  behaviors: string[];         // Behavior IDs involved
+  steps: FlowStep[];
+  invariants: string[];        // "guest.noShowCount must increase by exactly 1"
+}
+
+export interface CronJobDef {
+  name: string;           // "noShowRelease"
+  frequency: string;      // "every minute", "every 15 min"
+  triggerEndpoint?: string; // "/api/debug/cron/noShowRelease"
+  preconditions: string[];
+  expectedChanges: StructuredSideEffect[];
+  raceConditionProtection?: string; // "FOR UPDATE", "optimistic locking"
+}
+
+export interface FeatureGate {
+  feature: string;        // "seriesReservations", "aiFeatures"
+  requiredPlan: string;   // "professional", "enterprise"
+  gatedEndpoints: string[]; // ["reservations.createSeries"]
+  errorCode: string;      // "PLAN_UPGRADE_REQUIRED"
 }
 
 export interface ExtendedTestFile {

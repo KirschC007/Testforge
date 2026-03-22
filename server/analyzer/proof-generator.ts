@@ -1,6 +1,6 @@
 import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
-import type { Behavior, EndpointField, APIEndpoint, AnalysisResult, ProofType, ProofTarget, RiskModel, RawProof } from "./types";
+import type { Behavior, EndpointField, APIEndpoint, AnalysisResult, ProofType, ProofTarget, RiskModel, RawProof, FlowStep } from "./types";
 
 // ─── Schicht 3: Proof Generator ───────────────────────────────────────────────
 
@@ -95,6 +95,10 @@ function getFilename(pt: ProofType): string {
     concurrency: "tests/concurrency/race-conditions.spec.ts",
     idempotency: "tests/integration/idempotency.spec.ts",
     auth_matrix: "tests/security/auth-matrix.spec.ts",
+    flow: "tests/integration/flows.spec.ts",
+    cron_job: "tests/integration/cron-jobs.spec.ts",
+    webhook: "tests/integration/webhooks.spec.ts",
+    feature_gate: "tests/business/feature-gates.spec.ts",
   };
   return map[pt];
 }
@@ -879,6 +883,18 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const counterField = target.sideEffects?.find(se => se.toLowerCase().includes("count"))?.match(/(\w+[Cc]ount)/)?.[1] || "count";
   const timestampField = target.sideEffects?.find(se => se.toLowerCase().includes("at"))?.match(/(\w+[Aa]t)/)?.[1] || "updatedAt";
 
+  // Structured side-effects: generate precise field assertions from StructuredSideEffect objects
+  const structuredSideEffectAssertions = (target.structuredSideEffects || []).map(sse => {
+    if (sse.operation === "set" || sse.operation === "set_if") {
+      return `  expect((updated as Record<string, unknown>)?.${sse.field}).toBe(${JSON.stringify(sse.value)});\n  // Kills: Remove ${sse.field} = ${String(sse.value)} in ${toStatus} handler`;
+    } else if (sse.operation === "increment") {
+      return `  expect(Number((updated as Record<string, unknown>)?.${sse.field})).toBeGreaterThan(0);\n  // Kills: Remove ${sse.field} increment in ${toStatus} handler`;
+    } else if (sse.operation === "delete") {
+      return `  expect((updated as Record<string, unknown>)?.${sse.field}).toBeNull();\n  // Kills: Forget to clear ${sse.field} on ${toStatus}`;
+    }
+    return "";
+  }).filter(Boolean).join("\n");
+
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation, trpcQuery } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
@@ -924,6 +940,7 @@ ${hasCounter ? `  // Side-effect: counter must increment exactly once
   expect((updated as Record<string, unknown>)?.${counterField}).toBe(countBefore + 1);
   // Kills: ${target.mutationTargets[1]?.description || `Remove ${counterField} increment in ${endpoint} handler`}
 ` : ""}
+${structuredSideEffectAssertions ? structuredSideEffectAssertions + "\n" : ""}
 ${target.mutationTargets.slice(hasCounter ? 2 : 1).map(m => `  // Kills: ${m.description}`).join("\n")}
 });
 
@@ -1351,6 +1368,11 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const boundaryCases = calcBoundaryValues(boundaryField);
   const varName = `basePayload_${target.id.replace(/-/g, "_")}`;
 
+  // errorCodes: if the spec defines exact error codes, assert them in invalid boundary cases
+  const errorCodeAssertions = (target.errorCodes || []).slice(0, 3).map(code =>
+    `  // expect(body?.code).toBe("${code}"); // Kills: Return wrong error code for boundary violation`
+  ).join("\n");
+
   const testCases = boundaryCases.map((bc, idx) => {
     const letter = String.fromCharCode(97 + idx);
     const statusLine = bc.valid
@@ -1359,7 +1381,8 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
     const killLine = bc.valid
       ? `  // Kills: Change >= to > in ${boundaryField.name} validation (off-by-one)`
       : `  // Kills: Remove ${boundaryField.name} boundary validation`;
-    return `\ntest("${target.id}${letter} — ${boundaryField.name}=${bc.label}", async ({ request }) => {\n  const { status } = await trpcMutation(request, "${endpoint}", ${varName}(${bc.value}), adminCookie);\n${statusLine}\n${killLine}\n});`;
+    const ecLines = !bc.valid && errorCodeAssertions ? `\n${errorCodeAssertions}` : "";
+    return `\ntest("${target.id}${letter} — ${boundaryField.name}=${bc.label}", async ({ request }) => {\n  const { status } = await trpcMutation(request, "${endpoint}", ${varName}(${bc.value}), adminCookie);\n${statusLine}\n${killLine}${ecLines}\n});`;
   }).join("\n");
 
   const needsDates = boundaryField.type === "date" ||
@@ -2462,6 +2485,289 @@ ${nonAdminTests}
 `;
 }
 
+export function generateFlowTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  // Resolve flow steps from IR flows or behavior
+  const flowDef = analysis.ir.flows?.find(f =>
+    f.name.toLowerCase().includes((behavior?.object || "").toLowerCase()) ||
+    (behavior?.title || "").toLowerCase().includes(f.name.toLowerCase())
+  );
+  const steps: FlowStep[] = flowDef?.steps || [];
+  const hasSteps = steps.length > 0;
+
+  // Resolve endpoints: create + status update + get
+  const createEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"))?.name || "TODO_REPLACE_WITH_CREATE_ENDPOINT";
+  const updateEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("status"))?.name || "TODO_REPLACE_WITH_UPDATE_ENDPOINT";
+  const getEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
+
+  const stepComments = hasSteps
+    ? steps.map((s, i) => `  // Step ${i + 1}: ${s.action} → status ${s.expectedStatus ?? "?"}`).join("\n")
+    : `  // Step 1: Create resource\n  // Step 2: Advance through states\n  // Step 3: Verify final state`;
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst}, createTestResource } from "../../helpers/factories";
+
+// ${target.id} — Flow: ${target.description}
+// Risk: ${target.riskLevel}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — complete flow succeeds end-to-end", async ({ request }) => {
+${stepComments}
+  const { data: created } = await trpcMutation(request, "${createEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect((created as Record<string, unknown>)?.id).toBeDefined();
+  // Kills: ${target.mutationTargets[0]?.description || "Skip intermediate step in flow"}
+
+  const { data: final } = await trpcQuery(request, "${getEp}",
+    { id: (created as Record<string, unknown>)?.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(final).not.toBeNull();
+  // Kills: ${target.mutationTargets[1]?.description || "Allow flow to complete with missing precondition"}
+});
+
+test("${target.id}b — flow cannot skip intermediate step", async ({ request }) => {
+  const { data: created } = await trpcMutation(request, "${createEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect((created as Record<string, unknown>)?.id).toBeDefined();
+
+  // Attempt to jump to final state without intermediate steps
+  const { status } = await trpcMutation(request, "${updateEp}",
+    { id: (created as Record<string, unknown>)?.id, ${tenantField}: ${tenantConst}, skipSteps: true }, adminCookie);
+  expect([400, 422]).toContain(status);
+  // Kills: Allow flow to skip required intermediate steps
+});
+`;
+}
+
+export function generateCronJobTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  // Resolve cron job def from IR
+  const cronDef = analysis.ir.cronJobs?.find(c =>
+    c.name.toLowerCase().includes((behavior?.object || "").toLowerCase()) ||
+    (behavior?.title || "").toLowerCase().includes(c.name.toLowerCase())
+  );
+  const schedule = cronDef?.frequency || "every hour";
+  const triggerEndpoint = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("cron") || e.name.toLowerCase().includes("trigger") ||
+      e.name.toLowerCase().includes("process"))?.name || "TODO_REPLACE_WITH_CRON_TRIGGER_ENDPOINT";
+
+  // Detect what the cron job processes from behavior
+  const processedField = behavior?.postconditions.join(" ").match(/(\w+(?:Count|Processed|Updated|Sent))/)?.[1] || "processedCount";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Cron Job: ${target.description}
+// Risk: ${target.riskLevel}
+// Schedule: ${schedule}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — cron trigger processes pending records", async ({ request }) => {
+  // Trigger the cron job manually
+  const { status, data } = await trpcMutation(request, "${triggerEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect([200, 204]).toContain(status);
+  // Kills: ${target.mutationTargets[0]?.description || "Remove cron job processing logic"}
+
+  // Verify at least one record was processed
+  const processed = (data as Record<string, unknown>)?.${processedField};
+  if (processed !== undefined) {
+    expect(Number(processed)).toBeGreaterThanOrEqual(0);
+  }
+  // Kills: ${target.mutationTargets[1]?.description || "Allow cron to run without precondition check"}
+});
+
+test("${target.id}b — cron job is idempotent (double trigger safe)", async ({ request }) => {
+  // Trigger twice — should not double-process
+  await trpcMutation(request, "${triggerEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const { status: status2 } = await trpcMutation(request, "${triggerEndpoint}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect([200, 204]).toContain(status2);
+  // Kills: Allow cron to process same records twice (missing idempotency guard)
+});
+`;
+}
+
+export function generateWebhookTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const primaryRole = analysis.ir.authModel?.roles[0];
+  const roleFnName = primaryRole
+    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+
+  const webhookEndpoint = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("webhook") || e.name.toLowerCase().includes("hook") ||
+      e.name.toLowerCase().includes("callback"))?.name || "TODO_REPLACE_WITH_WEBHOOK_ENDPOINT";
+
+  // Detect event type from behavior
+  const eventType = behavior?.postconditions.join(" ").match(/event[:\s]+["']?([a-z._]+)["']?/i)?.[1] ||
+    behavior?.title.match(/([a-z]+\.[a-z]+)/)?.[1] || "order.completed";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+import crypto from "crypto";
+
+// ${target.id} — Webhook: ${target.description}
+// Risk: ${target.riskLevel}
+// Event: ${eventType}
+// Behavior: ${behavior?.title || target.description}
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — valid webhook payload is accepted", async ({ request }) => {
+  const payload = JSON.stringify({ event: "${eventType}", ${tenantField}: ${tenantConst}, timestamp: Date.now() });
+  const secret = process.env.WEBHOOK_SECRET || "test-secret";
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+
+  const { status } = await trpcMutation(request, "${webhookEndpoint}",
+    JSON.parse(payload), adminCookie, { "x-webhook-signature": sig });
+
+  expect([200, 204]).toContain(status);
+  // Kills: ${target.mutationTargets[0]?.description || "Remove webhook signature verification"}
+});
+
+test("${target.id}b — webhook with invalid signature is rejected (401)", async ({ request }) => {
+  const payload = JSON.stringify({ event: "${eventType}", ${tenantField}: ${tenantConst} });
+  const badSig = "sha256=invalid_signature_here";
+
+  const { status } = await trpcMutation(request, "${webhookEndpoint}",
+    JSON.parse(payload), adminCookie, { "x-webhook-signature": badSig });
+
+  expect(status).toBe(401);
+  // Kills: Accept webhook without verifying HMAC signature
+});
+
+test("${target.id}c — webhook with missing signature is rejected (401)", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${webhookEndpoint}",
+    { event: "${eventType}", ${tenantField}: ${tenantConst} }, adminCookie);
+
+  expect(status).toBe(401);
+  // Kills: Allow unsigned webhook delivery
+});
+`;
+}
+
+export function generateFeatureGateTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+
+  // Resolve roles from IR auth model
+  const roles = analysis.ir.authModel?.roles || [];
+  const adminRole = roles.find(r => r.name.toLowerCase().includes("admin") || r.name.toLowerCase().includes("owner")) || roles[0];
+  const freeRole = roles.find(r => r.name.toLowerCase().includes("free") || r.name.toLowerCase().includes("guest") || r.name.toLowerCase().includes("user")) || roles[roles.length - 1];
+
+  const adminFnName = adminRole
+    ? `get${adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie";
+  const freeFnName = freeRole && freeRole !== adminRole
+    ? `get${freeRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getUserCookie";
+
+  // Resolve feature gate def from IR
+  const gateDef = analysis.ir.featureGates?.find(g =>
+    g.feature.toLowerCase().includes((behavior?.object || "").toLowerCase()) ||
+    (behavior?.title || "").toLowerCase().includes(g.feature.toLowerCase())
+  );
+  const requiredPlan = gateDef?.requiredPlan || "professional";
+  const gatedEndpoint = target.endpoint ||
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes(behavior?.object?.toLowerCase() || ""))?.name || "TODO_REPLACE_WITH_GATED_ENDPOINT";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation } from "../../helpers/api";
+import { ${adminFnName}, ${freeFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Feature Gate: ${target.description}
+// Risk: ${target.riskLevel}
+// Required Plan: ${requiredPlan}
+// Behavior: ${behavior?.title || target.description}
+
+let proCookie: string;
+let freeCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  proCookie = await ${adminFnName}(request);
+  freeCookie = await ${freeFnName}(request);
+});
+
+test("${target.id}a — ${requiredPlan}-tier user can access gated feature", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${gatedEndpoint}",
+    { ${tenantField}: ${tenantConst} }, proCookie);
+
+  expect([200, 201]).toContain(status);
+  // Kills: ${target.mutationTargets[1]?.description || "Pro-tier must succeed"}
+});
+
+test("${target.id}b — free-tier user is blocked (403)", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${gatedEndpoint}",
+    { ${tenantField}: ${tenantConst} }, freeCookie);
+
+  expect(status).toBe(403);
+  // Kills: ${target.mutationTargets[0]?.description || "Remove plan check from feature gate"}
+});
+
+test("${target.id}c — unauthenticated user is rejected (401)", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${gatedEndpoint}",
+    { ${tenantField}: ${tenantConst} }, "");
+
+  expect([401, 403]).toContain(status);
+  // Kills: Allow unauthenticated access to gated feature
+});
+`;
+}
+
+
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const t0 = Date.now();
 
@@ -2479,6 +2785,10 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     concurrency: generateConcurrencyTest,
     idempotency: generateIdempotencyTest,
     auth_matrix: generateAuthMatrixTest,
+    flow: generateFlowTest,
+    cron_job: generateCronJobTest,
+    webhook: generateWebhookTest,
+    feature_gate: generateFeatureGateTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);

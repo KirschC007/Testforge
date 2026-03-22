@@ -486,6 +486,43 @@ export function determineProofTypes(b: Behavior): ProofType[] {
   ) {
     types.add("auth_matrix");
   }
+  // flow: multi-step flows defined in IR, or behaviors tagged with "flow" or "multi-step"
+  if (combined.includes("flow") || combined.includes("multi-step") || combined.includes("multi_step")) {
+    types.add("flow");
+  }
+  // cron_job: scheduled jobs, cron triggers, background tasks
+  if (
+    combined.includes("cron") ||
+    combined.includes("scheduled") ||
+    combined.includes("background-job") ||
+    combined.includes("background_job") ||
+    combined.includes("no-show-release") ||
+    combined.includes("noshowrelease")
+  ) {
+    types.add("cron_job");
+  }
+  // webhook: webhook delivery, signature verification, retry logic
+  if (
+    combined.includes("webhook") ||
+    combined.includes("callback-url") ||
+    combined.includes("callback_url") ||
+    combined.includes("event-delivery") ||
+    combined.includes("event_delivery")
+  ) {
+    types.add("webhook");
+  }
+  // feature_gate: plan-based feature gating, upgrade prompts
+  if (
+    combined.includes("feature-gate") ||
+    combined.includes("feature_gate") ||
+    combined.includes("plan-upgrade") ||
+    combined.includes("plan_upgrade") ||
+    combined.includes("professional-plan") ||
+    combined.includes("enterprise-plan") ||
+    combined.includes("gated")
+  ) {
+    types.add("feature_gate");
+  }
   return Array.from(types);
 }
 
@@ -518,6 +555,10 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     concurrency: ["create", "update", "reserve", "book", "purchase"],
     idempotency: ["create", "update", "submit", "process"],
     auth_matrix: ["create", "update", "delete", "get", "list"],
+    flow: ["create", "update", "status"],
+    cron_job: ["cron", "trigger", "release", "debug"],
+    webhook: ["webhook", "callback", "event"],
+    feature_gate: ["create", "series", "ai", "premium"],
   };
 
   const kws = keywords[proofType] || [];
@@ -705,6 +746,9 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
       lpc.includes("credit") || lpc.includes("restore") || lpc.includes("stock") ||
       lpc.includes("refund") || lpc.includes("inventory");
   });
+  // Sprint 3: pass through structured side-effects and error codes from Behavior
+  const structuredSideEffects = b.structuredSideEffects;
+  const errorCodes = b.errorCodes;
 
   if (pt === "idor") {
     return {
@@ -1029,6 +1073,88 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
       ],
       endpoint,
       sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+  if (pt === "flow") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-FLOW`,
+      description: `Multi-step flow: ${b.title}`,
+      preconditions: b.preconditions.length > 0 ? b.preconditions : ["System in initial state"],
+      assertions: [
+        { type: "http_status", target: "final_step_response", operator: "in", value: [200, 201], rationale: "Flow must complete successfully" },
+        { type: "field_value", target: "final_state", operator: "not_null", value: null, rationale: "Final state must be set" },
+      ],
+      mutationTargets: [
+        { description: "Skip intermediate step in flow", expectedKill: true },
+        { description: "Allow flow to complete with missing precondition", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+  if (pt === "cron_job") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-CRON`,
+      description: `Cron job: ${b.title}`,
+      preconditions: b.preconditions.length > 0 ? b.preconditions : ["Cron trigger endpoint accessible"],
+      assertions: [
+        { type: "http_status", target: "trigger_response", operator: "in", value: [200, 204], rationale: "Cron trigger must succeed" },
+        { type: "field_value", target: "processed_count", operator: "gt", value: 0, rationale: "Must process at least one record" },
+      ],
+      mutationTargets: [
+        { description: "Remove cron job processing logic", expectedKill: true },
+        { description: "Allow cron to run without precondition check", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+  if (pt === "webhook") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-WEBHOOK`,
+      description: `Webhook: ${b.title}`,
+      preconditions: b.preconditions.length > 0 ? b.preconditions : ["Webhook endpoint configured"],
+      assertions: [
+        { type: "http_status", target: "webhook_response", operator: "in", value: [200, 204], rationale: "Webhook must be delivered" },
+        { type: "http_status", target: "invalid_sig_response", operator: "eq", value: 401, rationale: "Invalid signature must be rejected" },
+      ],
+      mutationTargets: [
+        { description: "Remove webhook signature verification", expectedKill: true },
+        { description: "Allow webhook delivery without retry on failure", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+  if (pt === "feature_gate") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-FEATUREGATE`,
+      description: `Feature gate: ${b.title}`,
+      preconditions: b.preconditions.length > 0 ? b.preconditions : ["Free-tier user exists", "Professional-tier user exists"],
+      assertions: [
+        { type: "http_status", target: "free_tier_response", operator: "eq", value: 403, rationale: "Free-tier must be blocked" },
+        { type: "http_status", target: "pro_tier_response", operator: "in", value: [200, 201], rationale: "Pro-tier must succeed" },
+      ],
+      mutationTargets: [
+        { description: "Remove plan check from feature gate", expectedKill: true },
+        { description: "Allow free-tier access to gated feature", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
     };
   }
 
