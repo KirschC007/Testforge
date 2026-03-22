@@ -29,15 +29,14 @@ const LAYERS = [
   { n: 5, label: "False-Green Guard", color: "var(--tf-green)",  desc: "8 mutation rules discard tests that can't catch real regressions" },
 ];
 
-// ─── ZIP output items ─────────────────────────────────────────────────────
+// ─── ZIP output items (6 layers) ─────────────────────────────────────────────
 const ZIP_ITEMS = [
-  "tests/security/   — IDOR, CSRF, Rate-Limit, Spec-Drift",
-  "tests/business/   — Business Logic, Boundary Value",
-  "tests/compliance/ — DSGVO/GDPR, Data Retention",
-  "helpers/          — api.ts, auth.ts, factories.ts, schemas.ts",
-  ".github/workflows/testforge.yml — CI/CD pipeline",
-  "playwright.config.ts + tsconfig.json + package.json",
-  "README.md + .env.example",
+  { layer: "Unit",        color: "var(--tf-blue)",   path: "tests/unit/",        desc: "Vitest: service isolation, validation, state machine" },
+  { layer: "Integration", color: "var(--tf-purple)", path: "tests/integration/", desc: "Vitest: CRUD lifecycle, auth, tenant isolation" },
+  { layer: "E2E",         color: "var(--tf-green)",  path: "tests/e2e/",         desc: "Playwright: user flows, auth, create→verify" },
+  { layer: "UAT",         color: "var(--tf-yellow)", path: "tests/uat/",         desc: "Cucumber/Gherkin: human-readable acceptance criteria" },
+  { layer: "Security",    color: "var(--tf-red)",    path: "tests/security/",    desc: "Playwright: IDOR, CSRF, Rate-Limit, Spec-Drift" },
+  { layer: "Performance", color: "var(--tf-orange)", path: "tests/performance/", desc: "k6: load, spike, stress, rate-limit burst" },
 ];
 
 export default function Home() {
@@ -83,8 +82,7 @@ export default function Home() {
         <div className="container relative py-20 md:py-28 text-center">
           <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-full px-3 py-1 mb-6">
             <Zap className="w-3 h-3 text-[var(--tf-yellow)]" />
-            <span>8 Proof Types · 5-Layer Pipeline · Spec Health Score</span>
-          </div>
+            <span>8 Proof Types xb7 6 Test Layers xb7 Spec Health Score</span>       </div>
 
           <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4 leading-tight">
             Proof-Grade Tests<br />
@@ -130,7 +128,7 @@ export default function Home() {
           <div className="flex items-center justify-center gap-8 mt-12 text-sm">
             {[
               { v: "8",   l: "Proof Types" },
-              { v: "5",   l: "Analysis Layers" },
+              { v: "6",   l: "Test Layers" },
               { v: "~2min", l: "Avg Analysis Time" },
               { v: "0",   l: "Config Required" },
             ].map(s => (
@@ -265,23 +263,27 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Package className="w-5 h-5 text-[var(--tf-green)]" />
-                <h2 className="text-xl font-bold">Ready-to-Run ZIP Output</h2>
+                <h2 className="text-xl font-bold">6-Layer Test Suite — Ready to Run</h2>
               </div>
               <p className="text-muted-foreground text-sm mb-5">
-                The output ZIP contains everything needed to run your tests immediately.
-                No manual setup, no missing dependencies.
+                The output ZIP contains all 6 test layers with configs, helpers, and CI/CD pipeline.
+                Unzip, install, run — no manual setup needed.
               </p>
               <div className="bg-card border border-border rounded-lg overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-border bg-muted/30">
                   <div className="font-mono text-xs text-[var(--tf-green)]">
-                    $ unzip testforge-output.zip &amp;&amp; npm install &amp;&amp; npm test
+                    $ unzip testforge-output.zip &amp;&amp; npm install &amp;&amp; npm run test:all
                   </div>
                 </div>
-                <div className="p-4 space-y-1.5">
+                <div className="p-3 space-y-1.5">
                   {ZIP_ITEMS.map(item => (
-                    <div key={item} className="flex items-start gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0 mt-1.5" />
-                      <span className="text-xs font-mono text-muted-foreground">{item}</span>
+                    <div key={item.path} className="flex items-center gap-2.5">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded shrink-0"
+                        style={{ color: item.color, background: `${item.color}18` }}>
+                        {item.layer}
+                      </span>
+                      <span className="text-xs font-mono text-foreground shrink-0">{item.path}</span>
+                      <span className="text-xs text-muted-foreground truncate">{item.desc}</span>
                     </div>
                   ))}
                 </div>
@@ -289,7 +291,7 @@ export default function Home() {
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 {[
                   { v: "npm install", l: "Step 1" },
-                  { v: "npm test",    l: "Step 2" },
+                  { v: "npm run test:all", l: "Step 2" },
                   { v: "Done ✓",     l: "Step 3" },
                 ].map(s => (
                   <div key={s.l} className="bg-card border border-border rounded-lg p-3">

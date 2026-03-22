@@ -142,26 +142,95 @@ function groupProofsByCategory(proofs: any[]) {
   return groups;
 }
 
+const LAYER_COLORS: Record<string, string> = {
+  unit: "var(--tf-blue)",
+  integration: "var(--tf-purple)",
+  e2e: "var(--tf-green)",
+  uat: "var(--tf-yellow)",
+  security: "var(--tf-red)",
+  performance: "var(--tf-orange)",
+};
+
+const LAYER_LABELS: Record<string, string> = {
+  unit: "Unit",
+  integration: "Integration",
+  e2e: "E2E",
+  uat: "UAT",
+  security: "Security",
+  performance: "Performance",
+};
+
 function ZipContentsPreview() {
   const [open, setOpen] = useState(false);
-  const files = [
-    { path: "tests/security/", desc: "IDOR, CSRF, Rate-Limit, Spec-Drift tests" },
-    { path: "tests/business/", desc: "Business Logic, Boundary Value tests" },
-    { path: "tests/compliance/", desc: "DSGVO/GDPR, Data Retention tests" },
-    { path: "tests/integration/", desc: "Status Transitions, Risk Scoring tests" },
+  const layers = [
+    {
+      layer: "unit",
+      label: "Layer 1 — Unit Tests (Vitest)",
+      files: [
+        { path: "tests/unit/<module>.test.ts", desc: "Service isolation: happy path, tenant isolation, validation" },
+        { path: "tests/unit/state-machine.test.ts", desc: "State machine: valid/forbidden/skip transitions" },
+      ],
+      cmd: "npx vitest run tests/unit/",
+    },
+    {
+      layer: "integration",
+      label: "Layer 2 — Integration Tests (Vitest)",
+      files: [
+        { path: "tests/integration/<module>.integration.test.ts", desc: "CRUD lifecycle, auth, tenant isolation via real API" },
+      ],
+      cmd: "npx vitest run tests/integration/",
+    },
+    {
+      layer: "e2e",
+      label: "Layer 3 — E2E Tests (Playwright)",
+      files: [
+        { path: "tests/e2e/core-flows.spec.ts", desc: "Auth flow, create→list→verify user journeys" },
+      ],
+      cmd: "npx playwright test tests/e2e/",
+    },
+    {
+      layer: "uat",
+      label: "Layer 4 — UAT Tests (Cucumber/Gherkin)",
+      files: [
+        { path: "tests/uat/<chapter>.feature", desc: "Human-readable Given/When/Then acceptance criteria" },
+        { path: "tests/uat/step-definitions/steps.ts", desc: "Cucumber step implementations" },
+      ],
+      cmd: "npx cucumber-js tests/uat/**/*.feature",
+    },
+    {
+      layer: "security",
+      label: "Layer 5 — Security Tests (Playwright)",
+      files: [
+        { path: "tests/security/idor.spec.ts", desc: "IDOR / Tenant Isolation attacks" },
+        { path: "tests/security/csrf.spec.ts", desc: "CSRF / Session Binding attacks" },
+        { path: "tests/security/rate-limit.spec.ts", desc: "Rate limiting verification" },
+        { path: "tests/integration/spec-drift.spec.ts", desc: "Spec drift / schema validation" },
+      ],
+      cmd: "npx playwright test tests/security/",
+    },
+    {
+      layer: "performance",
+      label: "Layer 6 — Performance Tests (k6)",
+      files: [
+        { path: "tests/performance/load-test.js", desc: "Ramp-up + steady-state + spike scenarios" },
+        { path: "tests/performance/stress-test.js", desc: "Find breaking point with progressive load" },
+        { path: "tests/performance/rate-limit.js", desc: "Burst test to verify rate limiting" },
+      ],
+      cmd: "k6 run tests/performance/load-test.js",
+    },
+  ];
+  const helpers = [
     { path: "helpers/api.ts", desc: "trpcMutation, trpcQuery, BASE_URL helpers" },
     { path: "helpers/auth.ts", desc: "loginAndGetCookie, session management" },
     { path: "helpers/factories.ts", desc: "createTestResource, spec-aware factories" },
     { path: "helpers/schemas.ts", desc: "Zod response & input schemas" },
-    { path: "helpers/reset.ts", desc: "resetTestData helper" },
-    { path: "helpers/index.ts", desc: "Re-exports all helpers" },
+    { path: "vitest.config.ts", desc: "Vitest config for unit + integration tests" },
     { path: "playwright.config.ts", desc: "Playwright config (ESM, JSON reporter)" },
-    { path: "package.json", desc: "npm scripts: test, test:security, test:dry-run" },
-    { path: "tsconfig.json", desc: "TypeScript config for Playwright" },
-    { path: ".github/workflows/testforge.yml", desc: "GitHub Actions CI/CD pipeline" },
-    { path: "README.md", desc: "Setup guide, env vars, CI/CD secrets" },
+    { path: "cucumber.config.ts", desc: "Cucumber config for UAT tests" },
+    { path: "package.json", desc: "All test runners + npm scripts for all 6 layers" },
+    { path: ".github/workflows/testforge-full.yml", desc: "Full 6-layer CI/CD pipeline" },
+    { path: "README.md", desc: "Setup guide for all 6 test runners" },
     { path: ".env.example", desc: "Environment variable template" },
-    { path: "testforge-report.md", desc: "Full analysis report" },
   ];
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -171,25 +240,47 @@ function ZipContentsPreview() {
       >
         <div className="flex items-center gap-2">
           <Package className="w-4 h-4 text-muted-foreground" />
-          <span className="font-semibold text-sm">ZIP Contents — npm install → playwright test</span>
+          <span className="font-semibold text-sm">ZIP Contents — 6 Test Layers — npm test</span>
         </div>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
       </button>
       {open && (
-        <div className="p-4">
-          <div className="font-mono text-xs bg-muted/40 rounded p-3 mb-3">
-            <span className="text-[var(--tf-green)]">$</span> unzip testforge-output.zip && npm install && npm run install:browsers && npm test
+        <div className="p-4 space-y-4">
+          <div className="font-mono text-xs bg-muted/40 rounded p-3">
+            <span className="text-[var(--tf-green)]">$</span> unzip testforge-output.zip && npm install && npm run install:browsers && npm run test:all
           </div>
-          <div className="space-y-1">
-            {files.map(f => (
-              <div key={f.path} className="flex items-start gap-3 py-1">
-                <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-xs font-mono text-foreground">{f.path}</span>
-                  <span className="text-xs text-muted-foreground ml-2">— {f.desc}</span>
-                </div>
+          {layers.map(l => (
+            <div key={l.layer}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                  style={{ color: LAYER_COLORS[l.layer], background: `${LAYER_COLORS[l.layer]}18` }}>
+                  {LAYER_LABELS[l.layer]}
+                </span>
+                <span className="text-xs font-medium text-foreground">{l.label}</span>
+                <span className="text-xs font-mono text-muted-foreground ml-auto">{l.cmd}</span>
               </div>
-            ))}
+              <div className="space-y-0.5 pl-2">
+                {l.files.map(f => (
+                  <div key={f.path} className="flex items-start gap-2 py-0.5">
+                    <FileText className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="text-xs font-mono text-foreground">{f.path}</span>
+                    <span className="text-xs text-muted-foreground">— {f.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="border-t border-border pt-3">
+            <div className="text-xs font-medium text-muted-foreground mb-1.5">Shared Helpers & Config</div>
+            <div className="space-y-0.5">
+              {helpers.map(f => (
+                <div key={f.path} className="flex items-start gap-2 py-0.5">
+                  <FileText className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+                  <span className="text-xs font-mono text-foreground">{f.path}</span>
+                  <span className="text-xs text-muted-foreground">— {f.desc}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

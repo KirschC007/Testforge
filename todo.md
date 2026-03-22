@@ -335,3 +335,33 @@
 - [x] 72/72 Tests grün, 0 TS-Fehler
 - [x] BankFlow-Brace-Check: Braces=0 (balanced), generateSpecDriftTest korrekt
 - [x] 19x TODO_REPLACE_WITH_* sind korrekte Fallback-Werte (kein TODO_FIELDNAME)
+
+## Phase 29: Vollständige Test-Suite (alle 6 Ebenen)
+
+### Layer 1 Erweiterung
+- [x] Layer 1 Prompt: System-Spec-Extraktion (User Stories, Services, Daten-Modelle, Flows, Auth-Flows)
+- [x] AnalysisIR: services[], userFlows[], dataModels[] hinzugefügt
+- [x] Normalisierungs-Guards für neue IR-Felder
+
+### 6 Test-Generator-Templates
+- [x] unit/: Vitest Unit-Tests für Service-Funktionen (happy path + edge cases + error cases)
+- [x] integration/: API-Integration-Tests (CRUD, Auth, Tenant-Isolation)
+- [x] e2e/: Playwright E2E-Tests für User-Flows (Login, CRUD, Navigation)
+- [x] uat/: Gherkin Feature-Files (Given/When/Then — lesbar für Product Owner)
+- [x] security/: Bestehende Security-Tests (IDOR, CSRF, Boundary, spec_drift) — beibehalten
+- [x] performance/: k6 Load-Tests (Ramp-up, Steady-state, Spike, Rate-Limit)
+
+### ZIP-Struktur
+- [x] package.json: vitest + playwright + @cucumber/cucumber + k6 als deps
+- [x] vitest.config.ts + playwright.config.ts + cucumber.config.ts
+- [x] README.md: Anleitung für alle 6 Test-Runner
+- [x] .github/workflows/testforge-full.yml: 6-Layer CI/CD Pipeline
+
+### Frontend
+- [x] Report: ZipContentsPreview mit 6 Test-Ebenen (Layer-Badges + Beschreibungen)
+- [x] Landing Page: "6-Layer Test Suite" Messaging + farbige Layer-Badges
+- [x] Landing Page: Stats-Counter "6 Test Layers" statt "5 Analysis Layers"
+
+### Tests
+- [x] 69 neue Vitest-Tests für generateExtendedTestSuite (alle 6 Layer + Edge Cases + CI/CD)
+- [x] 141/141 Tests grün, 0 TypeScript-Fehler

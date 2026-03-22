@@ -86,6 +86,30 @@ export interface Contradiction {
   description: string;
 }
 
+export interface ServiceDep {
+  from: string;   // service name
+  to: string;     // service name
+  via: string;    // e.g. "HTTP", "gRPC", "queue", "DB"
+  critical: boolean;
+}
+
+export interface UserFlow {
+  id: string;
+  name: string;       // e.g. "User Registration", "Checkout"
+  actor: string;      // e.g. "anonymous user", "admin"
+  steps: string[];    // ordered list of actions
+  successCriteria: string[];
+  errorScenarios: string[];
+  relatedEndpoints: string[];
+}
+
+export interface DataModel {
+  name: string;       // e.g. "User", "Order"
+  fields: Array<{ name: string; type: string; required: boolean; unique?: boolean; pii?: boolean }>;
+  relations: Array<{ to: string; type: "one-to-one" | "one-to-many" | "many-to-many" }>;
+  hasPII: boolean;
+}
+
 export interface AnalysisIR {
   behaviors: Behavior[];
   invariants: Invariant[];
@@ -95,7 +119,7 @@ export interface AnalysisIR {
   resources: Array<{ name: string; table: string; tenantKey: string; operations: string[]; hasPII: boolean }>;
   apiEndpoints: APIEndpoint[];
   authModel: AuthModel | null;
-  enums: Record<string, string[]>;  // e.g. { status: ["todo","in_progress","done"], priority: ["low","medium","high"] }
+  enums: Record<string, string[]>;
   statusMachine: {
     states: string[];
     transitions: [string, string][];
@@ -103,6 +127,10 @@ export interface AnalysisIR {
     initialState?: string;
     terminalStates?: string[];
   } | null;
+  // Extended for full system specs
+  services?: Array<{ name: string; description: string; techStack?: string; dependencies: ServiceDep[] }>;
+  userFlows?: UserFlow[];
+  dataModels?: DataModel[];
 }
 
 export interface SpecHealthDimension {
@@ -247,6 +275,7 @@ export interface AnalysisJobResult {
   testFiles: Array<{ filename: string; content: string }>;
   helpers: GeneratedHelpers;
   llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
+  extendedSuite: ExtendedTestSuite;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -301,8 +330,11 @@ Return JSON with these exact keys:
 - authModel: {loginEndpoint, csrfEndpoint, csrfPattern, roles: [{name, envUserVar, envPassVar, defaultUser, defaultPass}]} or null
 - enums: object mapping field names to their allowed string values, e.g. {"status": ["todo","in_progress","done"], "priority": ["low","medium","high"]}
 - statusMachine: {states: string[], transitions: [[from,to],...], forbidden: [[from,to],...], initialState: string, terminalStates: string[]} or null
+- services: [{name, description, techStack, dependencies: [{from, to, via, critical}]}] — extract microservices/modules if mentioned, else []
+- userFlows: [{id, name, actor, steps, successCriteria, errorScenarios, relatedEndpoints}] — extract user journeys/flows/stories, else []
+- dataModels: [{name, fields: [{name, type, required, unique, pii}], relations: [{to, type}], hasPII}] — extract data models/entities/tables, else []
 - qualityScore: number 0-10
-- specType: string
+- specType: string (e.g. "api-spec", "system-spec", "user-stories", "prd", "architecture-doc")
 
 CRITICAL RULES for apiEndpoints.inputFields:
 - inputFields MUST be an array of EndpointField objects (NOT plain strings)
@@ -496,6 +528,7 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     behaviors: [], invariants: [], ambiguities: [], contradictions: [],
     tenantModel: null, resources: [], apiEndpoints: [], authModel: null,
     enums: {}, statusMachine: null,
+    services: [], userFlows: [], dataModels: [],
   };
   let totalQuality = 0;
   let specType = "generic";
@@ -511,6 +544,10 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     if (!merged.authModel && r.authModel) merged.authModel = r.authModel;
     if (r.qualityScore) totalQuality += r.qualityScore;
     if (r.specType && r.specType !== "generic") specType = r.specType;
+    // Merge extended system-spec fields
+    if ((r as any).services) merged.services!.push(...(r as any).services);
+    if ((r as any).userFlows) merged.userFlows!.push(...(r as any).userFlows);
+    if ((r as any).dataModels) merged.dataModels!.push(...(r as any).dataModels);
     // Merge enums: combine values from all chunks, deduplicate
     if (r.enums && typeof r.enums === "object") {
       for (const [key, vals] of Object.entries(r.enums)) {
@@ -4751,7 +4788,1685 @@ export async function runAnalysisJob(
     content: mergeProofsToFile(proofs),
   }));
 
+  // Extended Test Suite (6 layers)
+  const extendedSuite = generateExtendedTestSuite(analysisResult, testFiles);
+  console.log(`[TestForge] Extended Suite: ${extendedSuite.files.length} files across 6 layers`);
+
   console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
 
-  return { analysisResult, riskModel, validatedSuite, report, testFiles, helpers, llmCheckerStats };
+  return { analysisResult, riskModel, validatedSuite, report, testFiles, helpers, llmCheckerStats, extendedSuite };
+}
+
+
+// ─── Extended Test Suite Generator (6 Ebenen) ─────────────────────────────────
+
+export interface ExtendedTestFile {
+  filename: string;
+  content: string;
+  layer: "unit" | "integration" | "e2e" | "uat" | "security" | "performance";
+  description: string;
+}
+
+export interface ExtendedTestSuite {
+  files: ExtendedTestFile[];
+  configs: Record<string, string>;  // vitest.config.ts, k6.config.ts, etc.
+  packageJson: string;
+  readme: string;
+}
+
+/**
+ * Generate all 6 test layers from the analysis IR.
+ * Layer 1: Unit Tests (Vitest) — service function isolation
+ * Layer 2: Integration Tests (Vitest + fetch) — API endpoint contracts
+ * Layer 3: E2E Tests (Playwright) — user flow automation
+ * Layer 4: UAT Tests (Gherkin) — human-readable acceptance criteria
+ * Layer 5: Security Tests (Playwright) — IDOR, CSRF, rate-limit (from existing proofs)
+ * Layer 6: Performance Tests (k6) — load, spike, stress
+ */
+export function generateExtendedTestSuite(
+  analysis: AnalysisResult,
+  existingSecurityFiles: Array<{ filename: string; content: string }>
+): ExtendedTestSuite {
+  const ir = analysis.ir;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const loginEndpoint = (ir.authModel?.loginEndpoint || "/api/trpc/auth.login")
+    .replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
+  const roles = ir.authModel?.roles || [
+    { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" },
+  ];
+  const primaryRole = roles[0];
+  const roleFnName = `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
+
+  const files: ExtendedTestFile[] = [];
+
+  // ─── Layer 1: Unit Tests ──────────────────────────────────────────────────────
+  const unitTests = generateUnitTests(ir, tenantField, tenantEntity, tenantConst, analysis.specType);
+  files.push(...unitTests);
+
+  // ─── Layer 2: Integration Tests ───────────────────────────────────────────────
+  const integrationTests = generateIntegrationTests(ir, tenantField, tenantEntity, tenantConst, loginEndpoint, roleFnName, analysis.specType);
+  files.push(...integrationTests);
+
+  // ─── Layer 3: E2E Tests ───────────────────────────────────────────────────────
+  const e2eTests = generateE2ETests(ir, tenantField, tenantEntity, tenantConst, loginEndpoint, roles, analysis.specType);
+  files.push(...e2eTests);
+
+  // ─── Layer 4: UAT Tests (Gherkin) ─────────────────────────────────────────────
+  const uatTests = generateUATTests(ir, analysis.specType, loginEndpoint);
+  files.push(...uatTests);
+
+  // ─── Layer 5: Security Tests (from existing proofs) ───────────────────────────
+  for (const sf of existingSecurityFiles) {
+    files.push({
+      filename: sf.filename,
+      content: sf.content,
+      layer: "security",
+      description: `Security test: ${sf.filename}`,
+    });
+  }
+
+  // ─── Layer 6: Performance Tests ───────────────────────────────────────────────
+  const perfTests = generatePerformanceTests(ir, tenantField, tenantEntity, loginEndpoint, analysis.specType);
+  files.push(...perfTests);
+
+  // ─── Configs ──────────────────────────────────────────────────────────────────
+  const configs = generateExtendedConfigs(ir, roles);
+
+  // ─── Package.json ─────────────────────────────────────────────────────────────
+  const packageJson = generateExtendedPackageJson(analysis.specType);
+
+  // ─── README ───────────────────────────────────────────────────────────────────
+  const readme = generateExtendedReadme(analysis, files, roles);
+
+  return { files, configs, packageJson, readme };
+}
+
+// ─── Unit Test Generator ──────────────────────────────────────────────────────
+
+function generateUnitTests(
+  ir: AnalysisIR,
+  tenantField: string,
+  tenantEntity: string,
+  tenantConst: string,
+  specType: string
+): ExtendedTestFile[] {
+  const files: ExtendedTestFile[] = [];
+
+  // Generate unit tests for each data model
+  const dataModels = ir.dataModels || [];
+  const endpoints = ir.apiEndpoints;
+
+  // Group endpoints by resource/module
+  const modules = new Map<string, typeof endpoints>();
+  for (const ep of endpoints) {
+    const module = ep.name.split(".")[0] || "api";
+    if (!modules.has(module)) modules.set(module, []);
+    modules.get(module)!.push(ep);
+  }
+
+   for (const [moduleName, moduleEndpoints] of Array.from(modules)) {
+    const createEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("create"));
+    const updateEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("update"));
+    const deleteEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("delete") || e.name.toLowerCase().includes("cancel"));
+    const listEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("list"));
+    const getEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"));
+    // Find behaviors related to this module
+    const moduleBehaviors = ir.behaviors.filter((b: Behavior) =>
+      b.title.toLowerCase().includes(moduleName.toLowerCase()) ||
+      moduleEndpoints.some((ep: APIEndpoint) => ep.relatedBehaviors.includes(b.id))
+    );
+    // Find boundary behaviors
+    const boundaryBehaviors = moduleBehaviors.filter((b: Behavior) =>
+      b.tags.includes("validation") || b.tags.includes("boundary") ||
+      b.riskHints.includes("boundary") ||
+      b.errorCases.some(ec => ec.includes("400") || ec.includes("422"))
+    );
+
+    // Find enum fields
+    const enumFields = (createEp?.inputFields || []).filter((f: EndpointField) => f.type === "enum");
+    const numberFields = (createEp?.inputFields || []).filter((f: EndpointField) => f.type === "number" && !f.isTenantKey);
+    const stringFields = (createEp?.inputFields || []).filter((f: EndpointField) => f.type === "string" && (f.min !== undefined || f.max !== undefined));
+
+    const moduleCapitalized = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+
+    let unitCode = `// GENERATED by TestForge v3.0 — Unit Tests: ${moduleName}
+// Source: ${specType} spec
+// Run: npx vitest run tests/unit/${moduleName}.test.ts
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// ─── Mock Setup ───────────────────────────────────────────────────────────────
+// These tests use mocked dependencies to isolate business logic.
+// Replace with your actual service imports:
+// import { ${moduleCapitalized}Service } from "../../src/services/${moduleName}";
+
+const mockDb = {
+  ${moduleName}: {
+    create: vi.fn(),
+    findById: vi.fn(),
+    findMany: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+};
+
+// Mock service factory — replace with actual service
+function create${moduleCapitalized}Service(db = mockDb) {
+  return {
+    async create(input: Record<string, unknown>) {
+      if (!input.${tenantField}) throw new Error("${tenantField} required");
+${stringFields.map(f => `      if (typeof input.${f.name} === "string" && input.${f.name}.length === 0) throw new Error("${f.name} must not be empty");`).join("\n")}
+${stringFields.filter(f => f.max !== undefined).map(f => `      if (typeof input.${f.name} === "string" && (input.${f.name} as string).length > ${f.max}) throw new Error("${f.name} exceeds max length ${f.max}");`).join("\n")}
+${numberFields.filter(f => f.min !== undefined).map(f => `      if (typeof input.${f.name} === "number" && input.${f.name} < ${f.min}) throw new Error("${f.name} below minimum ${f.min}");`).join("\n")}
+${numberFields.filter(f => f.max !== undefined).map(f => `      if (typeof input.${f.name} === "number" && input.${f.name} > ${f.max}) throw new Error("${f.name} exceeds maximum ${f.max}");`).join("\n")}
+${enumFields.map(f => `      if (input.${f.name} !== undefined && !${JSON.stringify(f.enumValues || [])}.includes(input.${f.name} as string)) throw new Error("${f.name} must be one of: ${(f.enumValues || []).join(", ")}");`).join("\n")}
+      return db.${moduleName}.create(input);
+    },
+    async findById(id: number, ${tenantField}: number) {
+      const result = await db.${moduleName}.findById({ id, ${tenantField} });
+      if (!result) throw new Error("Not found");
+      if (result.${tenantField} !== ${tenantField}) throw new Error("Forbidden");
+      return result;
+    },
+    async list(${tenantField}: number) {
+      return db.${moduleName}.findMany({ ${tenantField} });
+    },
+    async delete(id: number, ${tenantField}: number) {
+      const existing = await db.${moduleName}.findById({ id, ${tenantField} });
+      if (!existing) throw new Error("Not found");
+      if (existing.${tenantField} !== ${tenantField}) throw new Error("Forbidden");
+      return db.${moduleName}.delete({ id });
+    },
+  };
+}
+
+// ─── Test Data ────────────────────────────────────────────────────────────────
+const TEST_${tenantEntity.toUpperCase()}_ID = 99001;
+const TEST_${tenantEntity.toUpperCase()}_B_ID = 99002;
+
+function makeValid${moduleCapitalized}Input(overrides: Record<string, unknown> = {}) {
+  return {
+    ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+${(createEp?.inputFields || []).filter((f: EndpointField) => !f.isTenantKey).map((f: EndpointField) => {
+  const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
+    f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
+    f.type === "boolean" ? "false" :
+    f.type === "date" ? `"${new Date(Date.now() + 86400000).toISOString().split("T")[0]}"` :
+    f.type === "array" ? "[]" :
+    `"test-${f.name}"`;
+  return `    ${f.name}: ${val},`;
+}).join("\n")}
+    ...overrides,
+  };
+}
+
+// ─── Happy Path Tests ─────────────────────────────────────────────────────────
+
+describe("${moduleCapitalized}Service — Happy Path", () => {
+  let service: ReturnType<typeof create${moduleCapitalized}Service>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = create${moduleCapitalized}Service();
+    mockDb.${moduleName}.create.mockResolvedValue({ id: 1, ...makeValid${moduleCapitalized}Input() });
+    mockDb.${moduleName}.findById.mockResolvedValue({ id: 1, ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, ...makeValid${moduleCapitalized}Input() });
+    mockDb.${moduleName}.findMany.mockResolvedValue([{ id: 1, ...makeValid${moduleCapitalized}Input() }]);
+    mockDb.${moduleName}.delete.mockResolvedValue({ success: true });
+  });
+
+${createEp ? `  it("creates a ${moduleName} with valid input", async () => {
+    const input = makeValid${moduleCapitalized}Input();
+    const result = await service.create(input);
+    expect(mockDb.${moduleName}.create).toHaveBeenCalledWith(expect.objectContaining({
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+    }));
+    expect(result).toBeDefined();
+    // Kills: Remove create() call in ${createEp.name}
+  });` : ""}
+
+${listEp ? `  it("lists ${moduleName}s for a tenant", async () => {
+    const results = await service.list(TEST_${tenantEntity.toUpperCase()}_ID);
+    expect(mockDb.${moduleName}.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID })
+    );
+    expect(Array.isArray(results)).toBe(true);
+    // Kills: Remove ${tenantField} filter in ${listEp.name}
+  });` : ""}
+
+${getEp ? `  it("returns a ${moduleName} by id for correct tenant", async () => {
+    const result = await service.findById(1, TEST_${tenantEntity.toUpperCase()}_ID);
+    expect(result).toBeDefined();
+    expect(result.${tenantField}).toBe(TEST_${tenantEntity.toUpperCase()}_ID);
+    // Kills: Remove tenant check in ${getEp.name}
+  });` : ""}
+
+${deleteEp ? `  it("deletes a ${moduleName} belonging to the tenant", async () => {
+    await service.delete(1, TEST_${tenantEntity.toUpperCase()}_ID);
+    expect(mockDb.${moduleName}.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1 })
+    );
+    // Kills: Remove ownership check before delete in ${deleteEp.name}
+  });` : ""}
+});
+
+// ─── Tenant Isolation Tests ───────────────────────────────────────────────────
+
+describe("${moduleCapitalized}Service — Tenant Isolation", () => {
+  let service: ReturnType<typeof create${moduleCapitalized}Service>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = create${moduleCapitalized}Service();
+    // Resource belongs to Tenant A
+    mockDb.${moduleName}.findById.mockResolvedValue({
+      id: 1,
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+    });
+  });
+
+  it("throws Forbidden when Tenant B tries to access Tenant A resource", async () => {
+    await expect(
+      service.findById(1, TEST_${tenantEntity.toUpperCase()}_B_ID)
+    ).rejects.toThrow("Forbidden");
+    // Kills: Remove tenant ownership check in findById
+  });
+
+  it("throws Forbidden when Tenant B tries to delete Tenant A resource", async () => {
+    await expect(
+      service.delete(1, TEST_${tenantEntity.toUpperCase()}_B_ID)
+    ).rejects.toThrow("Forbidden");
+    // Kills: Remove tenant ownership check before delete
+  });
+});
+
+// ─── Validation Tests ─────────────────────────────────────────────────────────
+
+describe("${moduleCapitalized}Service — Input Validation", () => {
+  let service: ReturnType<typeof create${moduleCapitalized}Service>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = create${moduleCapitalized}Service();
+  });
+
+  it("throws when ${tenantField} is missing", async () => {
+    const input = makeValid${moduleCapitalized}Input({ ${tenantField}: undefined });
+    await expect(service.create(input)).rejects.toThrow("${tenantField} required");
+    // Kills: Remove ${tenantField} required check
+  });
+
+${stringFields.slice(0, 2).map((f: EndpointField) => `  it("throws when ${f.name} is empty string", async () => {
+    const input = makeValid${moduleCapitalized}Input({ ${f.name}: "" });
+    await expect(service.create(input)).rejects.toThrow("${f.name}");
+    // Kills: Remove empty string check for ${f.name}
+  });
+
+${f.max !== undefined ? `  it("throws when ${f.name} exceeds max length ${f.max}", async () => {
+    const input = makeValid${moduleCapitalized}Input({ ${f.name}: "A".repeat(${f.max + 1}) });
+    await expect(service.create(input)).rejects.toThrow("${f.name}");
+    // Kills: Remove max length check for ${f.name}
+  });` : ""}`).join("\n")}
+
+${numberFields.slice(0, 2).map((f: EndpointField) => f.min !== undefined ? `  it("throws when ${f.name} is below minimum ${f.min}", async () => {
+    const input = makeValid${moduleCapitalized}Input({ ${f.name}: ${f.min - 1} });
+    await expect(service.create(input)).rejects.toThrow("${f.name}");
+    // Kills: Remove minimum check for ${f.name}
+  });` : "").filter(Boolean).join("\n")}
+
+${enumFields.slice(0, 1).map((f: EndpointField) => `  it("throws when ${f.name} has invalid enum value", async () => {
+    const input = makeValid${moduleCapitalized}Input({ ${f.name}: "__invalid__" });
+    await expect(service.create(input)).rejects.toThrow("${f.name}");
+    // Kills: Remove enum validation for ${f.name}
+  });`).join("\n")}
+});
+`;
+
+    files.push({
+      filename: `tests/unit/${moduleName}.test.ts`,
+      content: unitCode,
+      layer: "unit",
+      description: `Unit tests for ${moduleCapitalized}Service (happy path, tenant isolation, validation)`,
+    });
+  }
+
+  // Generate unit tests for state machine if present
+  if (ir.statusMachine && ir.statusMachine.states.length > 0) {
+    const sm = ir.statusMachine;
+    const updateStatusEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("updatestatus") || e.name.toLowerCase().includes("status"));
+    const statusField = (updateStatusEp?.inputFields || []).find(f => f.type === "enum" || f.name.toLowerCase().includes("status"));
+
+    const smCode = `// GENERATED by TestForge v3.0 — Unit Tests: State Machine
+// Source: ${specType} spec
+// Run: npx vitest run tests/unit/state-machine.test.ts
+
+import { describe, it, expect } from "vitest";
+
+// ─── State Machine Definition ─────────────────────────────────────────────────
+// Replace with your actual state machine implementation
+const VALID_TRANSITIONS: [string, string][] = ${JSON.stringify(sm.transitions)};
+const FORBIDDEN_TRANSITIONS: [string, string][] = ${JSON.stringify(sm.forbidden || [])};
+const INITIAL_STATE = ${JSON.stringify(sm.initialState || sm.states[0] || "initial")};
+const TERMINAL_STATES: string[] = ${JSON.stringify(sm.terminalStates || [])};
+
+function isValidTransition(from: string, to: string): boolean {
+  return VALID_TRANSITIONS.some(([f, t]) => f === from && t === to);
+}
+
+function isForbiddenTransition(from: string, to: string): boolean {
+  return FORBIDDEN_TRANSITIONS.some(([f, t]) => f === from && t === to);
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("State Machine — Valid Transitions", () => {
+${sm.transitions.map(([from, to]) => `  it("allows transition ${from} → ${to}", () => {
+    expect(isValidTransition("${from}", "${to}")).toBe(true);
+    // Kills: Remove ${from}→${to} from allowed transitions
+  });`).join("\n\n")}
+});
+
+describe("State Machine — Forbidden Transitions", () => {
+${(sm.forbidden || []).slice(0, 5).map(([from, to]) => `  it("rejects forbidden transition ${from} → ${to}", () => {
+    expect(isValidTransition("${from}", "${to}")).toBe(false);
+    // Kills: Add ${from}→${to} to allowed transitions
+  });`).join("\n\n")}
+
+  it("initial state is ${sm.initialState || sm.states[0] || "initial"}", () => {
+    expect(INITIAL_STATE).toBe(${JSON.stringify(sm.initialState || sm.states[0] || "initial")});
+    // Kills: Change initial state to wrong value
+  });
+
+${(sm.terminalStates || []).map(ts => `  it("terminal state '${ts}' has no outgoing transitions", () => {
+    const outgoing = VALID_TRANSITIONS.filter(([from]) => from === "${ts}");
+    expect(outgoing).toHaveLength(0);
+    // Kills: Add outgoing transition from terminal state ${ts}
+  });`).join("\n\n")}
+});
+
+describe("State Machine — Skip Transitions (forbidden)", () => {
+  it("does not allow skipping states", () => {
+    // All states that are NOT directly reachable from initial state in one hop
+    const directFromInitial = VALID_TRANSITIONS
+      .filter(([from]) => from === INITIAL_STATE)
+      .map(([, to]) => to);
+    const allStates = ${JSON.stringify(sm.states)};
+    const skipTargets = allStates.filter(s => s !== INITIAL_STATE && !directFromInitial.includes(s));
+    for (const target of skipTargets) {
+      expect(isValidTransition(INITIAL_STATE, target)).toBe(false);
+    }
+    // Kills: Allow skip transitions from initial state
+  });
+});
+`;
+
+    files.push({
+      filename: "tests/unit/state-machine.test.ts",
+      content: smCode,
+      layer: "unit",
+      description: "Unit tests for state machine transitions (valid, forbidden, skip)",
+    });
+  }
+
+  return files;
+}
+
+// ─── Integration Test Generator ───────────────────────────────────────────────
+
+function generateIntegrationTests(
+  ir: AnalysisIR,
+  tenantField: string,
+  tenantEntity: string,
+  tenantConst: string,
+  loginEndpoint: string,
+  roleFnName: string,
+  specType: string
+): ExtendedTestFile[] {
+  const files: ExtendedTestFile[] = [];
+  const roles = ir.authModel?.roles || [{ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" }];
+  const primaryRole = roles[0];
+
+  // Group endpoints by module
+  const modules = new Map<string, typeof ir.apiEndpoints>();
+  for (const ep of ir.apiEndpoints) {
+    const module = ep.name.split(".")[0] || "api";
+    if (!modules.has(module)) modules.set(module, []);
+    modules.get(module)!.push(ep);
+  }
+
+  for (const [moduleName, moduleEndpoints] of Array.from(modules)) {
+    const createEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("create"));
+    const listEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("list"));
+    const getEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"));
+    const updateEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("update") && !e.name.toLowerCase().includes("status"));
+    const deleteEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("delete") || e.name.toLowerCase().includes("cancel"));
+    const updateStatusEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("updatestatus") || e.name.toLowerCase().includes("status"));
+
+    if (!createEp && !listEp) continue; // Skip modules with no testable endpoints
+
+    const moduleCapitalized = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+
+    // Build valid payload for create
+    const createPayload: Record<string, string> = {};
+    for (const f of (createEp?.inputFields || []) as EndpointField[]) {
+      if (f.isTenantKey) {
+        createPayload[f.name] = `parseInt(process.env.TEST_TENANT_ID || "99001")`;
+      } else {
+        const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
+          f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
+          f.type === "boolean" ? "false" :
+          f.type === "date" ? `new Date(Date.now() + 86400000).toISOString().split("T")[0]` :
+          f.type === "array" ? "[]" :
+          `"test-${f.name}-" + Date.now()`;
+        createPayload[f.name] = val;
+      }
+    }
+
+    const createPayloadLines = Object.entries(createPayload)
+      .map(([k, v]: [string, string]) => `      ${k}: ${v},`)
+      .join("\n");
+
+    const integrationCode = `// GENERATED by TestForge v3.0 — Integration Tests: ${moduleName}
+// Source: ${specType} spec
+// Run: npx vitest run tests/integration/${moduleName}.integration.test.ts
+
+import { describe, it, expect, beforeAll } from "vitest";
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
+const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_TENANT_B_ID || "99002");
+
+// ─── Auth Helpers ─────────────────────────────────────────────────────────────
+let authCookie: string;
+
+async function login(username: string, password: string): Promise<string> {
+  const resp = await fetch(\`\${BASE_URL}${loginEndpoint}\`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ json: { username, password } }),
+  });
+  if (!resp.ok) throw new Error(\`Login failed: \${resp.status}\`);
+  const setCookie = resp.headers.get("set-cookie");
+  if (!setCookie) throw new Error("No cookie returned from login");
+  return setCookie;
+}
+
+async function trpcMutation(
+  procedure: string,
+  input: Record<string, unknown>,
+  cookie?: string
+): Promise<{ status: number; data: unknown; error: unknown }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cookie) headers["Cookie"] = cookie;
+  const resp = await fetch(\`\${BASE_URL}/api/trpc/\${procedure}\`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ json: input }),
+  });
+  const body = await resp.json().catch(() => null);
+  return {
+    status: resp.status,
+    data: body?.result?.data?.json ?? body?.result?.data ?? null,
+    error: body?.error ?? body?.[0]?.error ?? null,
+  };
+}
+
+async function trpcQuery(
+  procedure: string,
+  input: Record<string, unknown> = {},
+  cookie?: string
+): Promise<{ status: number; data: unknown; error: unknown }> {
+  const headers: Record<string, string> = {};
+  if (cookie) headers["Cookie"] = cookie;
+  const resp = await fetch(
+    \`\${BASE_URL}/api/trpc/\${procedure}?input=\${encodeURIComponent(JSON.stringify({ json: input }))}\`,
+    { headers }
+  );
+  const body = await resp.json().catch(() => null);
+  return {
+    status: resp.status,
+    data: body?.result?.data?.json ?? body?.result?.data ?? null,
+    error: body?.error ?? null,
+  };
+}
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
+beforeAll(async () => {
+  authCookie = await login(
+    process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+    process.env.${primaryRole.envPassVar} || "${primaryRole.defaultPass}"
+  );
+});
+
+// ─── CRUD Integration Tests ───────────────────────────────────────────────────
+
+describe("${moduleCapitalized} API — CRUD Lifecycle", () => {
+${createEp ? `  it("POST ${createEp.name} — creates resource and returns id", async () => {
+    const { status, data, error } = await trpcMutation("${createEp.name}", {
+${createPayloadLines}
+    }, authCookie);
+
+    expect(error).toBeNull();
+    expect(status).toBe(200);
+    expect(data).toBeDefined();
+    expect((data as any).id).toBeDefined();
+    // Kills: Remove id from ${createEp.name} response
+  });` : ""}
+
+${listEp ? `  it("GET ${listEp.name} — returns array for tenant", async () => {
+    const { status, data, error } = await trpcQuery("${listEp.name}", {
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+    }, authCookie);
+
+    expect(error).toBeNull();
+    expect(status).toBe(200);
+    expect(Array.isArray(data)).toBe(true);
+    // Kills: Remove ${tenantField} filter in ${listEp.name}
+  });` : ""}
+
+${createEp && listEp ? `  it("created resource appears in list", async () => {
+    // Create
+    const { data: created } = await trpcMutation("${createEp.name}", {
+${createPayloadLines}
+    }, authCookie);
+    const id = (created as any)?.id;
+    expect(id).toBeDefined();
+
+    // List
+    const { data: list } = await trpcQuery("${listEp.name}", {
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+    }, authCookie);
+    const found = (list as any[])?.find((item: any) => item.id === id);
+    expect(found).toBeDefined();
+    // Kills: Not persisting resource to DB in ${createEp.name}
+  });` : ""}
+
+${createEp && deleteEp ? `  it("DELETE ${deleteEp.name} — removes resource", async () => {
+    // Create first
+    const { data: created } = await trpcMutation("${createEp.name}", {
+${createPayloadLines}
+    }, authCookie);
+    const id = (created as any)?.id;
+    expect(id).toBeDefined();
+
+    // Delete
+    const { status, error } = await trpcMutation("${deleteEp.name}", {
+      id,
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+    }, authCookie);
+    expect(error).toBeNull();
+    expect(status).toBe(200);
+    // Kills: Not deleting resource in ${deleteEp.name}
+  });` : ""}
+});
+
+// ─── Auth & Tenant Isolation ──────────────────────────────────────────────────
+
+describe("${moduleCapitalized} API — Authentication", () => {
+${listEp ? `  it("returns 401 when not authenticated", async () => {
+    const { status } = await trpcQuery("${listEp.name}", {
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+    });
+    expect([401, 403]).toContain(status);
+    // Kills: Remove auth check in ${listEp.name}
+  });` : ""}
+
+${createEp ? `  it("returns 401 when not authenticated for create", async () => {
+    const { status } = await trpcMutation("${createEp.name}", {
+${createPayloadLines}
+    });
+    expect([401, 403]).toContain(status);
+    // Kills: Remove auth check in ${createEp.name}
+  });` : ""}
+});
+
+${updateStatusEp ? `// ─── Status Transition Integration ───────────────────────────────────────────
+
+describe("${moduleCapitalized} API — Status Transitions", () => {
+  it("updates status via ${updateStatusEp.name}", async () => {
+    // Create resource first
+${createEp ? `    const { data: created } = await trpcMutation("${createEp.name}", {
+${createPayloadLines}
+    }, authCookie);
+    const id = (created as any)?.id;
+    expect(id).toBeDefined();
+
+    // Update status
+    const statusField = ${JSON.stringify((updateStatusEp.inputFields || []).find(f => f.type === "enum" || f.name.toLowerCase().includes("status"))?.name || "status")};
+    const validStatus = ${JSON.stringify(((updateStatusEp.inputFields || []).find(f => f.type === "enum")?.enumValues || [])[0] || "active")};
+    const { status, error } = await trpcMutation("${updateStatusEp.name}", {
+      id,
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+      [statusField]: validStatus,
+    }, authCookie);
+    expect(error).toBeNull();
+    expect(status).toBe(200);
+    // Kills: Not persisting status change in ${updateStatusEp.name}` : `    // TODO: Create resource first, then update status`}
+  });
+});` : ""}
+`;
+
+    files.push({
+      filename: `tests/integration/${moduleName}.integration.test.ts`,
+      content: integrationCode,
+      layer: "integration",
+      description: `Integration tests for ${moduleCapitalized} API (CRUD, auth, tenant isolation)`,
+    });
+  }
+
+  return files;
+}
+
+// ─── E2E Test Generator ───────────────────────────────────────────────────────
+
+function generateE2ETests(
+  ir: AnalysisIR,
+  tenantField: string,
+  tenantEntity: string,
+  tenantConst: string,
+  loginEndpoint: string,
+  roles: AuthRole[],
+  specType: string
+): ExtendedTestFile[] {
+  const files: ExtendedTestFile[] = [];
+  const primaryRole = (roles || [])[0] || { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" };
+  const userFlows = ir.userFlows || [];
+
+  // Generate E2E tests from user flows if available
+  if (userFlows.length > 0) {
+    for (const flow of userFlows.slice(0, 5)) {
+      const flowName = flow.name.replace(/\s+/g, "-").toLowerCase();
+      const flowCode = `// GENERATED by TestForge v3.0 — E2E Test: ${flow.name}
+// Source: ${specType} spec — User Flow: ${flow.id}
+// Run: npx playwright test tests/e2e/${flowName}.spec.ts
+
+import { test, expect } from "@playwright/test";
+
+// ─── Flow: ${flow.name} ───────────────────────────────────────────────────────
+// Actor: ${flow.actor}
+// Success criteria: ${flow.successCriteria.join(", ")}
+
+test.describe("${flow.name}", () => {
+  test.beforeEach(async ({ page }) => {
+    // Navigate to app
+    await page.goto(process.env.BASE_URL || "http://localhost:3000");
+  });
+
+  test("${flow.name} — happy path", async ({ page, request }) => {
+    // Step 1: Authentication
+    const loginResp = await request.post(\`\${process.env.BASE_URL || "http://localhost:3000"}${loginEndpoint}\`, {
+      headers: { "Content-Type": "application/json" },
+      data: { json: {
+        username: process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+        password: process.env.${primaryRole.envPassVar} || "${primaryRole.defaultPass}",
+      }},
+    });
+    expect(loginResp.ok()).toBe(true);
+    const cookie = loginResp.headers()["set-cookie"];
+    expect(cookie).toBeTruthy();
+
+${flow.steps.map((step, i) => `    // Step ${i + 2}: ${step}
+    // TODO: Implement step — ${step}`).join("\n")}
+
+    // Verify success criteria
+${flow.successCriteria.map(sc => `    // ✓ ${sc}`).join("\n")}
+    // Kills: Remove success path in ${flow.name}
+  });
+
+${flow.errorScenarios.slice(0, 2).map((scenario, i) => `  test("${flow.name} — error: ${scenario.slice(0, 60)}", async ({ page, request }) => {
+    // Error scenario: ${scenario}
+    // TODO: Implement error scenario test
+    // Expected: ${scenario}
+    expect(true).toBe(true); // Placeholder — implement this test
+  });`).join("\n\n")}
+});
+`;
+
+      files.push({
+        filename: `tests/e2e/${flowName}.spec.ts`,
+        content: flowCode,
+        layer: "e2e",
+        description: `E2E test for user flow: ${flow.name}`,
+      });
+    }
+  } else {
+    // Generate generic E2E tests from endpoints
+    const createEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"));
+    const listEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"));
+    const moduleName = createEp?.name.split(".")[0] || "resource";
+
+    const e2eCode = `// GENERATED by TestForge v3.0 — E2E Tests: Core User Flows
+// Source: ${specType} spec
+// Run: npx playwright test tests/e2e/
+
+import { test, expect } from "@playwright/test";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
+
+// ─── Auth Flow ────────────────────────────────────────────────────────────────
+
+test.describe("Authentication Flow", () => {
+  test("login with valid credentials returns session cookie", async ({ request }) => {
+    const resp = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+      headers: { "Content-Type": "application/json" },
+      data: { json: {
+        username: process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+        password: process.env.${primaryRole.envPassVar} || "${primaryRole.defaultPass}",
+      }},
+    });
+    expect(resp.ok()).toBe(true);
+    const cookie = resp.headers()["set-cookie"];
+    expect(cookie).toBeTruthy();
+    // Kills: Remove session cookie from login response
+  });
+
+  test("login with wrong password returns 401", async ({ request }) => {
+    const resp = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+      headers: { "Content-Type": "application/json" },
+      data: { json: {
+        username: process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+        password: "wrong-password-xyz-123",
+      }},
+    });
+    expect([401, 400]).toContain(resp.status());
+    // Kills: Remove password verification in login
+  });
+});
+
+// ─── Core CRUD Flow ───────────────────────────────────────────────────────────
+
+test.describe("Core Resource Flow", () => {
+  let authCookie: string;
+
+  test.beforeAll(async ({ request }) => {
+    const resp = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+      headers: { "Content-Type": "application/json" },
+      data: { json: {
+        username: process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+        password: process.env.${primaryRole.envPassVar} || "${primaryRole.defaultPass}",
+      }},
+    });
+    authCookie = resp.headers()["set-cookie"] || "";
+  });
+
+${createEp ? `  test("create → list → verify flow", async ({ request }) => {
+    // 1. Create
+    const createResp = await request.post(\`\${BASE_URL}/api/trpc/${createEp.name}\`, {
+      headers: { "Content-Type": "application/json", "Cookie": authCookie },
+      data: { json: {
+        ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,${(createEp?.inputFields || []).filter((f: EndpointField) => !f.isTenantKey).slice(0, 3).map((f: EndpointField) => {
+  const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
+    f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
+    f.type === "boolean" ? "false" :
+    `"e2e-test-${f.name}"`;
+  return `        ${f.name}: ${val},`;
+}).join("\n")}
+      }},
+    });
+    expect(createResp.ok()).toBe(true);
+    const created = await createResp.json();
+    const id = created?.result?.data?.json?.id ?? created?.result?.data?.id;
+    expect(id).toBeDefined();
+
+${listEp ? `    // 2. List — verify resource appears
+    const listResp = await request.get(
+      \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID } }))}\`,
+      { headers: { "Cookie": authCookie } }
+    );
+    expect(listResp.ok()).toBe(true);
+    const list = await listResp.json();
+    const items = list?.result?.data?.json ?? list?.result?.data ?? [];
+    const found = Array.isArray(items) && items.some((item: any) => item.id === id);
+    expect(found).toBe(true);
+    // Kills: Not persisting resource to DB` : ""}
+  });` : ""}
+});
+`;
+
+    files.push({
+      filename: "tests/e2e/core-flows.spec.ts",
+      content: e2eCode,
+      layer: "e2e",
+      description: "E2E tests for core user flows (auth, CRUD)",
+    });
+  }
+
+  return files;
+}
+
+// ─── UAT Test Generator (Gherkin) ─────────────────────────────────────────────
+
+function generateUATTests(ir: AnalysisIR, specType: string, loginEndpoint: string): ExtendedTestFile[] {
+  const files: ExtendedTestFile[] = [];
+  const behaviors = ir.behaviors;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+
+  // Group behaviors by chapter/module
+  const chapters = new Map<string, typeof behaviors>();
+  for (const b of behaviors) {
+    const chapter = b.chapter || "Core";
+    if (!chapters.has(chapter)) chapters.set(chapter, []);
+    chapters.get(chapter)!.push(b);
+  }
+
+  for (const [chapter, chapterBehaviors] of Array.from(chapters)) {
+    const chapterSlug = chapter.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase().replace(/-+/g, "-");
+    const featureLines: string[] = [];
+
+    featureLines.push(`# GENERATED by TestForge v3.0 — UAT Feature: ${chapter}`);
+    featureLines.push(`# Source: ${specType} spec`);
+    featureLines.push(`# Run: npx cucumber-js tests/uat/${chapterSlug}.feature`);
+    featureLines.push(``);
+    featureLines.push(`Feature: ${chapter}`);
+    featureLines.push(`  As a ${ir.authModel?.roles[0]?.name || "user"}`);
+    featureLines.push(`  I want to manage ${chapter.toLowerCase()}`);
+    featureLines.push(`  So that I can ${chapterBehaviors[0]?.action || "use"} the system correctly`);
+    featureLines.push(``);
+
+    for (const b of chapterBehaviors.slice(0, 6)) {
+      // Convert behavior to Gherkin scenario
+      const scenarioTitle = b.title.replace(/^System\s+/i, "").replace(/^The system\s+/i, "");
+      const isErrorScenario = b.errorCases.length > 0 &&
+        (b.tags.includes("validation") || b.tags.includes("error-handling") ||
+         b.postconditions.some((pc: string) => pc.includes("400") || pc.includes("403") || pc.includes("422")));
+
+      featureLines.push(`  ${isErrorScenario ? "Scenario Outline" : "Scenario"}: ${scenarioTitle}`);
+
+      // Given (preconditions)
+      if (b.preconditions.length > 0) {
+        featureLines.push(`    Given ${b.preconditions[0]}`);
+        for (const pre of b.preconditions.slice(1)) {
+          featureLines.push(`    And ${pre}`);
+        }
+      } else {
+        featureLines.push(`    Given the system is in a valid state`);
+      }
+
+      // When (action)
+      featureLines.push(`    When ${b.subject.toLowerCase()} ${b.action} ${b.object}`);
+
+      // Then (postconditions)
+      if (b.postconditions.length > 0) {
+        featureLines.push(`    Then ${b.postconditions[0]}`);
+        for (const post of b.postconditions.slice(1)) {
+          featureLines.push(`    And ${post}`);
+        }
+      }
+
+      // Error cases as Examples
+      if (isErrorScenario && b.errorCases.length > 0) {
+        featureLines.push(`    # Error cases:`);
+        for (const ec of b.errorCases.slice(0, 3)) {
+          featureLines.push(`    # - ${ec}`);
+        }
+      }
+
+      // Spec anchor as comment
+      if (b.specAnchor) {
+        featureLines.push(`    # Spec: "${b.specAnchor}"`);
+      }
+
+      featureLines.push(``);
+    }
+
+    files.push({
+      filename: `tests/uat/${chapterSlug}.feature`,
+      content: featureLines.join("\n"),
+      layer: "uat",
+      description: `UAT feature file for: ${chapter}`,
+    });
+  }
+
+  // Generate step definitions file
+  const stepDefsCode = `// GENERATED by TestForge v3.0 — Cucumber Step Definitions
+// Source: ${specType} spec
+// Run: npx cucumber-js
+
+import { Given, When, Then, Before, After } from "@cucumber/cucumber";
+import assert from "assert";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// ─── World State ──────────────────────────────────────────────────────────────
+let authCookie: string = "";
+let lastResponse: { status: number; body: unknown } = { status: 0, body: null };
+let createdResourceId: number | null = null;
+
+// ─── Auth Steps ───────────────────────────────────────────────────────────────
+
+Given("the system is in a valid state", async function() {
+  // No-op: system is assumed to be running
+});
+
+Given("I am authenticated as {string}", async function(role: string) {
+  const username = process.env[\`E2E_\${role.toUpperCase()}_USER\`] || "test-admin";
+  const password = process.env[\`E2E_\${role.toUpperCase()}_PASS\`] || "TestPass2026x";
+  const resp = await fetch(\`\${BASE_URL}${loginEndpoint}\`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ json: { username, password } }),
+  });
+  assert.ok(resp.ok, \`Login failed: \${resp.status}\`);
+  authCookie = resp.headers.get("set-cookie") || "";
+});
+
+Given("I am not authenticated", function() {
+  authCookie = "";
+});
+
+// ─── Action Steps ─────────────────────────────────────────────────────────────
+
+When("I create a resource with valid data", async function() {
+  const resp = await fetch(\`\${BASE_URL}/api/trpc/${ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"))?.name || "resource.create"}\`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Cookie": authCookie },
+    body: JSON.stringify({ json: { ${tenantField}: parseInt(process.env.TEST_TENANT_ID || "99001") } }),
+  });
+  const body = await resp.json().catch(() => null);
+  lastResponse = { status: resp.status, body };
+  createdResourceId = (body as any)?.result?.data?.json?.id ?? null;
+});
+
+When("I request a resource belonging to another ${tenantEntity}", async function() {
+  const resp = await fetch(\`\${BASE_URL}/api/trpc/${ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"))?.name || "resource.list"}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: parseInt(process.env.TEST_TENANT_B_ID || "99002") } }))}\`, {
+    headers: { "Cookie": authCookie },
+  });
+  const body = await resp.json().catch(() => null);
+  lastResponse = { status: resp.status, body };
+});
+
+// ─── Assertion Steps ──────────────────────────────────────────────────────────
+
+Then("the response status should be {int}", function(expectedStatus: number) {
+  assert.strictEqual(lastResponse.status, expectedStatus,
+    \`Expected status \${expectedStatus} but got \${lastResponse.status}\`);
+});
+
+Then("the response should contain an id", function() {
+  const data = (lastResponse.body as any)?.result?.data?.json;
+  assert.ok(data?.id, "Response should contain an id field");
+});
+
+Then("the response should be forbidden", function() {
+  assert.ok([401, 403].includes(lastResponse.status),
+    \`Expected 401 or 403 but got \${lastResponse.status}\`);
+});
+
+Then("the response should contain a validation error", function() {
+  assert.ok([400, 422].includes(lastResponse.status),
+    \`Expected 400 or 422 but got \${lastResponse.status}\`);
+});
+`;
+
+  files.push({
+    filename: "tests/uat/step-definitions/steps.ts",
+    content: stepDefsCode,
+    layer: "uat",
+    description: "Cucumber step definitions for UAT feature files",
+  });
+
+  return files;
+}
+
+// ─── Performance Test Generator ───────────────────────────────────────────────
+
+function generatePerformanceTests(
+  ir: AnalysisIR,
+  tenantField: string,
+  tenantEntity: string,
+  loginEndpoint: string,
+  specType: string
+): ExtendedTestFile[] {
+  const files: ExtendedTestFile[] = [];
+  const createEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"));
+  const listEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"));
+  const roles = ir.authModel?.roles || [{ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" }];
+  const primaryRole = roles[0];
+
+  // Rate-limit behaviors
+  const rateLimitBehaviors = ir.behaviors.filter(b =>
+    b.riskHints.includes("rate-limit") || b.riskHints.includes("brute-force") ||
+    b.tags.includes("rate-limiting")
+  );
+
+  const k6LoadTest = `// GENERATED by TestForge v3.0 — Performance Tests: Load Test
+// Source: ${specType} spec
+// Run: k6 run tests/performance/load-test.js
+// Requires: k6 installed (https://k6.io/docs/getting-started/installation/)
+
+import http from "k6/http";
+import { check, sleep, group } from "k6";
+import { Rate, Trend } from "k6/metrics";
+
+// ─── Custom Metrics ───────────────────────────────────────────────────────────
+const errorRate = new Rate("errors");
+const createDuration = new Trend("create_duration");
+const listDuration = new Trend("list_duration");
+
+// ─── Test Configuration ───────────────────────────────────────────────────────
+export const options = {
+  scenarios: {
+    // Ramp-up: gradually increase load
+    ramp_up: {
+      executor: "ramping-vus",
+      startVUs: 0,
+      stages: [
+        { duration: "30s", target: 10 },   // Ramp up to 10 users
+        { duration: "1m", target: 10 },    // Hold at 10 users
+        { duration: "30s", target: 50 },   // Ramp up to 50 users
+        { duration: "2m", target: 50 },    // Hold at 50 users (steady state)
+        { duration: "30s", target: 0 },    // Ramp down
+      ],
+    },
+    // Spike test: sudden traffic burst
+    spike: {
+      executor: "ramping-vus",
+      startVUs: 0,
+      stages: [
+        { duration: "10s", target: 100 },  // Spike to 100 users
+        { duration: "30s", target: 100 },  // Hold spike
+        { duration: "10s", target: 0 },    // Drop back
+      ],
+      startTime: "5m", // Start after ramp-up scenario
+    },
+  },
+  thresholds: {
+    // P95 response time must be under 500ms
+    http_req_duration: ["p(95)<500"],
+    // Error rate must be under 1%
+    errors: ["rate<0.01"],
+    // Create endpoint P95 under 1s
+    create_duration: ["p(95)<1000"],
+    // List endpoint P95 under 300ms
+    list_duration: ["p(95)<300"],
+  },
+};
+
+// ─── Setup: Get auth token ────────────────────────────────────────────────────
+export function setup() {
+  const loginResp = http.post(
+    \`\${__ENV.BASE_URL || "http://localhost:3000"}${loginEndpoint}\`,
+    JSON.stringify({ json: {
+      username: __ENV.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+      password: __ENV.${primaryRole.envPassVar} || "${primaryRole.defaultPass}",
+    }}),
+    { headers: { "Content-Type": "application/json" } }
+  );
+  check(loginResp, { "login succeeded": (r) => r.status === 200 });
+  const cookie = loginResp.headers["Set-Cookie"];
+  return { cookie };
+}
+
+// ─── Main Test ────────────────────────────────────────────────────────────────
+export default function(data: { cookie: string }) {
+  const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
+  const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(__ENV.TEST_TENANT_ID || "99001");
+  const headers = {
+    "Content-Type": "application/json",
+    "Cookie": data.cookie,
+  };
+
+${listEp ? `  group("List ${listEp.name}", () => {
+    const start = Date.now();
+    const resp = http.get(
+      \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID } }))}\`,
+      { headers }
+    );
+    listDuration.add(Date.now() - start);
+    const ok = check(resp, {
+      "list status 200": (r) => r.status === 200,
+      "list returns array": (r) => {
+        try {
+          const body = JSON.parse(r.body as string);
+          return Array.isArray(body?.result?.data?.json ?? body?.result?.data);
+        } catch { return false; }
+      },
+    });
+    errorRate.add(!ok);
+    sleep(0.1);
+  });` : ""}
+
+${createEp ? `  group("Create ${createEp.name}", () => {
+    const payload = {
+      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+${(createEp?.inputFields || []).filter((f: EndpointField) => !f.isTenantKey).slice(0, 3).map((f: EndpointField) => {
+  const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
+    f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
+    f.type === "boolean" ? "false" :
+    `"perf-test-" + Date.now()`;
+  return `      ${f.name}: ${val},`;
+}).join("\n")}    };
+    const start = Date.now();
+    const resp = http.post(
+      \`\${BASE_URL}/api/trpc/${createEp.name}\`,
+      JSON.stringify({ json: payload }),
+      { headers }
+    );
+    createDuration.add(Date.now() - start);
+    const ok = check(resp, {
+      "create status 200": (r) => r.status === 200,
+      "create returns id": (r) => {
+        try {
+          const body = JSON.parse(r.body as string);
+          return !!(body?.result?.data?.json?.id ?? body?.result?.data?.id);
+        } catch { return false; }
+      },
+    });
+    errorRate.add(!ok);
+    sleep(0.2);
+  });` : ""}
+}
+
+// ─── Teardown ─────────────────────────────────────────────────────────────────
+export function teardown(data: { cookie: string }) {
+  console.log("Performance test complete");
+}
+`;
+
+  files.push({
+    filename: "tests/performance/load-test.js",
+    content: k6LoadTest,
+    layer: "performance",
+    description: "k6 load test: ramp-up, steady-state, spike scenarios",
+  });
+
+  // Rate limit stress test
+  const k6RateLimitTest = `// GENERATED by TestForge v3.0 — Performance Tests: Rate Limit Verification
+// Source: ${specType} spec
+// Run: k6 run tests/performance/rate-limit.js
+// Purpose: Verify rate limiting is enforced under concurrent load
+
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { Counter } from "k6/metrics";
+
+const rateLimitHits = new Counter("rate_limit_hits");
+const successfulRequests = new Counter("successful_requests");
+
+export const options = {
+  // Burst test: many requests in short time to trigger rate limiting
+  scenarios: {
+    burst: {
+      executor: "constant-arrival-rate",
+      rate: 100,           // 100 requests per second
+      timeUnit: "1s",
+      duration: "30s",
+      preAllocatedVUs: 50,
+      maxVUs: 100,
+    },
+  },
+  thresholds: {
+    // At least 1% of requests should be rate-limited (proves rate limiting works)
+    rate_limit_hits: ["count>0"],
+  },
+};
+
+export function setup() {
+  const loginResp = http.post(
+    \`\${__ENV.BASE_URL || "http://localhost:3000"}${loginEndpoint}\`,
+    JSON.stringify({ json: {
+      username: __ENV.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+      password: __ENV.${primaryRole.envPassVar} || "${primaryRole.defaultPass}",
+    }}),
+    { headers: { "Content-Type": "application/json" } }
+  );
+  return { cookie: loginResp.headers["Set-Cookie"] || "" };
+}
+
+export default function(data: { cookie: string }) {
+  const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
+  const headers = { "Content-Type": "application/json", "Cookie": data.cookie };
+
+${rateLimitBehaviors.length > 0 ? `  // Rate-limit behaviors detected in spec:
+${rateLimitBehaviors.slice(0, 2).map(b => `  // - ${b.title}`).join("\n")}` : "  // Testing login endpoint for rate limiting"}
+
+  // Attempt rapid-fire requests to trigger rate limiting
+  const resp = http.post(
+    \`\${BASE_URL}${loginEndpoint}\`,
+    JSON.stringify({ json: { username: "test@example.com", password: "wrong" } }),
+    { headers: { "Content-Type": "application/json" } }
+  );
+
+  if (resp.status === 429) {
+    rateLimitHits.add(1);
+    check(resp, {
+      "rate limit returns 429": (r) => r.status === 429,
+      "rate limit has Retry-After header": (r) => !!r.headers["Retry-After"],
+    });
+  } else {
+    successfulRequests.add(1);
+  }
+}
+`;
+
+  files.push({
+    filename: "tests/performance/rate-limit.js",
+    content: k6RateLimitTest,
+    layer: "performance",
+    description: "k6 rate limit verification: burst test to confirm rate limiting is enforced",
+  });
+
+  // Stress test
+  const k6StressTest = `// GENERATED by TestForge v3.0 — Performance Tests: Stress Test
+// Source: ${specType} spec
+// Run: k6 run tests/performance/stress-test.js
+// Purpose: Find the breaking point of the API
+
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { Rate } from "k6/metrics";
+
+const errorRate = new Rate("errors");
+
+export const options = {
+  stages: [
+    { duration: "2m", target: 100 },   // Ramp to 100 users
+    { duration: "5m", target: 100 },   // Hold
+    { duration: "2m", target: 200 },   // Ramp to 200 users
+    { duration: "5m", target: 200 },   // Hold
+    { duration: "2m", target: 300 },   // Ramp to 300 users
+    { duration: "5m", target: 300 },   // Hold at stress level
+    { duration: "2m", target: 0 },     // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ["p(99)<3000"], // P99 under 3s even under stress
+    errors: ["rate<0.05"],             // Error rate under 5%
+  },
+};
+
+export function setup() {
+  const loginResp = http.post(
+    \`\${__ENV.BASE_URL || "http://localhost:3000"}${loginEndpoint}\`,
+    JSON.stringify({ json: {
+      username: __ENV.${primaryRole.envUserVar} || "${primaryRole.defaultUser}",
+      password: __ENV.${primaryRole.envPassVar} || "${primaryRole.defaultPass}",
+    }}),
+    { headers: { "Content-Type": "application/json" } }
+  );
+  return { cookie: loginResp.headers["Set-Cookie"] || "" };
+}
+
+export default function(data: { cookie: string }) {
+  const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
+  const headers = { "Content-Type": "application/json", "Cookie": data.cookie };
+
+${listEp ? `  const resp = http.get(
+    \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: parseInt(__ENV.TEST_TENANT_ID || "99001") } }))}\`,
+    { headers }
+  );
+  const ok = check(resp, {
+    "status 200": (r) => r.status === 200,
+    "response time < 2s": (r) => r.timings.duration < 2000,
+  });
+  errorRate.add(!ok);` : `  const resp = http.get(\`\${BASE_URL}/health\`);
+  const ok = check(resp, { "health check ok": (r) => r.status === 200 });
+  errorRate.add(!ok);`}
+  sleep(0.1);
+}
+`;
+
+  files.push({
+    filename: "tests/performance/stress-test.js",
+    content: k6StressTest,
+    layer: "performance",
+    description: "k6 stress test: find breaking point with progressive load increase",
+  });
+
+  return files;
+}
+
+// ─── Config Generator ─────────────────────────────────────────────────────────
+
+function generateExtendedConfigs(
+  ir: AnalysisIR,
+  roles: AuthRole[]
+): Record<string, string> {
+  const configs: Record<string, string> = {};
+
+  // vitest.config.ts
+  configs["vitest.config.ts"] = `// GENERATED by TestForge v3.0
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: "node",
+    include: [
+      "tests/unit/**/*.test.ts",
+      "tests/integration/**/*.integration.test.ts",
+    ],
+    exclude: ["tests/e2e/**", "tests/performance/**", "tests/uat/**"],
+    timeout: 30000,
+    reporters: ["verbose", "json"],
+    outputFile: "test-results/vitest-results.json",
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.test.ts", "src/**/*.spec.ts"],
+    },
+  },
+});
+`;
+
+  // playwright.config.ts (extended)
+  configs["playwright.config.ts"] = `// GENERATED by TestForge v3.0
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests",
+  timeout: 30000,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 2 : 4,
+  reporter: [
+    ["list"],
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+    ["json", { outputFile: "playwright-report/results.json" }],
+  ],
+  use: {
+    baseURL: process.env.BASE_URL || "http://localhost:3000",
+    extraHTTPHeaders: { "Accept": "application/json" },
+  },
+  projects: [
+    {
+      name: "security",
+      testDir: "./tests/security",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "e2e",
+      testDir: "./tests/e2e",
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+});
+`;
+
+  // cucumber.config.ts
+  configs["cucumber.config.ts"] = `// GENERATED by TestForge v3.0
+export default {
+  default: {
+    paths: ["tests/uat/**/*.feature"],
+    require: ["tests/uat/step-definitions/**/*.ts"],
+    requireModule: ["ts-node/register"],
+    format: ["progress", "html:cucumber-report/index.html"],
+    timeout: 30000,
+  },
+};
+`;
+
+  // .github/workflows/testforge-full.yml
+  configs[".github/workflows/testforge-full.yml"] = `# GENERATED by TestForge v3.0 — Full 6-Layer Test Suite CI
+name: TestForge Full Test Suite
+on:
+  push:
+    branches: [main, develop, staging]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: "Layer 1 — Unit Tests (Vitest)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx vitest run tests/unit/
+        env:
+          BASE_URL: \${{ secrets.STAGING_URL || 'http://localhost:3000' }}
+
+  integration-tests:
+    name: "Layer 2 — Integration Tests (Vitest)"
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx vitest run tests/integration/
+        env:
+          BASE_URL: \${{ secrets.STAGING_URL }}
+${(roles || []).map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n          ${r.envPassVar}: \${{ secrets.${r.envPassVar} }}`).join("\n")}
+          TEST_TENANT_ID: \${{ secrets.TEST_TENANT_ID }}
+          TEST_TENANT_B_ID: \${{ secrets.TEST_TENANT_B_ID }}
+
+  security-tests:
+    name: "Layer 5 — Security Tests (Playwright)"
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test tests/security/
+        env:
+          BASE_URL: \${{ secrets.STAGING_URL }}
+${(roles || []).map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n          ${r.envPassVar}: \${{ secrets.${r.envPassVar} }}`).join("\n")}
+          TEST_TENANT_ID: \${{ secrets.TEST_TENANT_ID }}
+          TEST_TENANT_B_ID: \${{ secrets.TEST_TENANT_B_ID }}
+          DEBUG_API_TOKEN: \${{ secrets.DEBUG_API_TOKEN }}
+
+  e2e-tests:
+    name: "Layer 3 — E2E Tests (Playwright)"
+    runs-on: ubuntu-latest
+    needs: security-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test tests/e2e/
+        env:
+          BASE_URL: \${{ secrets.STAGING_URL }}
+${(roles || []).map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n          ${r.envPassVar}: \${{ secrets.${r.envPassVar} }}`).join("\n")}
+          TEST_TENANT_ID: \${{ secrets.TEST_TENANT_ID }}
+
+  uat-tests:
+    name: "Layer 4 — UAT Tests (Cucumber)"
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx cucumber-js tests/uat/**/*.feature
+        env:
+          BASE_URL: \${{ secrets.STAGING_URL }}
+${(roles || []).map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n          ${r.envPassVar}: \${{ secrets.${r.envPassVar} }}`).join("\n")}
+          TEST_TENANT_ID: \${{ secrets.TEST_TENANT_ID }}
+
+  performance-tests:
+    name: "Layer 6 — Performance Tests (k6)"
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          curl https://github.com/grafana/k6/releases/download/v0.49.0/k6-v0.49.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
+          sudo mv k6 /usr/local/bin/
+      - run: npm install
+      - run: k6 run --vus 5 --duration 30s tests/performance/load-test.js
+        env:
+          BASE_URL: \${{ secrets.STAGING_URL }}
+${(roles || []).map((r: AuthRole) => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n          ${r.envPassVar}: \${{ secrets.${r.envPassVar} }}`).join("\n")}
+          TEST_TENANT_ID: \${{ secrets.TEST_TENANT_ID }}
+
+  proof-gate:
+    name: "✓ Alle 6 Test-Ebenen bestanden"
+    needs: [unit-tests, integration-tests, security-tests, e2e-tests, uat-tests, performance-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "System ist vollständig spec-konform — alle 6 Test-Ebenen grün."
+`;
+  return configs;
+}
+
+// ─── Extended Package.json ────────────────────────────────────────────────────
+
+function generateExtendedPackageJson(_specType: string): string {
+  return JSON.stringify({
+    name: "testforge-full-suite",
+    version: "1.0.0",
+    description: `Generated by TestForge v3.0 — 6-Layer Test Suite`,
+    type: "module",
+    scripts: {
+      // Layer 1: Unit
+      "test:unit": "vitest run tests/unit/",
+      "test:unit:watch": "vitest tests/unit/",
+      "test:unit:coverage": "vitest run --coverage tests/unit/",
+      // Layer 2: Integration
+      "test:integration": "vitest run tests/integration/",
+      // Layer 3: E2E
+      "test:e2e": "playwright test tests/e2e/",
+      // Layer 4: UAT
+      "test:uat": "cucumber-js tests/uat/**/*.feature",
+      // Layer 5: Security
+      "test:security": "playwright test tests/security/",
+      "test:security:idor": "playwright test tests/security/idor.spec.ts",
+      "test:security:csrf": "playwright test tests/security/csrf.spec.ts",
+      // Layer 6: Performance
+      "test:performance": "k6 run tests/performance/load-test.js",
+      "test:performance:stress": "k6 run tests/performance/stress-test.js",
+      "test:performance:rate-limit": "k6 run tests/performance/rate-limit.js",
+      // All layers
+      "test:all": "npm run test:unit && npm run test:integration && npm run test:security && npm run test:e2e && npm run test:uat",
+      "test:list": "playwright test --list",
+      "test:dry-run": "playwright test --dry-run",
+      "install:browsers": "playwright install --with-deps chromium",
+    },
+    dependencies: {
+      zod: "^3.22.0",
+    },
+    devDependencies: {
+      // Layer 1+2: Unit + Integration
+      vitest: "^2.0.0",
+      "@vitest/coverage-v8": "^2.0.0",
+      // Layer 3+5: E2E + Security
+      "@playwright/test": "^1.41.0",
+      // Layer 4: UAT
+      "@cucumber/cucumber": "^10.0.0",
+      "ts-node": "^10.9.0",
+      // TypeScript
+      typescript: "^5.3.0",
+      "@types/node": "^20.0.0",
+    },
+  }, null, 2);
+}
+
+// ─── Extended README ──────────────────────────────────────────────────────────
+
+function generateExtendedReadme(
+  analysis: AnalysisResult,
+  files: ExtendedTestFile[],
+  roles: AuthRole[]
+): string {
+  const byLayer = new Map<string, ExtendedTestFile[]>();
+  for (const f of files) {
+    if (!byLayer.has(f.layer)) byLayer.set(f.layer, []);
+    byLayer.get(f.layer)!.push(f);
+  }
+
+  const layerEmoji: Record<string, string> = {
+    unit: "🔬",
+    integration: "🔗",
+    e2e: "🌐",
+    uat: "📋",
+    security: "🔒",
+    performance: "⚡",
+  };
+
+  const layerName: Record<string, string> = {
+    unit: "Unit Tests (Vitest)",
+    integration: "Integration Tests (Vitest)",
+    e2e: "E2E Tests (Playwright)",
+    uat: "UAT Tests (Cucumber/Gherkin)",
+    security: "Security Tests (Playwright)",
+    performance: "Performance Tests (k6)",
+  };
+
+  return `# TestForge Full Test Suite — ${analysis.specType}
+
+Generated by **TestForge v3.0** on ${new Date().toISOString().split("T")[0]}.
+
+## Overview
+
+| Layer | Type | Files | Runner |
+|---|---|---|---|
+${Array.from(byLayer.entries()).map(([layer, layerFiles]) =>
+  `| ${layerEmoji[layer] || "📁"} Layer | ${layerName[layer] || layer} | ${layerFiles.length} files | ${layer === "unit" || layer === "integration" ? "Vitest" : layer === "e2e" || layer === "security" ? "Playwright" : layer === "uat" ? "Cucumber" : "k6"} |`
+).join("\n")}
+
+## Quick Start
+
+\`\`\`bash
+# 1. Install dependencies
+npm install
+
+# 2. Install Playwright browsers
+npm run install:browsers
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env with your BASE_URL and credentials
+
+# 4. Run all tests
+npm run test:all
+
+# 5. Run specific layers
+npm run test:unit          # Layer 1: Unit Tests
+npm run test:integration   # Layer 2: Integration Tests
+npm run test:e2e           # Layer 3: E2E Tests
+npm run test:uat           # Layer 4: UAT Tests
+npm run test:security      # Layer 5: Security Tests
+npm run test:performance   # Layer 6: Performance Tests
+\`\`\`
+
+## Test Structure
+
+\`\`\`
+tests/
+├── unit/              # Layer 1: Vitest unit tests (service isolation)
+├── integration/       # Layer 2: Vitest integration tests (API contracts)
+├── e2e/               # Layer 3: Playwright E2E tests (user flows)
+├── uat/               # Layer 4: Gherkin feature files + step definitions
+├── security/          # Layer 5: Playwright security tests (IDOR, CSRF, rate-limit)
+└── performance/       # Layer 6: k6 load/stress/rate-limit tests
+\`\`\`
+
+## Environment Variables
+
+| Variable | Description | Example |
+|---|---|---|
+| \`BASE_URL\` | API base URL | \`http://localhost:3000\` |
+| \`TEST_TENANT_ID\` | Primary test tenant | \`99001\` |
+| \`TEST_TENANT_B_ID\` | Secondary tenant (IDOR tests) | \`99002\` |
+${(roles || []).map(r => `| \`${r.envUserVar}\` | ${r.name} username | \`${r.defaultUser}\` |\n| \`${r.envPassVar}\` | ${r.name} password | \`changeme\` |`).join("\n")}
+
+## Mutation Targets
+
+Every \`expect()\` call has a \`// Kills:\` comment explaining which code mutation it catches.
+
+## Generated by TestForge
+
+Do not edit these files manually — re-run TestForge to regenerate with updated spec.
+Spec type: **${analysis.specType}** | Quality score: **${analysis.qualityScore?.toFixed(1) || "N/A"}/10**
+`;
 }

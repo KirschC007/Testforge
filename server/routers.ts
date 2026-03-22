@@ -95,6 +95,26 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         archive.append(buildReadme(result), { name: "README.md" });
       }
 
+      // Add extended 6-layer test suite files
+      const extended = result.extendedSuite;
+      for (const extFile of extended.files) {
+        // Skip security files already added above (avoid duplicates)
+        const alreadyAdded = result.testFiles.some(tf => tf.filename === extFile.filename);
+        if (!alreadyAdded) {
+          archive.append(extFile.content, { name: extFile.filename });
+        }
+      }
+      // Add extended configs (vitest.config.ts, cucumber.config.ts, etc.)
+      for (const [configName, configContent] of Object.entries(extended.configs)) {
+        // Don't overwrite existing playwright.config.ts or package.json from helpers
+        const skipNames = ["playwright.config.ts", "package.json", ".github/workflows/testforge.yml"];
+        if (!skipNames.includes(configName)) {
+          archive.append(configContent, { name: configName });
+        }
+      }
+      // Add extended README (overwrites helpers README with full 6-layer version)
+      archive.append(extended.readme, { name: "README.md" });
+
       // Wait for both finalize and stream finish
       await Promise.all([
         archive.finalize(),
