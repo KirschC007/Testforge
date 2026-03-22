@@ -3,25 +3,39 @@ import { useParams, Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock, AlertCircle, ChevronDown, ChevronUp, Ban, RotateCcw } from "lucide-react";
+import {
+  Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock,
+  AlertCircle, ChevronDown, ChevronUp, Ban, RotateCcw, FileText,
+  Package, GitBranch, Zap, Lock, Scale, Activity, Search
+} from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
 
 const STEPS = [
-  { key: "pending",   label: "Queued",             desc: "Waiting to start",                    layer: 0 },
-  { key: "layer1",    label: "Layer 1 — Spec Parse", desc: "Extracting behaviors from spec",      layer: 1 },
-  { key: "checker",   label: "LLM Checker",          desc: "Verifying behaviors against spec",    layer: 2 },
-  { key: "layer2",    label: "Layer 2 — Risk Model",  desc: "Building risk model & proof targets", layer: 2 },
-  { key: "layer3",    label: "Layer 3 — Test Gen",    desc: "Generating proof tests (all parallel)",layer: 3 },
-  { key: "layer45",   label: "Layer 4+5 — Validation",desc: "Independent check + false-green guard",layer: 4 },
-  { key: "completed", label: "Complete",              desc: "Tests ready for download",             layer: 5 },
+  { key: "pending",   label: "Queued",               desc: "Waiting to start",                     layer: 0 },
+  { key: "layer1",    label: "Layer 1 — Spec Parse",  desc: "Extracting behaviors from spec",       layer: 1 },
+  { key: "checker",   label: "LLM Checker",            desc: "Verifying behaviors against spec",     layer: 2 },
+  { key: "layer2",    label: "Layer 2 — Risk Model",   desc: "Building risk model & proof targets",  layer: 2 },
+  { key: "layer3",    label: "Layer 3 — Test Gen",     desc: "Generating proof tests (all parallel)", layer: 3 },
+  { key: "layer45",   label: "Layer 4+5 — Validation", desc: "Independent check + false-green guard", layer: 4 },
+  { key: "completed", label: "Complete",               desc: "Tests ready for download",              layer: 5 },
 ];
 
+// Proof type → category mapping
+const PROOF_CATEGORIES: Record<string, { label: string; color: string; icon: React.ReactNode; dir: string }> = {
+  idor:              { label: "IDOR / Tenant Isolation", color: "var(--tf-red)",    icon: <Lock className="w-3.5 h-3.5" />,     dir: "tests/security/" },
+  csrf:              { label: "CSRF / Session Binding",  color: "var(--tf-orange)", icon: <Shield className="w-3.5 h-3.5" />,   dir: "tests/security/" },
+  rate_limit:        { label: "Rate Limiting",           color: "var(--tf-orange)", icon: <Zap className="w-3.5 h-3.5" />,      dir: "tests/security/" },
+  spec_drift:        { label: "Spec Drift / Schema",     color: "var(--tf-blue)",   icon: <Search className="w-3.5 h-3.5" />,   dir: "tests/security/" },
+  business_logic:    { label: "Business Logic",          color: "var(--tf-yellow)", icon: <Activity className="w-3.5 h-3.5" />, dir: "tests/business/" },
+  boundary:          { label: "Boundary Values",         color: "var(--tf-yellow)", icon: <GitBranch className="w-3.5 h-3.5" />,dir: "tests/business/" },
+  dsgvo:             { label: "DSGVO / GDPR",            color: "var(--tf-green)",  icon: <Scale className="w-3.5 h-3.5" />,    dir: "tests/compliance/" },
+  status_transition: { label: "Status Transitions",      color: "var(--tf-blue)",   icon: <GitBranch className="w-3.5 h-3.5" />,dir: "tests/integration/" },
+  risk_scoring:      { label: "Risk Scoring",            color: "var(--tf-blue)",   icon: <Activity className="w-3.5 h-3.5" />, dir: "tests/integration/" },
+};
+
 function ProgressSteps({
-  status,
-  createdAt,
-  progressLayer,
-  progressMessage,
+  status, createdAt, progressLayer, progressMessage,
 }: {
   status: Analysis["status"];
   createdAt: Date;
@@ -37,7 +51,6 @@ function ProgressSteps({
     return () => clearInterval(interval);
   }, [status, createdAt]);
 
-  // Use real progressLayer from DB if available, else fall back to time estimate
   const currentLayer = status === "completed" ? 5
     : status === "failed" ? -1
     : status === "pending" ? 0
@@ -51,38 +64,27 @@ function ProgressSteps({
           <span className="text-xs font-mono text-muted-foreground">{elapsed}s elapsed</span>
         )}
       </div>
-
-      {/* Live progress message */}
       {progressMessage && (status === "running" || status === "pending") && (
         <div className="mb-4 px-3 py-2 bg-primary/5 border border-primary/20 rounded text-xs font-mono text-primary">
           {progressMessage}
         </div>
       )}
-
       <div className="space-y-3">
-        {STEPS.map((step, i) => {
+        {STEPS.map((step) => {
           const isDone = step.layer < currentLayer || (status === "completed");
           const isCurrent = step.layer === currentLayer && status !== "completed" && status !== "failed";
           const isPending = step.layer > currentLayer && status !== "completed";
           return (
             <div key={step.key} className="flex items-center gap-3">
               <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                isDone ? "bg-[var(--tf-green)]/20" :
-                isCurrent ? "bg-primary/20" :
-                "bg-muted"
+                isDone ? "bg-[var(--tf-green)]/20" : isCurrent ? "bg-primary/20" : "bg-muted"
               }`}>
-                {isDone ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[var(--tf-green)]" />
-                ) : isCurrent ? (
-                  <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-                ) : (
-                  <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                )}
+                {isDone ? <CheckCircle2 className="w-3.5 h-3.5 text-[var(--tf-green)]" />
+                  : isCurrent ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                  : <Clock className="w-3.5 h-3.5 text-muted-foreground" />}
               </div>
               <div className="min-w-0">
-                <div className={`text-sm font-medium ${isPending ? "text-muted-foreground" : "text-foreground"}`}>
-                  {step.label}
-                </div>
+                <div className={`text-sm font-medium ${isPending ? "text-muted-foreground" : "text-foreground"}`}>{step.label}</div>
                 <div className="text-xs text-muted-foreground">{step.desc}</div>
               </div>
             </div>
@@ -93,11 +95,12 @@ function ProgressSteps({
   );
 }
 
-function MetricCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
+function MetricCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
     <div className="bg-card border border-border rounded-lg p-4">
       <div className="text-xs text-muted-foreground mb-1">{label}</div>
       <div className="text-2xl font-bold font-mono" style={{ color }}>{value}</div>
+      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -105,14 +108,91 @@ function MetricCard({ label, value, color }: { label: string; value: string | nu
 function RiskBadge({ level }: { level: string }) {
   const map: Record<string, string> = {
     critical: "text-[var(--tf-red)] bg-[var(--tf-red)]/10",
-    high: "text-[var(--tf-orange)] bg-[var(--tf-orange)]/10",
-    medium: "text-[var(--tf-yellow)] bg-[var(--tf-yellow)]/10",
-    low: "text-[var(--tf-green)] bg-[var(--tf-green)]/10",
+    high:     "text-[var(--tf-orange)] bg-[var(--tf-orange)]/10",
+    medium:   "text-[var(--tf-yellow)] bg-[var(--tf-yellow)]/10",
+    low:      "text-[var(--tf-green)] bg-[var(--tf-green)]/10",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium uppercase ${map[level] || "text-muted-foreground"}`}>
       {level}
     </span>
+  );
+}
+
+function ProofTypeBadge({ type }: { type: string }) {
+  const cat = PROOF_CATEGORIES[type];
+  if (!cat) return <span className="text-xs font-mono text-muted-foreground">{type}</span>;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+      style={{ color: cat.color, background: `${cat.color}18` }}>
+      {cat.icon} {cat.label}
+    </span>
+  );
+}
+
+// Group proofs by category
+function groupProofsByCategory(proofs: any[]) {
+  const groups: Record<string, any[]> = {};
+  for (const p of proofs) {
+    const type = p.proofType || "other";
+    if (!groups[type]) groups[type] = [];
+    groups[type].push(p);
+  }
+  return groups;
+}
+
+function ZipContentsPreview() {
+  const [open, setOpen] = useState(false);
+  const files = [
+    { path: "tests/security/", desc: "IDOR, CSRF, Rate-Limit, Spec-Drift tests" },
+    { path: "tests/business/", desc: "Business Logic, Boundary Value tests" },
+    { path: "tests/compliance/", desc: "DSGVO/GDPR, Data Retention tests" },
+    { path: "tests/integration/", desc: "Status Transitions, Risk Scoring tests" },
+    { path: "helpers/api.ts", desc: "trpcMutation, trpcQuery, BASE_URL helpers" },
+    { path: "helpers/auth.ts", desc: "loginAndGetCookie, session management" },
+    { path: "helpers/factories.ts", desc: "createTestResource, spec-aware factories" },
+    { path: "helpers/schemas.ts", desc: "Zod response & input schemas" },
+    { path: "helpers/reset.ts", desc: "resetTestData helper" },
+    { path: "helpers/index.ts", desc: "Re-exports all helpers" },
+    { path: "playwright.config.ts", desc: "Playwright config (ESM, JSON reporter)" },
+    { path: "package.json", desc: "npm scripts: test, test:security, test:dry-run" },
+    { path: "tsconfig.json", desc: "TypeScript config for Playwright" },
+    { path: ".github/workflows/testforge.yml", desc: "GitHub Actions CI/CD pipeline" },
+    { path: "README.md", desc: "Setup guide, env vars, CI/CD secrets" },
+    { path: ".env.example", desc: "Environment variable template" },
+    { path: "testforge-report.md", desc: "Full analysis report" },
+  ];
+  return (
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <button
+        className="w-full px-5 py-3 border-b border-border flex items-center justify-between hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <div className="flex items-center gap-2">
+          <Package className="w-4 h-4 text-muted-foreground" />
+          <span className="font-semibold text-sm">ZIP Contents — npm install → playwright test</span>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+      </button>
+      {open && (
+        <div className="p-4">
+          <div className="font-mono text-xs bg-muted/40 rounded p-3 mb-3">
+            <span className="text-[var(--tf-green)]">$</span> unzip testforge-output.zip && npm install && npm run install:browsers && npm test
+          </div>
+          <div className="space-y-1">
+            {files.map(f => (
+              <div key={f.path} className="flex items-start gap-3 py-1">
+                <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-xs font-mono text-foreground">{f.path}</span>
+                  <span className="text-xs text-muted-foreground ml-2">— {f.desc}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -164,6 +244,24 @@ export default function AnalysisDetail() {
   const suite = result?.validatedSuite;
   const ir = result?.analysisResult?.ir;
   const report: string = result?.report || "";
+
+  // Compute mutation score across all proofs
+  const allProofs: any[] = suite?.proofs || [];
+  const avgMutation = allProofs.length > 0
+    ? allProofs.reduce((s: number, p: any) => s + (p.mutationScore || 0), 0) / allProofs.length
+    : 0;
+
+  // Compute spec_drift coverage (endpoints with schemas / total endpoints)
+  const totalEndpoints = ir?.apiEndpoints?.length || 0;
+  const specDriftProofs = allProofs.filter((p: any) => p.proofType === "spec_drift").length;
+  const schemaCoverage = totalEndpoints > 0 ? Math.round((specDriftProofs / totalEndpoints) * 100) : 0;
+
+  // Group proofs by type
+  const proofGroups = groupProofsByCategory(allProofs);
+
+  // Timeout detection: running for >8min
+  const isTimedOut = (analysis.status === "running" || analysis.status === "pending") &&
+    (Date.now() - new Date(analysis.createdAt).getTime()) > 8 * 60 * 1000;
 
   return (
     <div className="min-h-screen bg-background">
@@ -220,13 +318,21 @@ export default function AnalysisDetail() {
 
         {/* Running / Pending */}
         {(analysis.status === "running" || analysis.status === "pending") && (
-          <div className="max-w-md">
+          <div className="max-w-md space-y-3">
             <ProgressSteps
               status={analysis.status}
               createdAt={analysis.createdAt}
               progressLayer={(analysis as any).progressLayer}
               progressMessage={(analysis as any).progressMessage}
             />
+            {isTimedOut && (
+              <div className="bg-[var(--tf-orange)]/10 border border-[var(--tf-orange)]/30 rounded-lg p-4 flex gap-3">
+                <AlertCircle className="w-4 h-4 text-[var(--tf-orange)] shrink-0 mt-0.5" />
+                <div className="text-sm text-muted-foreground">
+                  Die Analyse läuft länger als 8 Minuten. Sie wird automatisch beendet oder du kannst sie manuell abbrechen.
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -238,13 +344,9 @@ export default function AnalysisDetail() {
               <div className="font-medium text-sm mb-1">Analysis abgebrochen</div>
               <div className="text-sm text-muted-foreground mb-3">Diese Analyse wurde manuell gestoppt.</div>
               {(analysis as any).specFileKey && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
+                <Button size="sm" variant="outline" className="gap-1.5"
                   onClick={() => retryMutation.mutate({ id: parseInt(id || "0") })}
-                  disabled={retryMutation.isPending}
-                >
+                  disabled={retryMutation.isPending}>
                   {retryMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
                   Nochmal versuchen
                 </Button>
@@ -261,13 +363,9 @@ export default function AnalysisDetail() {
               <div className="font-medium text-sm mb-1">Analysis Failed</div>
               <div className="text-sm text-muted-foreground font-mono mb-3">{analysis.errorMessage || "Unknown error"}</div>
               {(analysis as any).specFileKey && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
+                <Button size="sm" variant="outline" className="gap-1.5"
                   onClick={() => retryMutation.mutate({ id: parseInt(id || "0") })}
-                  disabled={retryMutation.isPending}
-                >
+                  disabled={retryMutation.isPending}>
                   {retryMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
                   Nochmal versuchen
                 </Button>
@@ -279,8 +377,8 @@ export default function AnalysisDetail() {
         {/* Completed */}
         {analysis.status === "completed" && suite && (
           <div className="space-y-6">
-            {/* Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Metrics Row */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <MetricCard
                 label="Verdict Score"
                 value={`${(suite.verdict.score).toFixed(1)}/10`}
@@ -292,13 +390,21 @@ export default function AnalysisDetail() {
                 color={suite.coverage.coveragePercent >= 80 ? "var(--tf-green)" : "var(--tf-orange)"}
               />
               <MetricCard
-                label="Validated Proofs"
-                value={suite.verdict.passed}
-                color="var(--tf-green)"
+                label="Mutation Score"
+                value={`${(avgMutation * 100).toFixed(0)}%`}
+                sub={`${allProofs.length} proofs`}
+                color={avgMutation >= 0.8 ? "var(--tf-green)" : avgMutation >= 0.6 ? "var(--tf-orange)" : "var(--tf-red)"}
               />
               <MetricCard
-                label="Behaviors Extracted"
+                label="Schema Coverage"
+                value={`${schemaCoverage}%`}
+                sub={`${specDriftProofs}/${totalEndpoints} endpoints`}
+                color={schemaCoverage >= 80 ? "var(--tf-green)" : "var(--tf-yellow)"}
+              />
+              <MetricCard
+                label="Behaviors"
                 value={ir?.behaviors?.length || 0}
+                sub={`${suite.verdict.failed || 0} discarded`}
                 color="var(--tf-blue)"
               />
             </div>
@@ -324,32 +430,48 @@ export default function AnalysisDetail() {
               </div>
             )}
 
-            {/* Validated Proofs */}
-            {suite.proofs?.length > 0 && (
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
-                <div className="px-5 py-3 border-b border-border flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[var(--tf-green)]" />
-                  <h3 className="font-semibold text-sm">Validated Proofs ({suite.proofs.length})</h3>
-                </div>
-                <div className="divide-y divide-border">
-                  {suite.proofs.map((proof: any) => (
-                    <div key={proof.id} className="px-5 py-3 flex items-center justify-between gap-4">
-                      <div className="min-w-0">
+            {/* Proofs grouped by category */}
+            {allProofs.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                  Validated Proofs by Category ({allProofs.length} total)
+                </h3>
+                {Object.entries(proofGroups).map(([type, proofs]) => {
+                  const cat = PROOF_CATEGORIES[type];
+                  return (
+                    <div key={type} className="bg-card border border-border rounded-lg overflow-hidden">
+                      <div className="px-5 py-3 border-b border-border flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono text-muted-foreground">{proof.id}</span>
-                          <RiskBadge level={proof.riskLevel} />
+                          <ProofTypeBadge type={type} />
+                          <span className="text-xs text-muted-foreground">
+                            {cat?.dir && <span className="font-mono">{cat.dir}</span>}
+                          </span>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate">{proof.filename}</div>
+                        <span className="text-xs text-muted-foreground">{proofs.length} tests</span>
                       </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-xs text-muted-foreground">Mutation</div>
-                        <div className="text-sm font-mono font-bold" style={{ color: proof.mutationScore >= 0.8 ? "var(--tf-green)" : "var(--tf-orange)" }}>
-                          {(proof.mutationScore * 100).toFixed(0)}%
-                        </div>
+                      <div className="divide-y divide-border">
+                        {proofs.map((proof: any) => (
+                          <div key={proof.id} className="px-5 py-3 flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono text-muted-foreground">{proof.id}</span>
+                                <RiskBadge level={proof.riskLevel} />
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate">{proof.filename}</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-xs text-muted-foreground">Mutation</div>
+                              <div className="text-sm font-mono font-bold"
+                                style={{ color: proof.mutationScore >= 0.8 ? "var(--tf-green)" : "var(--tf-orange)" }}>
+                                {(proof.mutationScore * 100).toFixed(0)}%
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
 
@@ -374,6 +496,9 @@ export default function AnalysisDetail() {
               </div>
             )}
 
+            {/* ZIP Contents Preview */}
+            <ZipContentsPreview />
+
             {/* Full Report */}
             {report && (
               <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -396,9 +521,9 @@ export default function AnalysisDetail() {
             {analysis.outputZipUrl && (
               <div className="bg-card border border-[var(--tf-green)]/20 rounded-lg p-5 flex items-center justify-between gap-4">
                 <div>
-                  <div className="font-semibold text-sm mb-1">Test Suite Ready</div>
+                  <div className="font-semibold text-sm mb-1">Test Suite Ready — CI/CD Included</div>
                   <div className="text-xs text-muted-foreground">
-                    {suite.proofs?.length || 0} test files + report — drop into your project and run immediately
+                    {allProofs.length} validated tests + GitHub Actions + README — unzip, npm install, playwright test
                   </div>
                 </div>
                 <a href={analysis.outputZipUrl} download>

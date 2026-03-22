@@ -85,8 +85,15 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       }
       // Add report
       archive.append(result.report, { name: "testforge-report.md" });
-      // Add README
-      archive.append(buildReadme(result), { name: "README.md" });
+      // Add all generated helper files (api.ts, auth.ts, factories.ts, schemas.ts, etc.)
+      const helpers = result.helpers;
+      for (const [filename, content] of Object.entries(helpers)) {
+        archive.append(content, { name: filename });
+      }
+      // README.md from helpers already included above; if not present, use legacy buildReadme
+      if (!helpers["README.md"]) {
+        archive.append(buildReadme(result), { name: "README.md" });
+      }
 
       // Wait for both finalize and stream finish
       await Promise.all([

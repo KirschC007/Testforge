@@ -95,14 +95,16 @@ export default function Home() {
                   </Button>
                 </a>
               )}
-              <Button variant="outline" size="lg" className="gap-2 font-mono text-sm">
-                <Code2 className="w-4 h-4" />
-                View Example Report
-              </Button>
+              <Link href="/analysis/new?demo=1">
+                <Button variant="outline" size="lg" className="gap-2 font-mono text-sm">
+                  <Code2 className="w-4 h-4" />
+                  Try Demo Spec
+                </Button>
+              </Link>
             </div>
 
             <div className="flex flex-wrap gap-6 mt-10 text-sm text-muted-foreground">
-              {["PDF / Markdown / Word", "TypeScript + Playwright", "IDOR · CSRF · DSGVO", "False-Green Detection"].map(f => (
+              {["PDF / Markdown / Word", "TypeScript + Playwright", "IDOR · CSRF · Spec-Drift", "CI/CD Ready ZIP"].map(f => (
                 <div key={f} className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-[var(--tf-green)]" />
                   {f}

@@ -221,3 +221,33 @@
 - [x] E7: Neuer ProofType spec_drift + generateSpecDriftTest + buildProofTarget + determineProofTypes
 - [x] E8-E11: calcBoundaryValues auf BoundaryCase[] umgestellt, findBoundaryFieldForBehavior, buildArrayItemLiteral
 - [x] ShopCore Live-Test: alle 10 Checks grün (0 TODO_, 0 dot-notation, Zod-Schemas, spec_drift, yesterdayStr, zod in package.json)
+
+## Phase 23: Weltdominanz — CI/CD + Report + UX + Live Demo
+
+### CI/CD-Generator
+- [x] generateHelpers: playwright.config.ts mit baseURL, timeout, retries, workers, html-reporter + JSON-reporter
+- [x] generateHelpers: .github/workflows/testforge.yml (Node 20, P0+P1 Jobs, proof-gate)
+- [x] generateHelpers: package.json mit ALLEN deps + type:module + test:dry-run script
+- [x] generateHelpers: tsconfig.json für Playwright-Tests (ES2022, bundler moduleResolution)
+- [x] generateHelpers: README.md mit Setup-Anleitung (Tabellen, CI/CD-Secrets, Mutation Targets)
+- [x] generateHelpers: .env.example mit allen Env-Variablen
+- [x] ZIP-Struktur: entpacken → npm install → npx playwright test --dry-run grün
+
+### Report-Page-Update
+- [x] spec_drift als eigene Test-Kategorie im Report (Proofs nach Typ gruppiert mit Icons)
+- [x] Zod-Schema-Coverage als Metrik im Verdict-Score (% Endpoints mit Schema)
+- [x] Discarded Proofs mit Grund anzeigen (warum verworfen)
+- [x] Mutation Score prominenter anzeigen (große Zahl, farbcodiert)
+- [x] ZIP-Inhalts-Vorschau (ZipContentsPreview Komponente)
+- [x] Timeout-Warnung bei >8min laufenden Jobs
+
+### New Analysis Page
+- [x] Upload-Hinweis aktualisiert: 5 Schichten mit Beschreibung + ZIP-Inhalt-Liste
+- [x] Spec-Format-Hinweise: PDF, Markdown, Word, plain text
+
+### Job-Timeout UI
+- [x] Frontend: abgelaufene Jobs (>8min) zeigen Timeout-Warnung Banner
+
+### Live Demo
+- [x] Demo-Analyse mit ShopCore Spec vorauffüllen (?demo=1 URL-Parameter)
+- [x] "Try Demo Spec" Button auf Landing Page

@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { useLocation } from "wouter";
+import { useState, useRef, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,56 @@ const ALLOWED_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
+const DEMO_SPEC = `# ShopCore API Specification
+
+## Overview
+ShopCore is a multi-tenant e-commerce API. Each shop is isolated by shopId.
+
+## Endpoints
+
+### POST /api/trpc/products.create
+Input: shopId (number, tenant key), name (string, 1-100 chars), price (number, 0.01-999999.99), stock (number, 0-10000), sku (string, 3-50 chars), priority (enum: low|medium|high|critical)
+Output: id, shopId, name, price, stock, sku, priority, createdAt
+
+### POST /api/trpc/orders.create
+Input: shopId (number, tenant key), customerId (number), items (array of {productId: number, quantity: number (1-100)}, max 50 items)
+Output: id, shopId, status, total, createdAt
+Behavior: When order is created, stock is decremented by quantity ordered. If stock < quantity, return 400.
+
+### GET /api/trpc/orders.getById
+Input: shopId (number), orderId (number)
+Output: id, shopId, status, items, total, createdAt
+Behavior: Returns 403 if order belongs to a different shopId.
+
+### POST /api/trpc/orders.updateStatus
+Input: shopId (number), orderId (number), status (enum: pending|processing|shipped|delivered|cancelled)
+Output: id, status, updatedAt
+Status transitions: pending→processing, processing→shipped, shipped→delivered. No skipping, no reverse. cancelled is terminal.
+
+### DELETE /api/trpc/customers.anonymize
+Input: shopId (number), customerId (number)
+Behavior: Permanently anonymizes customer PII (name, email, phone). GDPR compliance required.
+
+### GET /api/trpc/shop.exportData
+Input: shopId (number)
+Output: Full shop data export including customer PII
+Behavior: GDPR data export. Must only return data for the requesting shopId.
+
+## Security
+- All endpoints require authentication via Bearer token
+- shopId is the tenant isolation key — cross-tenant access must return 403
+- Rate limiting: max 10 failed auth attempts per minute per IP
+
+## Invariants
+- Stock can never go below 0
+- Order total = sum(price * quantity) for all items
+- Cancelled orders cannot be updated
+`;
+
 export default function NewAnalysis() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
+  const search = useSearch();
 
   const [projectName, setProjectName] = useState("");
   const [specText, setSpecText] = useState("");       // local preview only
@@ -41,6 +88,15 @@ export default function NewAnalysis() {
   const [inputMode, setInputMode] = useState<"paste" | "github">("paste");
   const [fileError, setFileError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Auto-fill demo spec if ?demo=1
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    if (params.get("demo") === "1") {
+      setProjectName("ShopCore Demo");
+      setSpecText(DEMO_SPEC);
+    }
+  }, [search]);
 
   const createMutation = trpc.analyses.create.useMutation({
     onSuccess: (data) => {
@@ -312,24 +368,46 @@ export default function NewAnalysis() {
           </div>
 
           {/* What happens next */}
-          <div className="bg-card border border-border rounded-lg p-4 space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">What happens next</p>
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+          <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">What happens after upload</p>
+            <div className="space-y-2">
               {[
-                "Schicht 1: LLM extracts behaviors",
-                "Schicht 2: Risk model built",
-                "Schicht 3: Tests generated",
-                "Schicht 4: False-greens rejected",
-              ].map((step, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <div className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">
-                    {i + 1}
+                { n: 1, label: "Layer 1 — Spec Parse",    desc: "LLM extracts behaviors, endpoints, status machines, invariants" },
+                { n: 2, label: "Layer 2 — Risk Model",    desc: "Tenant isolation, CSRF vectors, boundary constraints identified" },
+                { n: 3, label: "Layer 3 — Test Gen",      desc: "Proof-grade TypeScript tests generated (all parallel, ~60s)" },
+                { n: 4, label: "Layer 4 — LLM Checker",   desc: "Independent verification of each test against spec" },
+                { n: 5, label: "Layer 5 — False-Green Guard", desc: "8 mutation rules discard tests that can't catch real bugs" },
+              ].map((step) => (
+                <div key={step.n} className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                    {step.n}
                   </div>
-                  {step}
+                  <div>
+                    <span className="text-xs font-medium text-foreground">{step.label}</span>
+                    <span className="text-xs text-muted-foreground ml-1.5">{step.desc}</span>
+                  </div>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground pt-1">Typical analysis: 1–3 minutes depending on spec size.</p>
+            <div className="border-t border-border pt-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">You get a ZIP with:</p>
+              <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                {[
+                  "Playwright test suite (all categories)",
+                  "Zod response schemas (spec_drift)",
+                  "GitHub Actions CI/CD pipeline",
+                  "playwright.config.ts + tsconfig.json",
+                  "package.json (npm install → test)",
+                  "README.md with setup guide",
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <div className="w-1 h-1 rounded-full bg-primary/60 shrink-0" />
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground border-t border-border pt-2">Typical analysis: 1–3 minutes. Supported formats: PDF, Markdown, Word, plain text.</p>
           </div>
 
           <Button
