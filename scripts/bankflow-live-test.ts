@@ -236,13 +236,13 @@ async function runBankFlowTest() {
   console.log("\nStep 2: Generating proofs...");
   const rawProofs = await generateProofs(riskModel, mockAnalysis);
   console.log(`  ${rawProofs.length} proof files`);
-  rawProofs.forEach(p => console.log(`  ${p.filename} (${p.content.split("\n").length} lines)`));
+  rawProofs.forEach(p => console.log(`  ${p.filename} (${(p.code || "").split("\n").length} lines)`));
 
   // Step 3: Validate Proofs
   console.log("\nStep 3: Validating proofs...");
   const behaviorIds = bankFlowIR.behaviors.map(b => b.id);
   const suite = validateProofs(rawProofs, behaviorIds);
-  console.log(`  Validated: ${suite.validated.length}, Discarded: ${suite.discarded.length}`);
+  console.log(`  Validated: ${suite.proofs.length}, Discarded: ${suite.discardedProofs.length}`);
   console.log(`  Mutation Score: ${suite.verdict.score.toFixed(1)}/10.0`);
   console.log(`  Verdict: ${suite.verdict.summary}`);
 
@@ -255,7 +255,7 @@ async function runBankFlowTest() {
 
   // Step 5: Generate Report
   console.log("\nStep 5: Generating report...");
-  const report = generateReport(mockAnalysis, riskModel, suite, "BankFlow");
+  const report = generateReport(mockAnalysis, riskModel, suite as any, "BankFlow");
   console.log(`  ${report.split("\n").length} lines`);
 
   // Write output
@@ -266,7 +266,7 @@ async function runBankFlowTest() {
   for (const proof of rawProofs) {
     const filePath = path.join(outDir, proof.filename);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, proof.content);
+    fs.writeFileSync(filePath, proof.code || "");
   }
 
   for (const [filename, content] of Object.entries(helpers)) {
