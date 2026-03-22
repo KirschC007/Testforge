@@ -3365,7 +3365,7 @@ ${target.mutationTargets.slice(2).map(m => `  // Kills: ${m.description}`).join(
 `;
 }
 
-function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult): string {
+export function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult): string {
   const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
@@ -3383,12 +3383,70 @@ function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult
     ? `get${adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
 
-  // Build payload from known input fields only
+  // Build payload from known input fields using getValidDefault (no TODO_ placeholders)
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === ep);
-  const knownFields = epDef?.inputFields || [];
+  const knownFields: EndpointField[] = epDef?.inputFields || [];
   const payloadFields = knownFields.length > 0
-    ? knownFields.map(f => `    ${f.name}: "TODO_${f.name.toUpperCase()}",`).join("\n")
-    : `    // TODO: Add the actual input fields for ${ep}`;
+    ? knownFields
+        .filter(f => f.required)
+        .map(f => `    ${f.name}: ${getValidDefault(f, tenantConst)},`)
+        .join("\n")
+    : `    ${tenantField}: ${tenantConst}, // Add required fields for ${ep}`;
+
+  // Detect side-effects from ProofTarget.sideEffects
+  const stockSideEffect = target.sideEffects?.find(se =>
+    se.toLowerCase().includes("stock") || se.toLowerCase().includes("decrement") ||
+    se.toLowerCase().includes("inventory"));
+  const restoreSideEffect = target.sideEffects?.find(se =>
+    se.toLowerCase().includes("restore") || se.toLowerCase().includes("refund"));
+  const counterSideEffect = target.sideEffects?.find(se =>
+    se.includes("+=") || se.toLowerCase().includes("count"));
+
+  // Side-effect setup block (BEFORE the action)
+  // restoreSideEffect takes priority over stockSideEffect to avoid ambiguity
+  const effectiveStockSideEffect = restoreSideEffect ? null : stockSideEffect;
+  const sideEffectSetup = effectiveStockSideEffect || restoreSideEffect ? `
+  // Side-Effect-Check: Read stock BEFORE action
+  const { data: resourceBefore } = await trpcQuery(request, "${getEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const stockBefore = (Array.isArray(resourceBefore)
+    ? (resourceBefore as Record<string, unknown>[])[0]
+    : resourceBefore as Record<string, unknown>
+  )?.stock as number ?? 0;
+  expect(typeof stockBefore).toBe("number");
+  // Kills: Cannot read stock before action` : counterSideEffect ? `
+  // Side-Effect-Check: Read counter BEFORE action
+  const { data: before } = await trpcQuery(request, "${getEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const countBefore = (before as Record<string, unknown>)?.count as number ?? 0;` : "";
+
+  // Side-effect assertion block (AFTER the action)
+  const sideEffectAssert = effectiveStockSideEffect ? `
+  // Side-Effect: Verify stock DECREASED after action
+  const { data: resourceAfter } = await trpcQuery(request, "${getEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const stockAfter = (Array.isArray(resourceAfter)
+    ? (resourceAfter as Record<string, unknown>[])[0]
+    : resourceAfter as Record<string, unknown>
+  )?.stock as number;
+  expect(stockAfter).toBeLessThan(stockBefore);
+  // Kills: Not decrementing stock after ${ep}
+  expect(stockAfter).toBeGreaterThanOrEqual(0);
+  // Kills: Allow negative stock (overselling)` : restoreSideEffect ? `
+  // Side-Effect: Verify stock RESTORED after cancellation
+  const { data: resourceAfter2 } = await trpcQuery(request, "${getEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const stockAfter2 = (Array.isArray(resourceAfter2)
+    ? (resourceAfter2 as Record<string, unknown>[])[0]
+    : resourceAfter2 as Record<string, unknown>
+  )?.stock as number;
+  expect(stockAfter2).toBeGreaterThan(stockBefore);
+  // Kills: Not restoring stock on cancellation` : counterSideEffect ? `
+  const { data: after } = await trpcQuery(request, "${getEp}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  const countAfter = (after as Record<string, unknown>)?.count as number ?? 0;
+  expect(countAfter).toBe(countBefore + 1);
+  // Kills: Not incrementing counter in ${ep}` : "";
 
   // Build precondition comment block from actual spec preconditions
   const preconditionComments = target.preconditions.length > 0
@@ -3535,7 +3593,7 @@ ${preconditionComments}
   const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const ${resourceIdField} = created.id as number;
   expect(${resourceIdField}).toBeDefined();
-
+${sideEffectSetup}
   // Act
   const { data, status } = await trpcMutation(request, "${actionEp}", {
     ${resourceIdField},
@@ -3543,6 +3601,7 @@ ${preconditionComments}
   }, adminCookie);
   expect(status).toBe(200); // Kills: Remove success path in ${actionEp}
 ${assertionLines || "  expect((data as Record<string, unknown>)?.id).toBeDefined(); // Kills: Return undefined id"}
+${sideEffectAssert}
 ${killComments}
 });
 

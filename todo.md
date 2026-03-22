@@ -251,3 +251,31 @@
 ### Live Demo
 - [x] Demo-Analyse mit ShopCore Spec vorauffüllen (?demo=1 URL-Parameter)
 - [x] "Try Demo Spec" Button auf Landing Page
+
+## Phase 24: Delta-Briefing — 4 präzise Fixes
+
+### FIX 1: EndpointFieldDef + typed inputFields
+- [x] EndpointFieldDef interface (bereits als EndpointField implementiert) mit name, type, required, min, max, enumValues, arrayItemFields, isBoundaryField, isTenantKey
+- [x] APIEndpoint.inputFields ist EndpointField[] (nicht string[])
+- [x] Normalisierungs-Guard in parseSpec: Objekte bleiben Objekte
+- [x] Schicht-1-Prompt: typed inputFields mit Few-Shot-Beispiel (shopId, name, price, items)
+- [x] getValidDefault() Funktion (entspricht getDefaultForField aus Spec)
+- [x] generateBoundaryTest: calcBoundaryValues mit decimal step 0.01 für Preis-Felder
+- [x] generateBoundaryTest: buildArrayItemLiteral für array-Items als Objekte
+- [x] generateBoundaryTest: buildPayloadLine nutzt getValidDefault
+
+### FIX 2: generateBusinessLogicTest Side-Effects
+- [x] payloadFields mit getValidDefault (kein TODO_FIELDNAME mehr)
+- [x] sideEffects-Block für stock/counter (stockBefore/stockAfter, countBefore/countAfter)
+- [x] restoreSideEffect hat Priorität über stockSideEffect (keine Ambiguität)
+
+### Verifikation
+- [x] Check 1: 0 TODO_-Strings in generierten Tests
+- [x] Check 2: Numerische Boundary-Werte (999999.99, 0.01, isDecimal, step=0.01)
+- [x] Check 3: Array-Items als Objekte (arrayItemFields, buildArrayItemLiteral)
+- [x] Check 4: stockBefore/stockAfter in Business Logic
+- [x] Check 5: zod in package.json
+- [x] Check 6: helpers/schemas.ts existiert
+- [x] Check 7: spec_drift in templateMap
+- [x] Check 8: kein test-price/test-stock/test-sku
+- [x] 61/61 Tests grün, 0 TS-Fehler

@@ -4,11 +4,13 @@ import {
   validateProofs,
   generateReport,
   extractConstraints,
+  generateBusinessLogicTest,
   type AnalysisResult,
   type RawProof,
   type Behavior,
   type AnalysisIR,
   type EndpointField,
+  type ProofTarget,
 } from "./analyzer";
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────────
@@ -736,5 +738,90 @@ describe("findBoundaryFieldForBehavior", () => {
     const ep = makeEndpoint([]);
     const result = findBoundaryFieldForBehavior(b, ep);
     expect(result).toBeUndefined();
+  });
+});
+
+// ============================================================
+// Phase 24: FIX 2 — Business Logic Side-Effects + getValidDefault
+// ============================================================
+
+function makeBlTarget(overrides: Partial<ProofTarget> = {}): ProofTarget {
+  return {
+    id: "PROOF-B001-BL",
+    behaviorId: "B001",
+    type: "business_logic",
+    riskLevel: "high",
+    description: "Order creation decrements stock",
+    preconditions: ["User authenticated"],
+    assertions: [{ type: "http_status", target: "response", operator: "eq", value: 200, rationale: "Success" }],
+    mutationTargets: [{ description: "Remove stock decrement", expectedKill: true }],
+    endpoint: "orders.create",
+    sideEffects: [],
+    ...overrides,
+  };
+}
+
+describe("generateBusinessLogicTest — no TODO_ in payload", () => {
+  it("uses getValidDefault for required fields (no TODO_ string literals)", () => {
+    const result = makeAnalysisResult();
+    const target = makeBlTarget({ endpoint: "reservations.create" });
+    const code = generateBusinessLogicTest(target, result);
+    // Should not contain TODO_ string literals in payload values
+    expect(code).not.toMatch(/"TODO_[A-Z_]+"/);
+  });
+
+  it("uses numeric default for number fields", () => {
+    const result = makeAnalysisResult();
+    const target = makeBlTarget({ endpoint: "reservations.create" });
+    const code = generateBusinessLogicTest(target, result);
+    // partySize is a number field — should not be "test-partySize"
+    expect(code).not.toContain('"test-partySize"');
+  });
+});
+
+describe("generateBusinessLogicTest — side-effect detection", () => {
+  it("generates stockBefore/stockAfter when sideEffects contains 'stock'", () => {
+    const result = makeAnalysisResult();
+    const target = makeBlTarget({
+      endpoint: "reservations.create",
+      sideEffects: ["stock decremented by quantity"],
+    });
+    const code = generateBusinessLogicTest(target, result);
+    expect(code).toContain("stockBefore");
+    expect(code).toContain("stockAfter");
+    expect(code).toContain("toBeLessThan(stockBefore)");
+    expect(code).toContain("toBeGreaterThanOrEqual(0)");
+  });
+
+  it("generates countBefore/countAfter when sideEffects contains 'count'", () => {
+    const result = makeAnalysisResult();
+    const target = makeBlTarget({
+      endpoint: "reservations.create",
+      sideEffects: ["orderCount += 1"],
+    });
+    const code = generateBusinessLogicTest(target, result);
+    expect(code).toContain("countBefore");
+    expect(code).toContain("countAfter");
+    expect(code).toContain("toBe(countBefore + 1)");
+  });
+
+  it("generates stockAfter > stockBefore for restore/refund side-effects", () => {
+    const result = makeAnalysisResult();
+    const target = makeBlTarget({
+      endpoint: "reservations.create",
+      sideEffects: ["refund quantity to inventory"],
+    });
+    const code = generateBusinessLogicTest(target, result);
+    expect(code).toContain("stockBefore");
+    expect(code).toContain("stockAfter2");
+    expect(code).toContain("toBeGreaterThan(stockBefore)");
+  });
+
+  it("no side-effect block when sideEffects is empty", () => {
+    const result = makeAnalysisResult();
+    const target = makeBlTarget({ endpoint: "reservations.create", sideEffects: [] });
+    const code = generateBusinessLogicTest(target, result);
+    expect(code).not.toContain("stockBefore");
+    expect(code).not.toContain("countBefore");
   });
 });
