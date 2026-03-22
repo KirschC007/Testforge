@@ -306,8 +306,8 @@ CRITICAL RULES for statusMachine:
 - initialState: the state a new resource starts in
 - terminalStates: states from which no further transitions are allowed
 
---- FEW-SHOT EXAMPLE ---
-Input: "Tasks have status: todo | in_progress | review | done. Transitions: todo→in_progress, in_progress→review, review→done. No skipping, no reverse. Tasks have priority: low | medium | high. POST /api/trpc/tasks.create (input: workspaceId, title, priority; output: id, title, status, priority, createdAt). POST /api/trpc/tasks.updateStatus (input: id, workspaceId, status; output: id, status, updatedAt). Login: POST /api/trpc/auth.login. Task descriptions may contain personal data. GET /api/trpc/workspace.exportData exports all workspace data for GDPR compliance. DELETE /api/trpc/workspace.deleteAll permanently deletes all workspace data. tasks.getById returns 403 if task belongs to a different workspace."
+--- FEW-SHOT EXAMPLE (TaskManager + ShopCore) ---
+Input: "Tasks have status: todo | in_progress | review | done. Transitions: todo→in_progress, in_progress→review, review→done. No skipping, no reverse. Tasks have priority: low | medium | high. POST /api/trpc/tasks.create (input: workspaceId, title, priority; output: id, title, status, priority, createdAt). POST /api/trpc/tasks.updateStatus (input: id, workspaceId, status; output: id, status, updatedAt). Login: POST /api/trpc/auth.login. Task descriptions may contain personal data. GET /api/trpc/workspace.exportData exports all workspace data for GDPR compliance. DELETE /api/trpc/workspace.deleteAll permanently deletes all workspace data. tasks.getById returns 403 if task belongs to a different workspace. POST /api/trpc/products.create (input: shopId, name (1-100 chars), price (0.01-999999.99), stock (0-10000), sku (3-50 chars), priority enum low|medium|high|critical). POST /api/trpc/orders.create (input: shopId, customerId, items array of {productId, quantity (1-100)}, max 50 items). When order is created, stock is decremented by quantity ordered."
 
 Output fragment:
 {
@@ -372,6 +372,28 @@ Output fragment:
        {"name": "status", "type": "enum", "required": true, "enumValues": ["todo", "in_progress", "review", "done"]}
      ],
      "outputFields": ["id", "status", "updatedAt"]},
+    {"name": "products.create", "method": "POST /api/trpc/products.create", "auth": "requireShopAuth", "relatedBehaviors": ["B-003"],
+     "inputFields": [
+       {"name": "shopId", "type": "number", "required": true, "isTenantKey": true},
+       {"name": "name", "type": "string", "required": true, "min": 1, "max": 100, "isBoundaryField": true},
+       {"name": "price", "type": "number", "required": true, "min": 0.01, "max": 999999.99, "isBoundaryField": true},
+       {"name": "stock", "type": "number", "required": true, "min": 0, "max": 10000, "isBoundaryField": true},
+       {"name": "sku", "type": "string", "required": true, "min": 3, "max": 50, "isBoundaryField": true},
+       {"name": "priority", "type": "enum", "required": true, "enumValues": ["low", "medium", "high", "critical"], "isBoundaryField": true}
+     ],
+     "outputFields": ["id", "name", "price", "stock", "sku", "createdAt"]},
+    {"name": "orders.create", "method": "POST /api/trpc/orders.create", "auth": "requireShopAuth", "relatedBehaviors": ["B-004"],
+     "inputFields": [
+       {"name": "shopId", "type": "number", "required": true, "isTenantKey": true},
+       {"name": "customerId", "type": "number", "required": true},
+       {"name": "items", "type": "array", "required": true, "min": 1, "max": 50, "isBoundaryField": true,
+        "arrayItemType": "object",
+        "arrayItemFields": [
+          {"name": "productId", "type": "number", "required": true},
+          {"name": "quantity", "type": "number", "required": true, "min": 1, "max": 100, "isBoundaryField": true}
+        ]}
+     ],
+     "outputFields": ["id", "status", "totalAmount", "createdAt"]},
     {"name": "auth.login", "method": "POST /api/trpc/auth.login", "auth": "public", "relatedBehaviors": [],
      "inputFields": [
        {"name": "username", "type": "string", "required": true},
@@ -1207,7 +1229,33 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
         value: pc,
         rationale: `Spec postcondition: ${pc}`,
       })),
-      mutationTargets: [{ description: `Break the ${b.action} logic in ${endpoint}`, expectedKill: true }],
+      mutationTargets: (() => {
+        // Generate precise mutation targets from side-effects (Briefing Fix 5)
+        const blMutations: Array<{description: string; expectedKill: boolean}> = [
+          { description: `Remove success path in ${endpoint}`, expectedKill: true },
+        ];
+        for (const se of sideEffects) {
+          if (se.includes("+=") || se.includes("-=") || se.toLowerCase().includes("stock") || se.toLowerCase().includes("count") || se.toLowerCase().includes("decrement") || se.toLowerCase().includes("increment")) {
+            const fieldMatch = se.match(/(\w+)\s*(?:\+=|-=)/)?.[1] || se.split("=")[0].trim().split(".").pop();
+            const field = fieldMatch || "counter";
+            blMutations.push({ description: `Not updating ${field} after ${b.action} in ${endpoint}`, expectedKill: true });
+          } else if (se.includes("NOW()") || se.toLowerCase().includes("timestamp") || se.toLowerCase().includes("createdat") || se.toLowerCase().includes("updatedat")) {
+            const field = se.split("=")[0].trim().split(".").pop() || "timestamp";
+            blMutations.push({ description: `Not setting ${field} timestamp in ${endpoint}`, expectedKill: true });
+          } else {
+            blMutations.push({ description: `Skip side effect: ${se}`, expectedKill: true });
+          }
+        }
+        // Special case: stock decrement behaviors
+        const titleLower = b.title.toLowerCase();
+        if (titleLower.includes("stock") || titleLower.includes("decrement") || titleLower.includes("restore") || titleLower.includes("inventory")) {
+          blMutations.push(
+            { description: `Not decrementing stock after successful order`, expectedKill: true },
+            { description: `Decrementing stock by wrong amount`, expectedKill: true }
+          );
+        }
+        return blMutations;
+      })(),
       endpoint,
       sideEffects,
       resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
@@ -1763,11 +1811,15 @@ function calcBoundaryValues(f: EndpointField): {
     case "array": {
       const min = f.min ?? 1;
       const max = f.max ?? 50;
+      // Build a realistic array item (object or number)
+      const itemExpr = (f.arrayItemType === "object" && f.arrayItemFields?.length)
+        ? `{ ${f.arrayItemFields.map(af => `${af.name}: ${af.type === "number" ? (af.min !== undefined ? Math.max(af.min, 1) : 1) : `"test-${af.name}"`}`).join(", ")} }`
+        : (f.arrayItemType === "number" ? "1" : `"item"`);
       return {
-        belowMin: min > 1 ? `Array(${min - 1}).fill(1)` : "[]",
-        min: `Array(${min}).fill(1)`,
-        max: `Array(${max}).fill(1)`,
-        aboveMax: `Array(${max + 1}).fill(1)`,
+        belowMin: min > 1 ? `Array(${min - 1}).fill(${itemExpr})` : "[]",
+        min: `[${itemExpr}]`,
+        max: `Array(${max}).fill(${itemExpr})`,
+        aboveMax: `Array(${max + 1}).fill(${itemExpr})`,
         nullVal: "null",
       };
     }
@@ -1786,6 +1838,31 @@ function buildArrayItem(f: EndpointField, tenantConst: string): string {
   }
   if (f.arrayItemType === "number") return "1";
   return `"item"`;
+}
+
+/**
+ * Finds the best boundary field in an endpoint's inputFields.
+ * Priority: 1) exact match on target.boundaryField name
+ *           2) first isBoundaryField=true field
+ *           3) first non-tenant field with min/max
+ *           4) first non-tenant field
+ */
+function findBoundaryField(fields: EndpointField[], preferredName?: string): EndpointField | undefined {
+  if (!fields.length) return undefined;
+  // 1. Exact match by name
+  if (preferredName) {
+    const exact = fields.find(f => f.name.toLowerCase() === preferredName.toLowerCase());
+    if (exact) return exact;
+  }
+  // 2. First isBoundaryField=true (non-tenant)
+  const boundaryField = fields.find(f => f.isBoundaryField && !f.isTenantKey);
+  if (boundaryField) return boundaryField;
+  // 3. First field with min/max (non-tenant)
+  const constrainedField = fields.find(f => !f.isTenantKey && (f.min !== undefined || f.max !== undefined));
+  if (constrainedField) return constrainedField;
+  // 4. First non-tenant, non-id field
+  const nonTenant = fields.find(f => !f.isTenantKey && f.name !== "id");
+  return nonTenant || fields[0];
 }
 
 // ─── Test Generators ────────────────────────────────────────────────────────────
@@ -2781,36 +2858,20 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   }
 
   // Build a realistic base payload: known fields get sensible defaults, boundary field is injected via function
+  // Uses getValidDefault + buildArrayItem for semantically correct values (no "test-price", "test-stock")
   function buildPayloadLine(f: EndpointField, isBoundaryFieldArg: boolean): string {
     const fname = f.name;
-    const fl = fname.toLowerCase();
     if (isBoundaryFieldArg) return `    ${fname}: boundaryValue,`;
-    if (f.isTenantKey || fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) return `    ${fname}: ${tenantConst},`;
-    if (f.type === "date" || fl.includes("date") || fl.includes("datum")) return `    ${fname}: tomorrowStr(),`;
-    if (f.type === "number") return `    ${fname}: ${f.min !== undefined ? Math.max(f.min, 1) : 1},`;
-    if (f.type === "enum" && f.enumValues?.length) return `    ${fname}: "${f.enumValues[0]}",`;
+    // Use getValidDefault for all non-boundary fields — it handles all types correctly
+    const defaultVal = getValidDefault(f, tenantConst);
+    // For array fields: use buildArrayItem to get proper object syntax
     if (f.type === "array" && f.arrayItemType === "object" && f.arrayItemFields?.length) {
-      const itemFields = f.arrayItemFields.map(af => `${af.name}: ${af.type === "number" ? (af.min !== undefined ? Math.max(af.min, 1) : 1) : `"test-${af.name}"`}`).join(", ");
-      return `    ${fname}: [{ ${itemFields} }],`;
+      const item = buildArrayItem(f, tenantConst);
+      return `    ${fname}: [${item}],`;
     }
-    if (f.type === "array" && f.arrayItemType === "number") return `    ${fname}: [1],`;
-    if (fl.includes("priority")) {
-      const priorityVals = analysis.ir.enums?.priority || analysis.ir.enums?.Priority;
-      const firstPriority = priorityVals?.[0] || "medium";
-      return `    ${fname}: "${firstPriority}",`;
-    }
-    if (fl.includes("status")) {
-      const statusVals = analysis.ir.enums?.status || analysis.ir.enums?.Status;
-      const initialStatus = analysis.ir.statusMachine?.initialState || statusVals?.[0] || "active";
-      return `    ${fname}: "${initialStatus}",`;
-    }
-    if (fl.includes("email")) return `    ${fname}: "test@example.com",`;
-    if (fl.includes("phone")) return `    ${fname}: "+49123456789",`;
-    if (fl.includes("sku")) return `    ${fname}: "SKU-\${Date.now()}",`;
-    if (fl.includes("name") || fl.includes("title") || fl.includes("description")) return `    ${fname}: "Test ${fname}",`;
-    if (fl.includes("count") || fl.includes("size") || fl.includes("num") || fl === "page" || fl === "limit" || fl === "offset") return `    ${fname}: 1,`;
-    if (fl.includes("assignee")) return `    ${fname}: ${tenantConst},`;
-    return `    ${fname}: "test-${fname}",`;
+    // For date fields: use tomorrowStr()
+    if (f.type === "date" || f.name.toLowerCase().includes("date")) return `    ${fname}: tomorrowStr(),`;
+    return `    ${fname}: ${defaultVal},`;
   }
 
   const payloadLines = effectiveFields.length > 0
@@ -3292,7 +3353,20 @@ async function generateLLMTest(target: ProofTarget, analysis: AnalysisResult): P
       { role: "system", content: systemPrompt },
       {
         role: "user",
-        content: `Generate a Gold Standard Playwright test for this proof target:
+        content: (() => {
+        // Build endpoint schema section
+        const endpointDef = target.endpoint ? analysis.ir.apiEndpoints.find(e => e.name === target.endpoint) : null;
+        const validPayloadLines = target.resolvedPayload
+          ? Object.entries(target.resolvedPayload).map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`).join(",\n")
+          : endpointDef?.inputFields.map(f => `  ${f.name}: ${getValidDefault(f, `TEST_${(analysis.ir.tenantModel?.tenantEntity || "tenant").toUpperCase()}_ID`)}`).join(",\n") || "";
+
+        // Build side-effect instructions
+        const sideEffects = target.sideEffects || [];
+        const sideEffectInstructions = sideEffects.length > 0
+          ? `SIDE EFFECTS — you MUST verify EACH of these after the action:\n${sideEffects.map((se, i) => `${i + 1}. ${se}\n   → Read state BEFORE the action, then assert the change AFTER`).join("\n")}`
+          : "No side effects to verify.";
+
+        return `Generate a Gold Standard Playwright test for this proof target:
 
 ID: ${target.id}
 Behavior: ${target.description}
@@ -3301,17 +3375,31 @@ Proof Type: ${target.proofType}
 Endpoint: ${target.endpoint || "UNKNOWN — infer from behavior description"}
 Tenant Field: ${tenantField}
 Preconditions: ${target.preconditions.join("; ")}
-Side Effects: ${target.sideEffects?.join("; ") || "none"}
+
+Endpoint Input Schema (use ONLY these field names — NEVER invent others):
+{
+${validPayloadLines}
+}
+
+CRITICAL RULES FOR PAYLOAD:
+- Use ONLY the field names listed above — never invent other field names
+- For array fields: use proper array syntax with objects, NEVER dot notation
+  CORRECT:   items: [{ productId: 1, quantity: 2 }]
+  INCORRECT: items.productId: 1  (this is not valid TypeScript)
+- For enum fields: use one of the listed enum values as a string literal
+- For number fields: use a number literal, not a string
+
+${sideEffectInstructions}
+
 Required Assertions:
 ${target.assertions.map(a => `- ${a.target} ${a.operator} ${JSON.stringify(a.value)}: ${a.rationale}`).join("\n")}
 
-Mutation Targets (your test MUST kill ALL of these with '// Kills:' comments):
+Mutation Targets (kill ALL with '// Kills:' comments):
 ${target.mutationTargets.map((m, i) => `${i + 1}. ${m.description}`).join("\n")}
-${target.resolvedPayload ? `
-Valid payload example (use these exact field names and value types in your test — do NOT invent field names):
-${JSON.stringify(target.resolvedPayload, null, 2)}` : ""}
+
 Spec context: ${analysis.specType}
-Spec chapter: ${analysis.ir.behaviors.find(b => b.id === target.behaviorId)?.chapter || "unknown"}`,
+Spec chapter: ${analysis.ir.behaviors.find(b => b.id === target.behaviorId)?.chapter || "unknown"}`;
+      })(),
       },
     ],
     thinkingBudget: 2048,

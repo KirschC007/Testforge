@@ -182,3 +182,24 @@
 - [x] generateLLMTest(): validPayloadExample im User-Prompt wenn resolvedPayload vorhanden
 - [x] ShopCore Live-Test: 6/6 Checks grün (0 TODO_, 0 db-queries, 0 doppelte Keys, 7 createTestResource, 1 beforeAll, 0 TODO_REPLACE)
 - [x] Boundary-Tests: name="A" (min=1), name="A".repeat(101) (above max=100), price=0.01 (min), price=999999.99+0.01 (above max)
+
+## Phase 20: Definitives Abschluss-Briefing (6 Fixes + State-based Testing)
+- [ ] Fix 1: Schicht-1-Prompt — inputFields mit vollständigen Typen, min/max, enumValues, arrayItemFields, isBoundaryField (Briefing Fix 1)
+- [ ] Fix 2: Few-Shot-Beispiel — products.create + orders.create mit vollen inputFields (Briefing Fix 1)
+- [ ] Fix 3: findBoundaryField Hilfsfunktion — exakter Match → semantischer Match → Fallback (Briefing Fix 2)
+- [ ] Fix 4: generateBoundaryTest vollständig ersetzen — nutzt findBoundaryField + calcBoundaryValues + getValidDefault (Briefing Fix 3)
+- [ ] Fix 5: generateLLMTest userPrompt — Endpoint-Schema + Side-Effect-Instruktionen mit Vor/Nach-Vergleich (Briefing Fix 4)
+- [ ] Fix 6: buildProofTarget business_logic — präzise Mutation-Targets aus sideEffects (Briefing Fix 5)
+- [ ] Fix 7: generateHelpers — yesterdayStr() ergänzen (Briefing Fix 6)
+- [ ] ShopCore Live-Test: alle 8 Checks grün
+
+## Phase 20: Semantisch valide, fehlerentdeckende Tests
+- [x] Fix 1: Few-Shot-Beispiel im Schicht-1-Prompt um ShopCore-Endpoints erweitert (products.create + orders.create mit arrayItemFields)
+- [x] Fix 2: findBoundaryField() Hilfsfunktion — semantischer Match (isBoundaryField → min/max → non-tenant)
+- [x] Fix 3: buildPayloadLine in generateBoundaryTest nutzt getValidDefault + buildArrayItem (kein "test-price" mehr)
+- [x] Fix 4: calcBoundaryValues für Array-Felder — echte Objekte statt fill(1) (z.B. [{ productId: 1, quantity: 1 }])
+- [x] Fix 5: generateLLMTest userPrompt mit Endpoint-Schema + Side-Effect-Instruktionen (BEFORE/AFTER-Vergleich)
+- [x] Fix 6: buildProofTarget business_logic — präzise mutationTargets aus sideEffects (+=/-= → "Not updating stock")
+- [x] Fix 7: yesterdayStr bereits in api.ts exportiert und in Boundary-Imports verfügbar
+- [x] ShopCore Live-Test: 8/8 Checks grün (0 TODO_, 0 db-queries, 0 dot-notation, 12 createTestResource, 6 beforeAll, 251 Kills-Kommentare, 1 yesterdayStr, 0 TODO_REPLACE)
+- [x] 32/32 Unit-Tests grün, TypeScript 0 Errors
