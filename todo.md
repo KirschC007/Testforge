@@ -156,3 +156,9 @@
 - [x] Pipeline-Verifikation: 52 Behaviors, 28 Proof-Targets, 26 validierte Tests
 - [x] Alle 5 Test-Kategorien korrekt: boundary(6), csrf(5), dsgvo(6), idor(7), status_transition(4)
 - [x] 32/32 Unit-Tests grün, TypeScript 0 Errors
+
+## Phase 17: Platin-Fixes (2 letzte Bugs)
+- [x] Bug 1: logic.spec.ts Template — createTestResource statt TODO_TASKID, kein doppeltes workspaceId, INVALID_ASSERTION_PATTERNS-Filter
+- [x] Bug 2: CSRF — checkTypeScriptSyntax blockiert db-queries + TODO_ Literals, LLM-Tests fallen auf Template-Generator zurück
+- [x] Erfolgs-Kriterien: 5 grep-Checks grün (0 TODO_, 0 db-queries, 0 doppeltes workspaceId)
+- [x] Pipeline-Verifikation: 46 Behaviors, 34 validierte Tests, 32/32 Unit-Tests grün

@@ -1537,6 +1537,18 @@ function checkTypeScriptSyntax(code: string): string | null {
   // Check for obvious template artifacts
   if (code.includes('undefined}') || code.includes('null}') && code.includes('${')) return 'Unresolved template variable';
   if (code.includes('TODO_REPLACE_WITH_YOUR_ENDPOINT') && !code.includes('// ⚠️')) return null; // TODOs are allowed
+  // Check for forbidden non-existent imports
+  if (code.includes('from "../../helpers/db-queries"') || code.includes("from '../../helpers/db-queries'")) {
+    return 'Forbidden import: db-queries helper does not exist. Use API-based DB checks instead.';
+  }
+  if (code.includes('from "../../helpers/database"') || code.includes("from '../../helpers/database'")) {
+    return 'Forbidden import: database helper does not exist. Use API-based DB checks instead.';
+  }
+  // Check for TODO_ string literals (not comments) that would cause test failures
+  const todoLiteralMatch = code.match(/["']TODO_[A-Z_]+["']/);
+  if (todoLiteralMatch) {
+    return `Unresolved TODO literal in test code: ${todoLiteralMatch[0]}`;
+  }
   return null;
 }
 
@@ -2732,26 +2744,53 @@ function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult
     : "  // Precondition: valid authenticated user";
 
   // Build assertion lines from actual ProofTarget assertions
-  const assertionLines = target.assertions.map(a => {
+  // Filter out invalid assertions: postcondition strings (e.g. "new task created in DB") are not real field values
+  const INVALID_ASSERTION_PATTERNS = /created in db|deleted from db|updated in db|persisted|success|task created|record created|new task|new record/i;
+  const validAssertions = target.assertions.filter(a => {
+    if (typeof a.value === 'string' && INVALID_ASSERTION_PATTERNS.test(a.value)) return false; // skip postcondition strings
+    if (a.target.match(/^result\.\d+$/) && typeof a.value === 'string') return false; // skip result.0, result.1 etc. with string values
+    return true;
+  });
+  const assertionLines = validAssertions.map(a => {
     if (a.operator === "eq") return `  expect((data as Record<string, unknown>)?.["${a.target.split(".").pop()}"] ?? status).toBe(${JSON.stringify(a.value)}); // Kills: ${a.rationale}`;
     if (a.operator === "not_null") return `  expect((data as Record<string, unknown>)?.["${a.target.split(".").pop()}"]).toBeDefined(); // Kills: ${a.rationale}`;
-    if (a.operator === "in") return `  expect(${JSON.stringify(a.value)}).toContain((data as Record<string, unknown>)?.["${a.target.split(".").pop()}"]); // Kills: ${a.rationale}`;
+    if (a.operator === "in") return `  expect(${JSON.stringify(a.value)}).toContain((data as Record<string, unknown>)?.["${a.target.split(".").pop()}"]);  // Kills: ${a.rationale}`;
     return `  // Assert: ${a.target} ${a.operator} ${JSON.stringify(a.value)} — ${a.rationale}`;
   }).join("\n");
 
   // Build mutation kill comments from actual mutationTargets
   const killComments = target.mutationTargets.map(m => `  // Kills: ${m.description}`).join("\n");
 
+  // Build delete endpoint name (prefer tasks.delete, tasks.bulkDelete, etc.)
+  const deleteEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("delete") || e.name.toLowerCase().includes("remove"))?.name || null;
+  const bulkDeleteEp = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("bulk") && e.name.toLowerCase().includes("delete"))?.name || null;
+
+  // Determine if this behavior is about delete or bulkDelete
+  const behaviorTitle = (behavior?.title || target.description).toLowerCase();
+  const isDelete = behaviorTitle.includes("delete") || behaviorTitle.includes("remove");
+  const isBulkDelete = behaviorTitle.includes("bulk");
+  const actionEp = isBulkDelete ? (bulkDeleteEp || deleteEp || ep) : isDelete ? (deleteEp || ep) : ep;
+
+  // Build the resource ID field name (taskId, reservationId, etc.)
+  // Derive from the create endpoint name: "tasks.create" → "tasks" → "task" → "taskId"
+  const resourceEntity =
+    analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"))?.name?.split(".")[0]?.replace(/s$/, "") ||
+    analysis.ir.tenantModel?.tenantEntity?.replace(/s$/, "") ||
+    "task";
+  const resourceIdField = `${resourceEntity}Id`;
+
   return `import { test, expect } from "@playwright/test";
 import { trpcMutation, trpcQuery } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
+import { ${tenantConst}, createTestResource } from "../../helpers/factories";
 
 // ${target.id} — Business Logic: ${target.description}
-// Risk: ${target.riskLevel} | Endpoint: ${ep}
+// Risk: ${target.riskLevel} | Endpoint: ${actionEp}
 // Spec: ${behavior?.chapter || behavior?.specAnchor || ""}
 // Behavior: ${behavior?.title || target.description}
-${!hasEndpoint ? "// ⚠️  TODO: No endpoint found in spec. Replace TODO_REPLACE_WITH_MUTATION_ENDPOINT and TODO_REPLACE_WITH_QUERY_ENDPOINT." : ""}
+${!hasEndpoint ? "// ⚠️  TODO: No endpoint found in spec. Replace endpoint names below." : ""}
 
 let adminCookie: string;
 
@@ -2759,38 +2798,122 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-test("${target.id} — ${target.description.slice(0, 80)}", async ({ request }) => {
-${preconditionComments}
-  const { data, status } = await trpcMutation(request, "${ep}", {
+${isBulkDelete ? `test("${target.id}a — ${target.description.slice(0, 70)}", async ({ request }) => {
+  // Arrange: Create two real resources
+  const resource1 = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const resource2 = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const ${resourceIdField}s = [resource1.id as number, resource2.id as number];
+  expect(${resourceIdField}s[0]).toBeDefined();
+  expect(${resourceIdField}s[1]).toBeDefined();
+
+  // Act: Bulk delete
+  const { status, data } = await trpcMutation(request, "${actionEp}", {
+    ${resourceIdField}s,
     ${tenantField}: ${tenantConst},
-${payloadFields}
   }, adminCookie);
-  expect(status).toBe(200); // Kills: Remove success path in ${ep}
+
+  expect(status).toBe(200);
+  // Kills: Remove success path in ${actionEp}
+
+  const result = data as Record<string, unknown>;
+  expect(result?.deleted).toBe(2);
+  // Kills: Return wrong deleted count
+  expect(Array.isArray(result?.failed)).toBe(true);
+  expect((result?.failed as unknown[]).length).toBe(0);
+  // Kills: Report tasks as failed when they succeeded
+
+  // DB-Check: Both resources must be gone
+  for (const id of ${resourceIdField}s) {
+    const { status: getStatus } = await trpcQuery(request, "${getEp}",
+      { ${resourceIdField}: id, ${tenantField}: ${tenantConst} }, adminCookie);
+    expect(getStatus).toBe(404);
+    // Kills: Not actually deleting from DB
+  }
+});
+
+test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const { status } = await trpcMutation(request, "${actionEp}", {
+    ${resourceIdField}s: [resource.id as number],
+    ${tenantField}: ${tenantConst},
+  }, ""); // No cookie
+  expect([401, 403]).toContain(status);
+  // Kills: Remove role check from ${actionEp}
+});` : isDelete ? `test("${target.id}a — ${target.description.slice(0, 70)}", async ({ request }) => {
+  // Arrange: Create a real resource
+  const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const ${resourceIdField} = created.id as number;
+  expect(${resourceIdField}).toBeDefined();
+
+  // Act: Delete resource
+  const { status, data } = await trpcMutation(request, "${actionEp}", {
+    ${resourceIdField},
+    ${tenantField}: ${tenantConst},
+  }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove success path in ${actionEp}
+
+  expect((data as Record<string, unknown>)?.success).toBe(true);
+  // Kills: Return success:false on deletion
+
+  // DB-Check: Resource must be gone
+  const { status: getStatus } = await trpcQuery(request, "${getEp}",
+    { ${resourceIdField}, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(getStatus).toBe(404);
+  // Kills: Soft-delete instead of hard-delete
+});
+
+test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
+  const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const ${resourceIdField} = created.id as number;
+
+  const { status } = await trpcMutation(request, "${actionEp}", {
+    ${resourceIdField},
+    ${tenantField}: ${tenantConst},
+  }, ""); // No cookie
+
+  expect([401, 403]).toContain(status);
+  // Kills: Remove auth middleware from ${actionEp}
+});` : `test("${target.id}a — ${target.description.slice(0, 70)}", async ({ request }) => {
+${preconditionComments}
+  // Arrange: Create a real resource first
+  const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const ${resourceIdField} = created.id as number;
+  expect(${resourceIdField}).toBeDefined();
+
+  // Act
+  const { data, status } = await trpcMutation(request, "${actionEp}", {
+    ${resourceIdField},
+    ${tenantField}: ${tenantConst},
+  }, adminCookie);
+  expect(status).toBe(200); // Kills: Remove success path in ${actionEp}
 ${assertionLines || "  expect((data as Record<string, unknown>)?.id).toBeDefined(); // Kills: Return undefined id"}
 ${killComments}
 });
 
-test("${target.id} — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
-  const { status } = await trpcMutation(request, "${ep}", {
+test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
+  const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const ${resourceIdField} = created.id as number;
+
+  const { status } = await trpcMutation(request, "${actionEp}", {
+    ${resourceIdField},
     ${tenantField}: ${tenantConst},
-${payloadFields}
   }, "");
-  expect([401, 403]).toContain(status); // Kills: Remove auth middleware from ${ep}
+  expect([401, 403]).toContain(status); // Kills: Remove auth middleware from ${actionEp}
 });
 
-test("${target.id} — ${target.description.slice(0, 60)} persists to DB", async ({ request }) => {
-  const { data: created } = await trpcMutation(request, "${ep}", {
-    ${tenantField}: ${tenantConst},
-${payloadFields}
-  }, adminCookie);
-  const id = (created as Record<string, unknown>)?.id;
-  expect(id).toBeDefined(); // Kills: Don't return id from ${ep}
+test("${target.id}c — ${target.description.slice(0, 60)} persists to DB", async ({ request }) => {
+  const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const ${resourceIdField} = created.id as number;
+  expect(${resourceIdField}).toBeDefined(); // Kills: Don't return id from ${actionEp}
+
   const { data: fetched, status } = await trpcQuery(request, "${getEp}",
     { ${tenantField}: ${tenantConst} }, adminCookie);
   expect(status).toBe(200); // Kills: Remove ${getEp} endpoint
-  const items = Array.isArray(fetched) ? fetched : (fetched as Record<string, unknown[]>)?.items || [];
-  expect(items.some((r: unknown) => (r as Record<string, unknown>).id === id)).toBe(true); // Kills: Don't persist to DB
-});
+  const items = Array.isArray(fetched) ? fetched : (fetched as Record<string, unknown[]>)?.items || (fetched as Record<string, unknown[]>)?.tasks || [];
+  expect(items.some((r: unknown) => (r as Record<string, unknown>).id === ${resourceIdField})).toBe(true); // Kills: Don't persist to DB
+});`}
 `;
 }
 
@@ -2988,8 +3111,19 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
   const llmProofs: RawProof[] = (await Promise.all(
     llmTargets.map(async (target) => {
       try {
-        const code = await withTimeout(generateLLMTest(target, analysis), LLM_TIMEOUT_MS, "");
+        let code = await withTimeout(generateLLMTest(target, analysis), LLM_TIMEOUT_MS, "");
         if (!code) return null;
+        // Apply the same syntax check as template tests — fallback to template if LLM code is invalid
+        const llmSyntaxError = checkTypeScriptSyntax(code);
+        if (llmSyntaxError) {
+          console.warn(`[TestForge] LLM test ${target.id} has syntax error: ${llmSyntaxError} — falling back to template`);
+          const templateGen = templateMap[target.proofType];
+          if (templateGen) {
+            try { code = templateGen(target, analysis); } catch (e) { code = generateTODOStub(target, `LLM syntax error: ${llmSyntaxError}`); }
+          } else {
+            code = generateTODOStub(target, `LLM syntax error: ${llmSyntaxError}`);
+          }
+        }
         console.log(`[TestForge] LLM test ${target.id} done in ${Date.now() - t0}ms`);
         return {
           id: target.id,
