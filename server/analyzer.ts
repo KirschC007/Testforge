@@ -29,12 +29,26 @@ export interface Behavior {
   specAnchor?: string; // Exact quote from spec for anchor verification
 }
 
+export interface EndpointField {
+  name: string;
+  type: "string" | "number" | "boolean" | "date" | "array" | "object" | "enum";
+  required: boolean;
+  min?: number;           // For number: minimum value; for string/array: minimum length
+  max?: number;           // For number: maximum value; for string/array: maximum length
+  enumValues?: string[];  // For type: "enum"
+  arrayItemType?: "number" | "object"; // For type: "array"
+  arrayItemFields?: EndpointField[]; // For nested array items
+  isTenantKey?: boolean;  // true if this field is the tenant ID
+  isBoundaryField?: boolean; // true if this field has boundary validation
+  validDefault?: string;  // TypeScript expression for a valid default value
+}
+
 export interface APIEndpoint {
   name: string;           // e.g. "reservations.updateStatus"
   method: string;         // e.g. "POST /api/trpc/reservations.updateStatus"
   auth: string;           // e.g. "requireRestaurantAuth"
   relatedBehaviors: string[]; // behavior IDs
-  inputFields?: string[]; // known input fields
+  inputFields: EndpointField[]; // fully typed input fields
   outputFields?: string[]; // known output fields
 }
 
@@ -154,6 +168,7 @@ export interface ProofTarget {
   checkConfidence?: number;
   constraints?: FieldConstraint[];  // Boundary constraints extracted from spec
   transitionIndex?: number;          // For status_transition: which transition from statusMachine to use
+  resolvedPayload?: Record<string, unknown>; // Pre-built valid payload for LLM hint
 }
 
 export interface RiskModel {
@@ -260,15 +275,22 @@ Return JSON with these exact keys:
 - contradictions: [{ids, description}]
 - tenantModel: {tenantEntity, tenantIdField} or null
 - resources: [{name, table, tenantKey, operations, hasPII}]
-- apiEndpoints: [{name, method, auth, relatedBehaviors, inputFields: string[], outputFields: string[]}]
+- apiEndpoints: [{name, method, auth, relatedBehaviors, inputFields: EndpointField[], outputFields: string[]}]
 - authModel: {loginEndpoint, csrfEndpoint, csrfPattern, roles: [{name, envUserVar, envPassVar, defaultUser, defaultPass}]} or null
 - enums: object mapping field names to their allowed string values, e.g. {"status": ["todo","in_progress","done"], "priority": ["low","medium","high"]}
 - statusMachine: {states: string[], transitions: [[from,to],...], forbidden: [[from,to],...], initialState: string, terminalStates: string[]} or null
 - qualityScore: number 0-10
 - specType: string
 
-CRITICAL RULES for apiEndpoints:
-- inputFields MUST be a flat array of strings: ["workspaceId", "title", "status"] — NOT objects
+CRITICAL RULES for apiEndpoints.inputFields:
+- inputFields MUST be an array of EndpointField objects (NOT plain strings)
+- EndpointField schema: {name: string, type: "string"|"number"|"boolean"|"date"|"array"|"object"|"enum", required: boolean, min?: number, max?: number, enumValues?: string[], arrayItemType?: "number"|"object", arrayItemFields?: EndpointField[], isTenantKey?: boolean, isBoundaryField?: boolean}
+- Set isTenantKey: true for the tenant/workspace ID field
+- Set isBoundaryField: true for fields with explicit min/max constraints in the spec
+- For number fields: set min/max from spec (e.g. price: min=0.01, max=999999.99)
+- For string fields: set min/max from spec (e.g. name: min=1, max=100)
+- For array fields: set arrayItemType and arrayItemFields for nested objects (e.g. items: [{productId: number, quantity: number}])
+- For enum fields: set enumValues from the spec
 - Include ALL input parameters visible in the spec, including path params and query params
 - outputFields MUST be a flat array of strings: ["id", "title", "status", "createdAt"]
 
@@ -336,9 +358,26 @@ Output fragment:
     }
   ],
   "apiEndpoints": [
-    {"name": "tasks.create", "method": "POST /api/trpc/tasks.create", "auth": "requireAuth", "relatedBehaviors": ["B-002"], "inputFields": ["workspaceId", "title", "priority"], "outputFields": ["id", "title", "status", "priority", "createdAt"]},
-    {"name": "tasks.updateStatus", "method": "POST /api/trpc/tasks.updateStatus", "auth": "requireAuth", "relatedBehaviors": ["B-001"], "inputFields": ["id", "workspaceId", "status"], "outputFields": ["id", "status", "updatedAt"]},
-    {"name": "auth.login", "method": "POST /api/trpc/auth.login", "auth": "public", "relatedBehaviors": [], "inputFields": ["username", "password"], "outputFields": ["token"]}
+    {"name": "tasks.create", "method": "POST /api/trpc/tasks.create", "auth": "requireAuth", "relatedBehaviors": ["B-002"],
+     "inputFields": [
+       {"name": "workspaceId", "type": "number", "required": true, "isTenantKey": true},
+       {"name": "title", "type": "string", "required": true, "min": 1, "max": 100, "isBoundaryField": true},
+       {"name": "priority", "type": "enum", "required": false, "enumValues": ["low", "medium", "high"]}
+     ],
+     "outputFields": ["id", "title", "status", "priority", "createdAt"]},
+    {"name": "tasks.updateStatus", "method": "POST /api/trpc/tasks.updateStatus", "auth": "requireAuth", "relatedBehaviors": ["B-001"],
+     "inputFields": [
+       {"name": "id", "type": "number", "required": true},
+       {"name": "workspaceId", "type": "number", "required": true, "isTenantKey": true},
+       {"name": "status", "type": "enum", "required": true, "enumValues": ["todo", "in_progress", "review", "done"]}
+     ],
+     "outputFields": ["id", "status", "updatedAt"]},
+    {"name": "auth.login", "method": "POST /api/trpc/auth.login", "auth": "public", "relatedBehaviors": [],
+     "inputFields": [
+       {"name": "username", "type": "string", "required": true},
+       {"name": "password", "type": "string", "required": true}
+     ],
+     "outputFields": ["token"]}
   ],
   "enums": {
     "status": ["todo", "in_progress", "review", "done"],
@@ -471,9 +510,32 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     return true;
   });
 
-  // Normalize inputFields and outputFields: LLM sometimes returns objects instead of strings
-  // e.g. [{name: "workspaceId", type: "number"}] instead of ["workspaceId"]
-  const normalizeFields = (fields: unknown[]): string[] => fields.map((f: unknown) => {
+  // Normalize inputFields: LLM may return objects or strings — convert to EndpointField[]
+  const normalizeEndpointFields = (fields: unknown[]): EndpointField[] => fields.map((f: unknown) => {
+    if (typeof f === "string") {
+      // Legacy: plain string field name — convert to minimal EndpointField
+      return { name: f, type: "string", required: true };
+    }
+    if (f && typeof f === "object") {
+      const obj = f as Record<string, unknown>;
+      const name = String(obj.name || obj.field || obj.key || "unknown");
+      const type = (obj.type as EndpointField["type"]) || "string";
+      const required = obj.required !== false; // default true
+      const field: EndpointField = { name, type, required };
+      if (obj.min !== undefined) field.min = Number(obj.min);
+      if (obj.max !== undefined) field.max = Number(obj.max);
+      if (Array.isArray(obj.enumValues)) field.enumValues = obj.enumValues as string[];
+      if (obj.arrayItemType) field.arrayItemType = obj.arrayItemType as "number" | "object";
+      if (Array.isArray(obj.arrayItemFields)) field.arrayItemFields = normalizeEndpointFields(obj.arrayItemFields as unknown[]);
+      if (obj.isTenantKey) field.isTenantKey = true;
+      if (obj.isBoundaryField) field.isBoundaryField = true;
+      if (obj.validDefault) field.validDefault = String(obj.validDefault);
+      return field;
+    }
+    return { name: String(f), type: "string", required: true };
+  });
+  // Normalize outputFields: keep as string[]
+  const normalizeStringFields = (fields: unknown[]): string[] => fields.map((f: unknown) => {
     if (typeof f === "string") return f;
     if (f && typeof f === "object") {
       const obj = f as Record<string, unknown>;
@@ -483,8 +545,8 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
   });
   merged.apiEndpoints = merged.apiEndpoints.map(e => ({
     ...e,
-    inputFields: normalizeFields(e.inputFields || []),
-    outputFields: normalizeFields((e as unknown as Record<string, unknown[]>).outputFields || []),
+    inputFields: normalizeEndpointFields((e.inputFields as unknown as unknown[]) || []),
+    outputFields: normalizeStringFields((e as unknown as Record<string, unknown[]>).outputFields || []),
   }));
 
   return {
@@ -1123,6 +1185,16 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
   // business_logic — only generate if endpoint is known
   if (pt === "business_logic") {
     if (!endpoint) return null; // No endpoint = no test (DiscardReason: no_endpoint)
+    // Build resolvedPayload from endpoint inputFields
+    const blEpDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+    const blFields = blEpDef?.inputFields || [];
+    const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+    const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+    const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+    const resolvedPayload: Record<string, unknown> = {};
+    for (const f of blFields) {
+      resolvedPayload[f.name] = getValidDefault(f, tenantConst);
+    }
     return {
       ...base,
       id: `PROOF-${b.id}-BL`,
@@ -1138,6 +1210,7 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
       mutationTargets: [{ description: `Break the ${b.action} logic in ${endpoint}`, expectedKill: true }],
       endpoint,
       sideEffects,
+      resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
     };
   }
 
@@ -1292,7 +1365,7 @@ export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST
 ${createEndpoint ? `
 export interface CreateTestResourceOpts {
   ${tenantField}?: number;
-${(createEndpoint.inputFields || []).map((f: string) => `  ${f}?: unknown;`).join("\n")}
+${(createEndpoint.inputFields || []).map((f) => `  ${f.name}?: unknown;`).join("\n")}
   [key: string]: unknown;
 }
 
@@ -1303,18 +1376,26 @@ export async function createTestResource(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await trpcMutation(request, "${createEndpoint.name}", {
     ${tenantField}: opts.${tenantField} ?? TEST_${tenantEntity.toUpperCase()}_ID,
-${(createEndpoint.inputFields || []).map((f: string) => {
-  const fl = f.toLowerCase();
-  let defaultVal = `"TODO_${f.toUpperCase()}"`;
-  if (fl.includes("date") || fl.includes("datum")) defaultVal = "tomorrowStr()";
-  else if (fl.includes("email")) defaultVal = `\"test@example.com\"`;
-  else if (fl.includes("phone")) defaultVal = `\"+49176\${Date.now().toString().slice(-8)}\"`;
-  else if (fl.includes("name") || fl.includes("title")) defaultVal = `\"Test ${f}-\${Date.now()}\"`;
-  else if (fl.includes("status")) defaultVal = `\"active\"`;
-  else if (fl.includes("priority")) defaultVal = `\"medium\"`;
-  else if (fl.includes("count") || fl.includes("size") || fl.includes("num")) defaultVal = "1";
-  else if (fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  return `    ${f}: opts.${f} ?? ${defaultVal},`;
+${(createEndpoint.inputFields || []).map((f) => {
+  const fname = f.name;
+  const fl = fname.toLowerCase();
+  let defaultVal: string;
+  if (f.validDefault) defaultVal = f.validDefault;
+  else if (f.isTenantKey) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  else if (f.type === 'enum' && f.enumValues?.length) defaultVal = `\"${f.enumValues[0]}\"`;
+  else if (f.type === 'number') defaultVal = f.min !== undefined ? String(Math.max(f.min, 1)) : '1';
+  else if (f.type === 'boolean') defaultVal = 'false';
+  else if (f.type === 'date' || fl.includes('date') || fl.includes('datum')) defaultVal = 'tomorrowStr()';
+  else if (fl.includes('email')) defaultVal = `\"test@example.com\"`;
+  else if (fl.includes('phone')) defaultVal = `\"+49176\${Date.now().toString().slice(-8)}\"`;
+  else if (fl.includes('sku')) defaultVal = `\"SKU-\${Date.now()}\"`;
+  else if (fl.includes('name') || fl.includes('title')) defaultVal = `\"Test ${fname}-\${Date.now()}\"`;
+  else if (fl.includes('status')) defaultVal = `\"active\"`;
+  else if (fl.includes('priority')) defaultVal = `\"medium\"`;
+  else if (fl.includes('count') || fl.includes('size') || fl.includes('num')) defaultVal = '1';
+  else if (fl.includes('id') || fl.includes('workspace') || fl.includes('tenant')) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  else defaultVal = `\"test-${fname}\"`;
+  return `    ${fname}: opts.${fname} ?? ${defaultVal},`;
 }).join("\n")}
     ...opts,
   }, cookieHeader);
@@ -1594,6 +1675,121 @@ function getFilename(pt: ProofType): string {
   return map[pt];
 }
 
+// ─── Universal Field Helper Functions ──────────────────────────────────────────
+
+/**
+ * Returns a valid TypeScript expression for a field's default value.
+ * Used in test payloads to avoid TODO_ placeholders.
+ */
+function getValidDefault(f: EndpointField, tenantConst: string): string {
+  if (f.validDefault) return f.validDefault;
+  if (f.isTenantKey) return tenantConst;
+  const fl = f.name.toLowerCase();
+  switch (f.type) {
+    case "enum":
+      return f.enumValues?.length ? `"${f.enumValues[0]}"` : `"active"`;
+    case "number":
+      if (fl.includes("price") || fl.includes("amount")) return f.min !== undefined ? String(Math.max(f.min, 0.01)) : "1.00";
+      return f.min !== undefined ? String(Math.max(f.min, 1)) : "1";
+    case "boolean":
+      return "false";
+    case "date":
+      return "tomorrowStr()";
+    case "array":
+      if (f.arrayItemType === "object" && f.arrayItemFields?.length) {
+        const itemFields = f.arrayItemFields
+          .map(af => `${af.name}: ${getValidDefault(af, tenantConst)}`)
+          .join(", ");
+        return `[{ ${itemFields} }]`;
+      }
+      if (f.arrayItemType === "number") return "[1]";
+      return "[]";
+    case "string":
+    default:
+      if (fl.includes("date") || fl.includes("datum")) return "tomorrowStr()";
+      if (fl.includes("email")) return `"test@example.com"`;
+      if (fl.includes("phone")) return `"+49176${Date.now().toString().slice(-8)}"`;
+      if (fl.includes("sku")) return `"SKU-${Date.now()}"`;
+      if (fl.includes("name") || fl.includes("title")) return `"Test ${f.name}-${Date.now()}"`;
+      if (fl.includes("description")) return `"Test description"`;
+      if (fl.includes("status")) return `"active"`;
+      if (fl.includes("priority")) return `"medium"`;
+      if (fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) return tenantConst;
+      return `"test-${f.name}"`;
+  }
+}
+
+/**
+ * Returns boundary test values for a field based on its type and constraints.
+ * Returns { belowMin, min, max, aboveMax, nullVal } as TypeScript expressions.
+ */
+function calcBoundaryValues(f: EndpointField): {
+  belowMin: string; min: string; max: string; aboveMax: string; nullVal: string;
+} {
+  const fl = f.name.toLowerCase();
+  switch (f.type) {
+    case "number": {
+      const min = f.min ?? 0;
+      const max = f.max ?? 9999;
+      const isPrice = fl.includes("price") || fl.includes("amount") || fl.includes("cost");
+      if (isPrice) {
+        return {
+          belowMin: String(min - 0.01),
+          min: String(min),
+          max: String(max),
+          aboveMax: String(max + 0.01),
+          nullVal: "null",
+        };
+      }
+      return {
+        belowMin: String(min - 1),
+        min: String(min),
+        max: String(max),
+        aboveMax: String(max + 1),
+        nullVal: "null",
+      };
+    }
+    case "string": {
+      const min = f.min ?? 1;
+      const max = f.max ?? 255;
+      return {
+        belowMin: min > 1 ? `"${'A'.repeat(min - 1)}"` : `""`,
+        min: `"${'A'.repeat(min)}"`,
+        max: `"A".repeat(${max})`,
+        aboveMax: `"A".repeat(${max + 1})`,
+        nullVal: "null",
+      };
+    }
+    case "array": {
+      const min = f.min ?? 1;
+      const max = f.max ?? 50;
+      return {
+        belowMin: min > 1 ? `Array(${min - 1}).fill(1)` : "[]",
+        min: `Array(${min}).fill(1)`,
+        max: `Array(${max}).fill(1)`,
+        aboveMax: `Array(${max + 1}).fill(1)`,
+        nullVal: "null",
+      };
+    }
+    default:
+      return { belowMin: `""`, min: `"a"`, max: `"A".repeat(255)`, aboveMax: `"A".repeat(256)`, nullVal: "null" };
+  }
+}
+
+/**
+ * Builds a TypeScript array item expression for nested array fields.
+ */
+function buildArrayItem(f: EndpointField, tenantConst: string): string {
+  if (f.arrayItemType === "object" && f.arrayItemFields?.length) {
+    const fields = f.arrayItemFields.map(af => `${af.name}: ${getValidDefault(af, tenantConst)}`).join(", ");
+    return `{ ${fields} }`;
+  }
+  if (f.arrayItemType === "number") return "1";
+  return `"item"`;
+}
+
+// ─── Test Generators ────────────────────────────────────────────────────────────
+
 function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string {
   const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
@@ -1625,21 +1821,24 @@ function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string
     e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes(".get"))?.name || "TODO_REPLACE_WITH_GETBYID_ENDPOINT";
   // Build attack payload for mutation endpoints
   const attackPayloadLines = attackFields.map(f => {
-    const fl = f.toLowerCase();
-    if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantBConst},`;
-    if (fl === "id" || fl.endsWith("id") || fl.endsWith("ids")) return `        ${f}: resourceId,`;
+    const fname = f.name;
+    const fl = fname.toLowerCase();
+    if (f.isTenantKey || fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${fname}: ${tenantBConst},`;
+    if (fl === "id" || fl.endsWith("id") || fl.endsWith("ids")) return `        ${fname}: resourceId,`;
     if (fl.includes("status")) {
       const statusVals = analysis.ir.enums?.status || analysis.ir.statusMachine?.states || [];
-      return `        ${f}: "${statusVals[0] || "active"}",`;
+      return `        ${fname}: "${statusVals[0] || "active"}",`;
     }
-    if (fl.includes("title") || fl.includes("name")) return `        ${f}: "test-title",`;
-    return `        ${f}: "test-${f}",`;
+    if (fl.includes("title") || fl.includes("name")) return `        ${fname}: "test-title",`;
+    if (f.type === "number") return `        ${fname}: ${f.min !== undefined ? Math.max(f.min, 1) : 1},`;
+    if (f.type === "enum" && f.enumValues?.length) return `        ${fname}: "${f.enumValues[0]}",`;
+    return `        ${fname}: "test-${fname}",`;
   }).join("\n");
   // For array fields like taskIds, build a list payload
-  const hasArrayField = attackFields.some(f => f.toLowerCase().endsWith("ids") || f.toLowerCase().includes("ids"));
-  const arrayField = attackFields.find(f => f.toLowerCase().endsWith("ids") || f.toLowerCase().includes("ids"));
+  const hasArrayField = attackFields.some(f => f.name.toLowerCase().endsWith("ids") || f.name.toLowerCase().includes("ids"));
+  const arrayField = attackFields.find(f => f.name.toLowerCase().endsWith("ids") || f.name.toLowerCase().includes("ids"));
   const attackPayloadForArray = hasArrayField && arrayField
-    ? `        ${arrayField}: [resourceId],\n        ${tenantField}: ${tenantBConst},`
+    ? `        ${arrayField.name}: [resourceId],\n        ${tenantField}: ${tenantBConst},`
     : attackPayloadLines;
 
   return `import { test, expect } from "@playwright/test";
@@ -1758,63 +1957,67 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
   const knownFields = epDef?.inputFields || [];
 
   // Side-effect check: use a unique title field to verify no DB write after 403
-  const uniqueField = knownFields.find(f => f.toLowerCase().includes("title") || f.toLowerCase().includes("name")) || knownFields[0] || "title";
+  const uniqueField = knownFields.find(f => f.name.toLowerCase().includes("title") || f.name.toLowerCase().includes("name"))?.name || knownFields[0]?.name || "title";
   const listEndpointForDbCheck = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
 
   // Pre-compute payload lines (avoids nested backtick issues in template literals)
   // Track if any date field is used so we can import tomorrowStr
   let csrfHasDateField = false;
-  function buildCsrfPayloadLine(f: string, isUnique: boolean): string {
-    if (isUnique) return `        ${f}: uniqueTitle,`;
-    const fl = f.toLowerCase();
-    if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantConst},`;
-    if (fl.includes("date") || fl.includes("datum")) {
+  function buildCsrfPayloadLine(f: EndpointField, isUnique: boolean): string {
+    const fname = f.name;
+    const fl = fname.toLowerCase();
+    if (isUnique) return `        ${fname}: uniqueTitle,`;
+    if (f.isTenantKey || fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${fname}: ${tenantConst},`;
+    if (f.type === "date" || fl.includes("date") || fl.includes("datum")) {
       csrfHasDateField = true;
-      return `        ${f}: tomorrowStr(),`;
+      return `        ${fname}: tomorrowStr(),`;
     }
-    // assigneeId and other ID fields get the tenant constant (or a numeric 1 for non-workspace IDs)
-    if (fl.includes("assignee") || (fl.includes("id") && !fl.includes("workspace"))) return `        ${f}: ${tenantConst},`;
+    if (f.type === "number") return `        ${fname}: ${f.min !== undefined ? Math.max(f.min, 1) : 1},`;
+    if (f.type === "enum" && f.enumValues?.length) return `        ${fname}: "${f.enumValues[0]}",`;
+    if (fl.includes("assignee") || (fl.includes("id") && !fl.includes("workspace"))) return `        ${fname}: ${tenantConst},`;
     if (fl.includes("priority")) {
       const enumPriority = analysis.ir.enums && analysis.ir.enums.priority;
       const pv = (enumPriority && enumPriority[0]) || "medium";
-      return `        ${f}: "${pv}",`;
+      return `        ${fname}: "${pv}",`;
     }
     if (fl.includes("status")) {
       const enumStatus = analysis.ir.enums && analysis.ir.enums.status;
       const sm = analysis.ir.statusMachine;
       const sv = (sm && sm.initialState) || (enumStatus && enumStatus[0]) || "active";
-      return `        ${f}: "${sv}",`;
+      return `        ${fname}: "${sv}",`;
     }
-    return `        ${f}: "test-${f}",`;
+    return `        ${fname}: "test-${fname}",`;
   }
 
   const noTokenPayloadLines = knownFields.length > 0
-    ? knownFields.map(f => buildCsrfPayloadLine(f, f === uniqueField)).join("\n")
+    ? knownFields.map(f => buildCsrfPayloadLine(f, f.name === uniqueField)).join("\n")
     : `        ${tenantField}: ${tenantConst},\n        ${uniqueField}: uniqueTitle,\n        // TODO: Add other required fields for ${endpoint}`;
 
-  function buildCsrfPositivePayloadLine(f: string): string {
-    const fl = f.toLowerCase();
-    if (fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${f}: ${tenantConst},`;
-    if (fl.includes("date") || fl.includes("datum")) {
+  function buildCsrfPositivePayloadLine(f: EndpointField): string {
+    const fname = f.name;
+    const fl = fname.toLowerCase();
+    if (f.isTenantKey || fl === tenantField || fl.includes("workspace") || fl.includes("tenant")) return `        ${fname}: ${tenantConst},`;
+    if (f.type === "date" || fl.includes("date") || fl.includes("datum")) {
       csrfHasDateField = true;
-      return `        ${f}: tomorrowStr(),`;
+      return `        ${fname}: tomorrowStr(),`;
     }
-    if (fl.includes("title") || fl.includes("name")) return `        ${f}: "Test ${f} valid",`;
-    // assigneeId and other ID fields get the tenant constant
-    if (fl.includes("assignee") || (fl.includes("id") && !fl.includes("workspace"))) return `        ${f}: ${tenantConst},`;
+    if (f.type === "number") return `        ${fname}: ${f.min !== undefined ? Math.max(f.min, 1) : 1},`;
+    if (f.type === "enum" && f.enumValues?.length) return `        ${fname}: "${f.enumValues[0]}",`;
+    if (fl.includes("title") || fl.includes("name")) return `        ${fname}: "Test ${fname} valid",`;
+    if (fl.includes("assignee") || (fl.includes("id") && !fl.includes("workspace"))) return `        ${fname}: ${tenantConst},`;
     if (fl.includes("priority")) {
       const enumPriority2 = analysis.ir.enums && analysis.ir.enums.priority;
       const pv2 = (enumPriority2 && enumPriority2[0]) || "medium";
-      return `        ${f}: "${pv2}",`;
+      return `        ${fname}: "${pv2}",`;
     }
     if (fl.includes("status")) {
       const enumStatus2 = analysis.ir.enums && analysis.ir.enums.status;
       const sm2 = analysis.ir.statusMachine;
       const sv2 = (sm2 && sm2.initialState) || (enumStatus2 && enumStatus2[0]) || "active";
-      return `        ${f}: "${sv2}",`;
+      return `        ${fname}: "${sv2}",`;
     }
-    return `        ${f}: "test-${f}",`;
+    return `        ${fname}: "test-${fname}",`;
   }
 
   const positivePayloadLines = knownFields.length > 0
@@ -2541,81 +2744,80 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
 
   // CRITICAL: If fieldName is not in knownFields, try to find a better constraint whose field IS in knownFields
   // e.g. B-010 has constraints [{field:"date"}, {field:"dueDate"}] — prefer "dueDate" since it's in knownFields
+  const knownFieldNames = knownFields.map(f => f.name);
   let resolvedFieldName = fieldName;
-  if (!knownFields.includes(fieldName) && knownFields.length > 0) {
+  if (!knownFieldNames.includes(fieldName) && knownFields.length > 0) {
     const betterConstraint = target.constraints?.find(c =>
       c.type !== "enum" &&
       !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase()) &&
-      knownFields.includes(c.field)
+      knownFieldNames.includes(c.field)
     );
     if (betterConstraint) resolvedFieldName = betterConstraint.field;
   }
-  const fieldInKnown = knownFields.includes(resolvedFieldName);
-  const effectiveFields = fieldInKnown || knownFields.length === 0
+  const fieldInKnown = knownFieldNames.includes(resolvedFieldName);
+  const effectiveFields: EndpointField[] = fieldInKnown || knownFields.length === 0
     ? knownFields
-    : [...knownFields, resolvedFieldName]; // append boundary field if missing
+    : [...knownFields, { name: resolvedFieldName, type: "string", required: true }]; // append boundary field if missing
   // Use resolvedFieldName everywhere below
   const finalFieldName = resolvedFieldName;
 
-  // Build boundary values for each test case
+  // Build boundary values using the typed EndpointField from IR (if available)
+  // Fall back to constraint-based extraction for backward compatibility
+  const boundaryField: EndpointField = knownFields.find(f => f.name === finalFieldName) || {
+    name: finalFieldName,
+    type: isDateField ? "date" : isStringField ? "string" : isArrayField ? "array" : "number",
+    required: true,
+    min,
+    max: hasMax ? max : undefined,
+  };
+  const bv = calcBoundaryValues(boundaryField);
   function boundaryValue(bound: "min" | "max" | "below_min" | "above_max" | "null"): string {
-    if (bound === "null") return "null";
-    if (isDateField) {
-      if (bound === "min" || bound === "max") return "tomorrowStr()";
-      if (bound === "below_min") return "yesterdayStr()";
-      if (bound === "above_max") return "tomorrowStr()";
-    }
-    if (isStringField) {
-      if (bound === "min") return `"A".repeat(${min})`;
-      if (bound === "max") return `"A".repeat(${max})`;
-      if (bound === "below_min") return min > 1 ? `"A".repeat(${min - 1})` : `""`;
-      if (bound === "above_max") return `"A".repeat(${max + 1})`;
-    }
-    if (isArrayField) {
-      if (bound === "min") return `[1]`;
-      if (bound === "max") return `Array(${max}).fill(1)`;
-      if (bound === "below_min") return `[]`;
-      if (bound === "above_max") return `Array(${max + 1}).fill(1)`;
-    }
-    // Default: integer
-    if (bound === "min") return String(min);
-    if (bound === "max") return String(max);
-    if (bound === "below_min") return String(min - 1);
-    if (bound === "above_max") return String(max + 1);
-    return "null";
+    if (bound === "null") return bv.nullVal;
+    if (bound === "min") return bv.min;
+    if (bound === "max") return bv.max;
+    if (bound === "below_min") return bv.belowMin;
+    if (bound === "above_max") return bv.aboveMax;
+    return bv.nullVal;
   }
 
   // Build a realistic base payload: known fields get sensible defaults, boundary field is injected via function
-  function buildPayloadLine(f: string, isBoundaryField: boolean): string {
-    if (isBoundaryField) return `    ${f}: boundaryValue,`;
-    // Guess a sensible default from field name
-    const fl = f.toLowerCase();
-    if (fl.includes("date") || fl.includes("datum")) return `    ${f}: tomorrowStr(),`;
-    if (fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) return `    ${f}: ${tenantConst},`;
+  function buildPayloadLine(f: EndpointField, isBoundaryFieldArg: boolean): string {
+    const fname = f.name;
+    const fl = fname.toLowerCase();
+    if (isBoundaryFieldArg) return `    ${fname}: boundaryValue,`;
+    if (f.isTenantKey || fl.includes("id") || fl.includes("workspace") || fl.includes("tenant")) return `    ${fname}: ${tenantConst},`;
+    if (f.type === "date" || fl.includes("date") || fl.includes("datum")) return `    ${fname}: tomorrowStr(),`;
+    if (f.type === "number") return `    ${fname}: ${f.min !== undefined ? Math.max(f.min, 1) : 1},`;
+    if (f.type === "enum" && f.enumValues?.length) return `    ${fname}: "${f.enumValues[0]}",`;
+    if (f.type === "array" && f.arrayItemType === "object" && f.arrayItemFields?.length) {
+      const itemFields = f.arrayItemFields.map(af => `${af.name}: ${af.type === "number" ? (af.min !== undefined ? Math.max(af.min, 1) : 1) : `"test-${af.name}"`}`).join(", ");
+      return `    ${fname}: [{ ${itemFields} }],`;
+    }
+    if (f.type === "array" && f.arrayItemType === "number") return `    ${fname}: [1],`;
     if (fl.includes("priority")) {
       const priorityVals = analysis.ir.enums?.priority || analysis.ir.enums?.Priority;
       const firstPriority = priorityVals?.[0] || "medium";
-      return `    ${f}: "${firstPriority}",`;
+      return `    ${fname}: "${firstPriority}",`;
     }
     if (fl.includes("status")) {
       const statusVals = analysis.ir.enums?.status || analysis.ir.enums?.Status;
       const initialStatus = analysis.ir.statusMachine?.initialState || statusVals?.[0] || "active";
-      return `    ${f}: "${initialStatus}",`;
+      return `    ${fname}: "${initialStatus}",`;
     }
-    if (fl.includes("email")) return `    ${f}: "test@example.com",`;
-    if (fl.includes("phone")) return `    ${f}: "+49123456789",`;
-    if (fl.includes("name") || fl.includes("title") || fl.includes("description")) return `    ${f}: "Test ${f}",`;
-    if (fl.includes("count") || fl.includes("size") || fl.includes("num") || fl === "page" || fl === "limit" || fl === "offset") return `    ${f}: 1,`;
-    // assigneeId and similar optional user-reference IDs: use tenantConst or null
-    if (fl.includes("assignee")) return `    ${f}: ${tenantConst},`;
-    return `    ${f}: "test-${f}", // TODO: Replace with valid test value`;
+    if (fl.includes("email")) return `    ${fname}: "test@example.com",`;
+    if (fl.includes("phone")) return `    ${fname}: "+49123456789",`;
+    if (fl.includes("sku")) return `    ${fname}: "SKU-\${Date.now()}",`;
+    if (fl.includes("name") || fl.includes("title") || fl.includes("description")) return `    ${fname}: "Test ${fname}",`;
+    if (fl.includes("count") || fl.includes("size") || fl.includes("num") || fl === "page" || fl === "limit" || fl === "offset") return `    ${fname}: 1,`;
+    if (fl.includes("assignee")) return `    ${fname}: ${tenantConst},`;
+    return `    ${fname}: "test-${fname}",`;
   }
 
   const payloadLines = effectiveFields.length > 0
-    ? effectiveFields.map(f => buildPayloadLine(f, f === finalFieldName)).join("\n")
+    ? effectiveFields.map(f => buildPayloadLine(f, f.name === finalFieldName)).join("\n")
     : `    ${tenantField}: ${tenantConst},\n    ${finalFieldName}: boundaryValue, // TODO: Add other required fields for ${endpoint}`;
 
-  const needsTomorrowStr = isDateField || effectiveFields.some(f => f.toLowerCase().includes("date"));
+  const needsTomorrowStr = isDateField || effectiveFields.some(f => f.name.toLowerCase().includes("date"));
   // Use a unique payload function name per test to avoid conflicts when merged into one file
   const payloadFnName = `basePayload_${target.id.replace(/-/g, "_")}`;
 
@@ -2703,7 +2905,7 @@ function generateRiskScoringTest(target: ProofTarget, analysis: AnalysisResult):
   const createEpDef = analysis.ir.apiEndpoints.find(e => e.name === createEp);
   const createFields = createEpDef?.inputFields || [];
   const createPayload = createFields.length > 0
-    ? createFields.map(f => `    ${f}: "TODO_${f.toUpperCase()}",`).join("\n")
+    ? createFields.map(f => `    ${f.name}: "TODO_${f.name.toUpperCase()}",`).join("\n")
     : `    // TODO: Add the actual input fields for ${createEp}`;
 
   return `import { test, expect } from "@playwright/test";
@@ -2792,7 +2994,7 @@ function generateBusinessLogicTest(target: ProofTarget, analysis: AnalysisResult
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === ep);
   const knownFields = epDef?.inputFields || [];
   const payloadFields = knownFields.length > 0
-    ? knownFields.map(f => `    ${f}: "TODO_${f.toUpperCase()}",`).join("\n")
+    ? knownFields.map(f => `    ${f.name}: "TODO_${f.name.toUpperCase()}",`).join("\n")
     : `    // TODO: Add the actual input fields for ${ep}`;
 
   // Build precondition comment block from actual spec preconditions
@@ -3105,7 +3307,9 @@ ${target.assertions.map(a => `- ${a.target} ${a.operator} ${JSON.stringify(a.val
 
 Mutation Targets (your test MUST kill ALL of these with '// Kills:' comments):
 ${target.mutationTargets.map((m, i) => `${i + 1}. ${m.description}`).join("\n")}
-
+${target.resolvedPayload ? `
+Valid payload example (use these exact field names and value types in your test — do NOT invent field names):
+${JSON.stringify(target.resolvedPayload, null, 2)}` : ""}
 Spec context: ${analysis.specType}
 Spec chapter: ${analysis.ir.behaviors.find(b => b.id === target.behaviorId)?.chapter || "unknown"}`,
       },

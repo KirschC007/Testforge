@@ -170,3 +170,15 @@
 - [x] Fix 4: getEndpoint-Fallback für Status-Transition — orders.list als Fallback wenn kein getById
 - [x] Live-Test gegen ShopCore-Spec — 5/5 Checks grün (0 TODO_, 0 db-queries, 14 DSGVO-Endpoints, 3 Status-Werte)
 - [x] Output + Selbst-Einschätzung geliefert
+
+## Phase 19: Universelles Template-Briefing
+- [x] EndpointField Interface: name, type, min, max, enumValues, arrayItemType, arrayItemFields, isTenantKey, isBoundaryField, validDefault
+- [x] Schicht-1-Prompt: inputFields als EndpointField[] mit Few-Shot-Beispiel (tasks.create, tasks.updateStatus, auth.login)
+- [x] getValidDefault() Funktion (price → 1.00, stock → 1, sku → SKU-..., name → Test name)
+- [x] calcBoundaryValues() Funktion (string: "A".repeat(N), number: N±1, array: Array(N).fill(1))
+- [x] buildArrayItem() Funktion (nested objects mit getValidDefault)
+- [x] generateBoundaryTest() nutzt calcBoundaryValues + getValidDefault statt hardcoded Logik
+- [x] resolvedPayload in ProofTarget + buildProofTarget (business_logic) befüllt
+- [x] generateLLMTest(): validPayloadExample im User-Prompt wenn resolvedPayload vorhanden
+- [x] ShopCore Live-Test: 6/6 Checks grün (0 TODO_, 0 db-queries, 0 doppelte Keys, 7 createTestResource, 1 beforeAll, 0 TODO_REPLACE)
+- [x] Boundary-Tests: name="A" (min=1), name="A".repeat(101) (above max=100), price=0.01 (min), price=999999.99+0.01 (above max)
