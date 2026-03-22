@@ -105,10 +105,28 @@ export interface AnalysisIR {
   } | null;
 }
 
+export interface SpecHealthDimension {
+  name: string;
+  label: string;
+  passed: boolean;
+  score: number;       // 0-100 contribution
+  maxScore: number;    // max possible contribution
+  tip: string;         // actionable improvement hint
+  detail?: string;     // optional detail (e.g. "3/5 endpoints typed")
+}
+
+export interface SpecHealth {
+  score: number;       // 0-100 weighted total
+  grade: "A" | "B" | "C" | "D" | "F";
+  dimensions: SpecHealthDimension[];
+  summary: string;     // one-line human-readable summary
+}
+
 export interface AnalysisResult {
   ir: AnalysisIR;
   qualityScore: number;
   specType: string;
+  specHealth?: SpecHealth;
 }
 
 // LLM Checker types
@@ -791,6 +809,143 @@ export async function runLLMChecker(
     .map(r => r.behavior);
 
   return { checkedBehaviors, stats: { approved, flagged, rejected, avgConfidence } };
+}
+
+// ─── Spec Health Assessor ────────────────────────────────────────────────────
+
+export function assessSpecHealth(ir: AnalysisIR): SpecHealth {
+  const dims: SpecHealthDimension[] = [];
+
+  // Dimension 1: Typed input fields (20 pts)
+  // All endpoints should have typed EndpointField objects (not empty arrays)
+  const epWithTypedFields = ir.apiEndpoints.filter(ep =>
+    Array.isArray(ep.inputFields) && ep.inputFields.length > 0 &&
+    typeof ep.inputFields[0] === "object" && "type" in ep.inputFields[0]
+  );
+  const typedFieldsRatio = ir.apiEndpoints.length > 0
+    ? epWithTypedFields.length / ir.apiEndpoints.length : 0;
+  const typedFieldsScore = Math.round(typedFieldsRatio * 20);
+  dims.push({
+    name: "typed_fields",
+    label: "Typed Input Fields",
+    passed: typedFieldsRatio >= 0.8,
+    score: typedFieldsScore,
+    maxScore: 20,
+    tip: "Add field types (string/number/enum/array) and constraints (min/max) to all endpoint inputs",
+    detail: `${epWithTypedFields.length}/${ir.apiEndpoints.length} endpoints have typed fields`,
+  });
+
+  // Dimension 2: Enum values defined (15 pts)
+  // Endpoints with enum fields should have enumValues populated
+  const enumFields = ir.apiEndpoints.flatMap(ep =>
+    (ep.inputFields as Array<{type: string; enumValues?: string[]}>).filter(f => f.type === "enum")
+  );
+  const enumsWithValues = enumFields.filter(f => Array.isArray(f.enumValues) && f.enumValues.length > 0);
+  const enumScore = enumFields.length === 0 ? 15 :
+    Math.round((enumsWithValues.length / enumFields.length) * 15);
+  dims.push({
+    name: "enum_values",
+    label: "Enum Values Defined",
+    passed: enumFields.length === 0 || enumsWithValues.length === enumFields.length,
+    score: enumScore,
+    maxScore: 15,
+    tip: "List all allowed values for enum fields (e.g. status: todo|in_progress|done)",
+    detail: enumFields.length === 0 ? "No enum fields found" :
+      `${enumsWithValues.length}/${enumFields.length} enum fields have values`,
+  });
+
+  // Dimension 3: Boundary constraints (min/max) (20 pts)
+  // Numeric fields should have min/max defined
+  const numericFields = ir.apiEndpoints.flatMap(ep =>
+    (ep.inputFields as Array<{type: string; min?: number; max?: number; isBoundaryField?: boolean}>)
+      .filter(f => f.type === "number")
+  );
+  const numericWithBounds = numericFields.filter(f => f.min !== undefined || f.max !== undefined);
+  const boundaryScore = numericFields.length === 0 ? 20 :
+    Math.round((numericWithBounds.length / numericFields.length) * 20);
+  dims.push({
+    name: "boundary_constraints",
+    label: "Boundary Constraints",
+    passed: numericFields.length === 0 || numericWithBounds.length === numericFields.length,
+    score: boundaryScore,
+    maxScore: 20,
+    tip: "Add min/max constraints to numeric fields (e.g. price: 0.01–999999.99, quantity: 1–100)",
+    detail: numericFields.length === 0 ? "No numeric fields found" :
+      `${numericWithBounds.length}/${numericFields.length} numeric fields have bounds`,
+  });
+
+  // Dimension 4: Auth model present (15 pts)
+  const hasAuth = ir.authModel !== null &&
+    ir.authModel.loginEndpoint !== undefined &&
+    ir.authModel.roles.length > 0;
+  dims.push({
+    name: "auth_model",
+    label: "Authentication Model",
+    passed: hasAuth,
+    score: hasAuth ? 15 : 0,
+    maxScore: 15,
+    tip: "Document the login endpoint, session mechanism, and user roles (e.g. admin/user)",
+    detail: hasAuth
+      ? `Login: ${ir.authModel!.loginEndpoint}, ${ir.authModel!.roles.length} role(s)`
+      : "No auth model found",
+  });
+
+  // Dimension 5: Tenant model present (15 pts)
+  const hasTenant = ir.tenantModel !== null &&
+    ir.tenantModel.tenantEntity !== undefined &&
+    ir.tenantModel.tenantIdField !== undefined;
+  dims.push({
+    name: "tenant_model",
+    label: "Multi-Tenant Isolation",
+    passed: hasTenant,
+    score: hasTenant ? 15 : 0,
+    maxScore: 15,
+    tip: "Specify the tenant entity and ID field (e.g. restaurantId, shopId) for IDOR test generation",
+    detail: hasTenant
+      ? `Tenant: ${ir.tenantModel!.tenantEntity} (field: ${ir.tenantModel!.tenantIdField})`
+      : "No tenant model found",
+  });
+
+  // Dimension 6: Output fields documented (15 pts)
+  const epWithOutput = ir.apiEndpoints.filter(ep =>
+    Array.isArray(ep.outputFields) && ep.outputFields.length > 0
+  );
+  const outputRatio = ir.apiEndpoints.length > 0
+    ? epWithOutput.length / ir.apiEndpoints.length : 0;
+  const outputScore = Math.round(outputRatio * 15);
+  dims.push({
+    name: "output_fields",
+    label: "Response Shape Documented",
+    passed: outputRatio >= 0.8,
+    score: outputScore,
+    maxScore: 15,
+    tip: "Document the response fields for each endpoint to enable spec_drift schema validation tests",
+    detail: `${epWithOutput.length}/${ir.apiEndpoints.length} endpoints have output fields`,
+  });
+
+  // Calculate total score (0-100)
+  const totalScore = dims.reduce((sum, d) => sum + d.score, 0);
+  const maxPossible = dims.reduce((sum, d) => sum + d.maxScore, 0); // = 100
+  const score = Math.round((totalScore / maxPossible) * 100);
+
+  // Grade
+  const grade: SpecHealth["grade"] =
+    score >= 90 ? "A" :
+    score >= 75 ? "B" :
+    score >= 60 ? "C" :
+    score >= 40 ? "D" : "F";
+
+  // Summary
+  const failedDims = dims.filter(d => !d.passed);
+  const summary = failedDims.length === 0
+    ? `Excellent spec — all ${dims.length} quality dimensions passed`
+    : `${failedDims.length} dimension${failedDims.length > 1 ? "s" : ""} need improvement: ${failedDims.map(d => d.label).join(", ")}`;
+
+  return { score, grade, dimensions: dims, summary };
+}
+
+export function assessSpecHealthFromResult(analysis: AnalysisResult): SpecHealth {
+  return assessSpecHealth(analysis.ir);
 }
 
 // ─── Schicht 2: Risk Model Builder ────────────────────────────────────────────
@@ -4523,6 +4678,10 @@ export async function runAnalysisJob(
   const t1 = Date.now();
   const analysisResult = await parseSpec(specText);
   console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+
+  // Assess spec health immediately after parsing
+  analysisResult.specHealth = assessSpecHealth(analysisResult.ir);
+  console.log(`[TestForge] Spec Health: ${analysisResult.specHealth.score}/100 (${analysisResult.specHealth.grade}) — ${analysisResult.specHealth.summary}`);
 
   await progress(1, `Layer 1 fertig: ${analysisResult.ir.behaviors.length} Behaviors, ${analysisResult.ir.apiEndpoints.length} Endpoints gefunden`, { analysisResult });
 

@@ -279,3 +279,16 @@
 - [x] Check 7: spec_drift in templateMap
 - [x] Check 8: kein test-price/test-stock/test-sku
 - [x] 61/61 Tests grün, 0 TS-Fehler
+
+## Phase 25: Spec Health Score
+
+- [x] assessSpecHealth() in analyzer.ts — 6 Dimensionen (typed_fields, enum_values, boundary_constraints, auth_model, tenant_model, output_fields)
+- [x] SpecHealth Interface: score (0-100), grade (A-F), dimensions mit passed/failed/tip/detail
+- [x] AnalysisResult: specHealth optional hinzugefügt
+- [x] runAnalysisJob: specHealth nach parseSpec berechnet und in analysisResult gespeichert
+- [x] DB: specHealth in resultJson gespeichert (kein Schema-Migration nötig)
+- [x] tRPC: getSpecHealth Procedure + analysisResult gibt specHealth zurück
+- [x] Frontend AnalysisDetail: SpecHealthPanel Komponente nach Metrics-Row
+- [x] SpecHealthPanel: Balken-Diagramm, Tooltips mit Verbesserungstipps, Grade-Badge
+- [x] 72/72 Unit-Tests grün, 0 TS-Fehler
+- [x] Publish + ZIP

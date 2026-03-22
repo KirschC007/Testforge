@@ -825,3 +825,176 @@ describe("generateBusinessLogicTest — side-effect detection", () => {
     expect(code).not.toContain("countBefore");
   });
 });
+
+// ============================================================
+// Phase 25: Spec Health Score — assessSpecHealth
+// ============================================================
+
+import { assessSpecHealth, type AnalysisIR, type SpecHealth } from "./analyzer";
+
+function makeFullIR(overrides: Partial<AnalysisIR> = {}): AnalysisIR {
+  return {
+    behaviors: [makeBehavior()],
+    invariants: [],
+    ambiguities: [],
+    contradictions: [],
+    tenantModel: { tenantEntity: "restaurant", tenantIdField: "restaurantId" },
+    resources: [{ name: "reservations", table: "reservations", tenantKey: "restaurantId", operations: ["read", "create"], hasPII: false }],
+    apiEndpoints: [
+      {
+        name: "reservations.create",
+        method: "POST /api/trpc/reservations.create",
+        auth: "requireAuth",
+        relatedBehaviors: ["B001"],
+        inputFields: [
+          { name: "restaurantId", type: "number", required: true, isTenantKey: true, min: 1 },
+          { name: "guestName", type: "string", required: true },
+          { name: "partySize", type: "number", required: true, min: 1, max: 20 },
+          { name: "status", type: "enum", required: true, enumValues: ["pending", "confirmed"] },
+        ] as EndpointField[],
+        outputFields: ["id", "restaurantId", "status"],
+      },
+    ],
+    authModel: {
+      loginEndpoint: "/api/trpc/auth.login",
+      roles: [{ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "admin", defaultPass: "pass" }],
+    },
+    enums: { status: ["pending", "confirmed"] },
+    statusMachine: null,
+    ...overrides,
+  };
+}
+
+describe("assessSpecHealth — full spec", () => {
+  it("returns score 100 for a complete spec", () => {
+    const ir = makeFullIR();
+    const health = assessSpecHealth(ir);
+    expect(health.score).toBe(100);
+    expect(health.grade).toBe("A");
+    expect(health.dimensions.every(d => d.passed)).toBe(true);
+  });
+
+  it("returns grade A for score >= 90", () => {
+    const ir = makeFullIR();
+    const health = assessSpecHealth(ir);
+    expect(health.grade).toBe("A");
+  });
+});
+
+describe("assessSpecHealth — dimension failures", () => {
+  it("penalizes missing typed fields", () => {
+    const ir = makeFullIR({
+      apiEndpoints: [{
+        name: "reservations.create",
+        method: "POST",
+        auth: "requireAuth",
+        relatedBehaviors: [],
+        inputFields: [] as EndpointField[], // no fields
+        outputFields: ["id"],
+      }],
+    });
+    const health = assessSpecHealth(ir);
+    const dim = health.dimensions.find(d => d.name === "typed_fields")!;
+    expect(dim.passed).toBe(false);
+    expect(dim.score).toBe(0);
+  });
+
+  it("penalizes missing enum values", () => {
+    const ir = makeFullIR({
+      apiEndpoints: [{
+        name: "reservations.create",
+        method: "POST",
+        auth: "requireAuth",
+        relatedBehaviors: [],
+        inputFields: [
+          { name: "status", type: "enum", required: true } as EndpointField, // no enumValues
+        ],
+        outputFields: ["id"],
+      }],
+    });
+    const health = assessSpecHealth(ir);
+    const dim = health.dimensions.find(d => d.name === "enum_values")!;
+    expect(dim.passed).toBe(false);
+    expect(dim.score).toBe(0);
+  });
+
+  it("penalizes missing boundary constraints on numeric fields", () => {
+    const ir = makeFullIR({
+      apiEndpoints: [{
+        name: "reservations.create",
+        method: "POST",
+        auth: "requireAuth",
+        relatedBehaviors: [],
+        inputFields: [
+          { name: "partySize", type: "number", required: true } as EndpointField, // no min/max
+        ],
+        outputFields: ["id"],
+      }],
+    });
+    const health = assessSpecHealth(ir);
+    const dim = health.dimensions.find(d => d.name === "boundary_constraints")!;
+    expect(dim.passed).toBe(false);
+    expect(dim.score).toBe(0);
+  });
+
+  it("penalizes missing auth model", () => {
+    const ir = makeFullIR({ authModel: null });
+    const health = assessSpecHealth(ir);
+    const dim = health.dimensions.find(d => d.name === "auth_model")!;
+    expect(dim.passed).toBe(false);
+    expect(dim.score).toBe(0);
+  });
+
+  it("penalizes missing tenant model", () => {
+    const ir = makeFullIR({ tenantModel: null });
+    const health = assessSpecHealth(ir);
+    const dim = health.dimensions.find(d => d.name === "tenant_model")!;
+    expect(dim.passed).toBe(false);
+    expect(dim.score).toBe(0);
+  });
+
+  it("penalizes missing output fields", () => {
+    const ir = makeFullIR({
+      apiEndpoints: [{
+        name: "reservations.create",
+        method: "POST",
+        auth: "requireAuth",
+        relatedBehaviors: [],
+        inputFields: [{ name: "id", type: "number", required: true, min: 1 }] as EndpointField[],
+        outputFields: [], // no output fields
+      }],
+    });
+    const health = assessSpecHealth(ir);
+    const dim = health.dimensions.find(d => d.name === "output_fields")!;
+    expect(dim.passed).toBe(false);
+    expect(dim.score).toBe(0);
+  });
+});
+
+describe("assessSpecHealth — grade thresholds", () => {
+  it("returns grade F for empty spec", () => {
+    const ir = makeFullIR({
+      apiEndpoints: [],
+      authModel: null,
+      tenantModel: null,
+    });
+    const health = assessSpecHealth(ir);
+    // No endpoints = typed_fields pass (vacuously), enum pass, boundary pass, output pass
+    // But auth and tenant fail
+    expect(["A", "B", "C", "D", "F"]).toContain(health.grade);
+    expect(health.score).toBeGreaterThanOrEqual(0);
+    expect(health.score).toBeLessThanOrEqual(100);
+  });
+
+  it("summary mentions failed dimensions", () => {
+    const ir = makeFullIR({ authModel: null, tenantModel: null });
+    const health = assessSpecHealth(ir);
+    expect(health.summary).toContain("improvement");
+  });
+
+  it("summary is positive for perfect spec", () => {
+    const ir = makeFullIR();
+    const health = assessSpecHealth(ir);
+    expect(health.summary).toContain("Excellent");
+  });
+});

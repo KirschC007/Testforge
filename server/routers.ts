@@ -10,7 +10,7 @@ import {
   getAnalysesByUserId,
   updateAnalysis,
 } from "./db";
-import { runAnalysisJob } from "./analyzer";
+import { runAnalysisJob, assessSpecHealth, type AnalysisIR } from "./analyzer";
 import { storagePut, storageGet } from "./storage";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
@@ -279,6 +279,23 @@ export const appRouter = router({
         // Restart the job
         startAnalysisJobFromKey(input.id, analysis.specFileKey, analysis.projectName);
         return { id: input.id };
+      }),
+
+    // Quick spec health check — parses the IR from layer1Json and returns specHealth
+    getSpecHealth: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.id);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        // Try resultJson first (completed jobs), then layer1Json (in-progress)
+        const resultJson = (analysis.resultJson as any);
+        const layer1Json = (analysis.layer1Json as any);
+        const analysisResult = resultJson?.analysisResult || layer1Json;
+        if (!analysisResult?.ir) return null;
+        // Return cached specHealth if available, otherwise compute on the fly
+        if (analysisResult.specHealth) return analysisResult.specHealth;
+        return assessSpecHealth(analysisResult.ir as AnalysisIR);
       }),
 
     // Cancel a running or pending analysis

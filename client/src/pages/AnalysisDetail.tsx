@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
+import { SpecHealthPanel, type SpecHealth } from "@/components/SpecHealthPanel";
 
 const STEPS = [
   { key: "pending",   label: "Queued",               desc: "Waiting to start",                     layer: 0 },
@@ -256,6 +257,9 @@ export default function AnalysisDetail() {
   const specDriftProofs = allProofs.filter((p: any) => p.proofType === "spec_drift").length;
   const schemaCoverage = totalEndpoints > 0 ? Math.round((specDriftProofs / totalEndpoints) * 100) : 0;
 
+  // Extract specHealth from result
+  const specHealth: SpecHealth | null = result?.analysisResult?.specHealth || null;
+
   // Group proofs by type
   const proofGroups = groupProofsByCategory(allProofs);
 
@@ -408,6 +412,11 @@ export default function AnalysisDetail() {
                 color="var(--tf-blue)"
               />
             </div>
+
+            {/* Spec Health Panel */}
+            {specHealth && (
+              <SpecHealthPanel specHealth={specHealth} />
+            )}
 
             {/* Ambiguities */}
             {ir?.ambiguities?.length > 0 && (
