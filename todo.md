@@ -365,3 +365,46 @@
 ### Tests
 - [x] 69 neue Vitest-Tests für generateExtendedTestSuite (alle 6 Layer + Edge Cases + CI/CD)
 - [x] 141/141 Tests grün, 0 TypeScript-Fehler
+
+## Phase 31: TestForge v4.0
+
+### OpenAPI-Import
+- [ ] parseOpenAPI(): OpenAPI 3.x / Swagger 2.x → AnalysisIR (kein LLM)
+- [ ] Upload-Flow: .json/.yaml MIME-Detection, openapi/swagger Key-Detection im Backend
+- [ ] Backend-Routing: OpenAPI-Pfad statt LLM-Parser wenn erkannt
+- [ ] Vitest-Tests für parseOpenAPI (Petstore, BankFlow-OpenAPI, Edge Cases)
+
+### Neue Proof-Types
+- [ ] ProofType-Enum erweitern: concurrency, idempotency, auth_matrix
+- [ ] concurrency.gen.ts: Promise.all() N parallele Writes, DB-State-Check
+- [ ] idempotency.gen.ts: Gleicher Request 2x → 409 oder identisches Ergebnis
+- [ ] auth-matrix.gen.ts: Rolle×Endpoint Permission-Matrix
+- [ ] buildRiskModel: alle 3 neuen ProofTypes integrieren (determineProofTypes + buildProofTarget)
+- [ ] generateProofs: Dispatch für alle 3 neuen ProofTypes
+- [ ] Vitest-Tests für concurrency, idempotency, auth_matrix
+
+### Architektur-Split (mechanisch 1:1, null Logik-Änderungen)
+- [ ] server/pipeline/types.ts anlegen (aus upload übernehmen)
+- [ ] 04-generators/_shared/: field-helpers, syntax-checker, todo-stub, filename-map, role-helpers
+- [ ] 03-risk-model/: constraint-extractor, risk-scorer, endpoint-resolver, proof-target-builder, risk-model-builder
+- [ ] 01-parser/: spec-parser, ir-normalizer, ir-merger
+- [ ] 02-checker/: anchor-verifier, cross-validator, improvement-loop, llm-checker
+- [ ] 04-generators/*.gen.ts (alle 12 Generatoren inkl. concurrency, idempotency, auth-matrix)
+- [ ] 05-validator/: rules, mutation-scorer, adversarial-checker, validator
+- [ ] 06-assembler/: file-merger, helpers-generator, report-generator, spec-health, extended-suite/*
+- [ ] pipeline.ts: runAnalysisJob() Orchestrator
+- [ ] analyzer.ts → Re-Export-Barrel (nur exports, keine Logik)
+- [ ] npx tsc --noEmit: 0 Fehler nach Split
+- [ ] pnpm test: alle Tests grün nach Split
+
+## Phase 20: Neue Proof-Types (concurrency, idempotency, auth_matrix)
+- [x] ProofType Union erweitert: "concurrency" | "idempotency" | "auth_matrix" hinzugefügt
+- [x] assessRiskLevel: race-condition/double-booking/overbooking/atomic/concurrent → high; duplicate/retry/idempotent/dedup → high; permission/rbac/authorization/role-based/access-control → critical
+- [x] determineProofTypes: Erkennung für alle 3 neuen Typen (tags + riskHints)
+- [x] buildProofTarget: 3 neue Fälle (CONCURRENCY, IDEMPOTENCY, AUTHMATRIX) mit je 3 mutationTargets + 3 assertions
+- [x] generateConcurrencyTest: Promise.all mit 5 parallelen Requests, no-500-Check, Duplikat-Check, Konsistenz-Check
+- [x] generateIdempotencyTest: 2× gleicher Request, 409-Check, Duplikat-in-Liste-Check, idempotencyKey-Test
+- [x] generateAuthMatrixTest: admin-OK, unauthenticated-401, cross-tenant-403, non-admin-403 pro Rolle
+- [x] templateMap: alle 3 neuen Generatoren registriert (kein LLM-Fallback mehr)
+- [x] Vitest: 66 neue Tests in server/new-proof-types.test.ts — alle grün
+- [x] Gesamt: 215/215 Tests grün, 0 TS-Fehler

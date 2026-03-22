@@ -77,19 +77,31 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // File upload endpoint for spec text extraction + S3 storage
+  // Supports: .md, .txt, .pdf, .docx, .json (OpenAPI), .yaml/.yml (OpenAPI)
   app.post("/api/upload-spec", upload.single("file"), async (req: any, res: any) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file provided" });
-      const text = await extractTextFromFile(req.file.buffer, req.file.mimetype, req.file.originalname);
+      const originalname: string = req.file.originalname;
+      const mimetype: string = req.file.mimetype;
+      const isJsonFile = originalname.endsWith(".json") || mimetype === "application/json";
+      const isYamlFile = originalname.endsWith(".yaml") || originalname.endsWith(".yml") ||
+        mimetype === "application/x-yaml" || mimetype === "text/yaml";
+      const text = await extractTextFromFile(req.file.buffer, mimetype, originalname);
       if (!text || text.trim().length < 50) {
         return res.status(422).json({ error: "Could not extract readable text from file" });
       }
       const trimmed = text.trim();
-      // Store extracted text in S3 so analyses.create doesn't need to carry the full text
+      // Detect OpenAPI/Swagger documents — JSON or YAML files that have openapi/swagger key
+      let isOpenAPI = false;
+      if (isJsonFile || isYamlFile) {
+        const { isOpenAPIDocument } = await import("../openapi-parser");
+        isOpenAPI = isOpenAPIDocument(trimmed);
+      }
+      // Store raw content in S3 so analyses.create can choose LLM or OpenAPI path
       const { storagePut } = await import("../storage");
-      const key = `specs/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}.txt`;
-      await storagePut(key, Buffer.from(trimmed, "utf-8"), "text/plain");
-      res.json({ text: trimmed, filename: req.file.originalname, chars: trimmed.length, specKey: key });
+      const key = `specs/${Date.now()}-${originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      await storagePut(key, Buffer.from(trimmed, "utf-8"), isOpenAPI ? "application/json" : "text/plain");
+      res.json({ text: trimmed, filename: originalname, chars: trimmed.length, specKey: key, isOpenAPI });
     } catch (err: any) {
       console.error("[upload-spec]", err);
       res.status(500).json({ error: err.message || "Extraction failed" });

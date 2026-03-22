@@ -171,7 +171,7 @@ export interface CheckResult {
 }
 
 export type RiskLevel = "critical" | "high" | "medium" | "low";
-export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift";
+export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix";
 
 export interface ScoredBehavior {
   behavior: Behavior;
@@ -1037,10 +1037,19 @@ function assessRiskLevel(b: Behavior): RiskLevel {
   if (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit")) return "medium";
   // api-response / spec-drift behaviors: at least medium (contract violations break clients)
   if (combined.includes("api-response") || combined.includes("response-schema") || combined.includes("spec-drift")) return "medium";
+  // concurrency: race conditions and double-booking are high risk
+  if (combined.includes("race-condition") || combined.includes("double-booking") || combined.includes("overbooking") ||
+      combined.includes("atomic") || combined.includes("concurrent") || combined.includes("concurren")) return "high";
+  // idempotency: duplicate/retry scenarios are high risk
+  if (combined.includes("duplicate") || combined.includes("retry") || combined.includes("idempotent") ||
+      combined.includes("deduplication") || combined.includes("dedup")) return "high";
+  // auth_matrix: permission/role-based access is critical
+  if (combined.includes("permission") || combined.includes("rbac") || combined.includes("authorization") ||
+      combined.includes("role-based") || combined.includes("access-control") || combined.includes("auth-matrix")) return "critical";
   return "low";
 }
 
-function determineProofTypes(b: Behavior): ProofType[] {
+export function determineProofTypes(b: Behavior): ProofType[] {
   const types = new Set<ProofType>();
   const combined = [...b.tags, ...b.riskHints].join(" ").toLowerCase();
   if (combined.includes("idor") || combined.includes("cross-tenant") || combined.includes("multi-tenant")) types.add("idor");
@@ -1073,6 +1082,44 @@ function determineProofTypes(b: Behavior): ProofType[] {
   if (combined.includes("api-response") || combined.includes("response-schema") || combined.includes("spec-drift")) {
     types.add("spec_drift");
   }
+  // concurrency: race conditions, concurrent access, parallel requests, reservation/booking conflicts
+  if (
+    combined.includes("concurren") ||
+    combined.includes("race-condition") ||
+    combined.includes("race_condition") ||
+    combined.includes("parallel") ||
+    combined.includes("double-booking") ||
+    combined.includes("double_booking") ||
+    combined.includes("overbooking") ||
+    combined.includes("atomic")
+  ) {
+    types.add("concurrency");
+  }
+  // idempotency: duplicate submissions, retry safety, exactly-once semantics
+  if (
+    combined.includes("idempoten") ||
+    combined.includes("duplicate") ||
+    combined.includes("retry") ||
+    combined.includes("exactly-once") ||
+    combined.includes("exactly_once") ||
+    combined.includes("deduplication") ||
+    combined.includes("dedup")
+  ) {
+    types.add("idempotency");
+  }
+  // auth_matrix: role-based access, permission checks, authorization rules
+  if (
+    combined.includes("auth-matrix") ||
+    combined.includes("auth_matrix") ||
+    combined.includes("role-based") ||
+    combined.includes("rbac") ||
+    combined.includes("permission") ||
+    combined.includes("access-control") ||
+    combined.includes("access_control") ||
+    combined.includes("authorization")
+  ) {
+    types.add("auth_matrix");
+  }
   return Array.from(types);
 }
 
@@ -1102,6 +1149,9 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     business_logic: ["create", "update"],
     rate_limit: [],
     spec_drift: ["get", "list", "create", "update"],
+    concurrency: ["create", "update", "reserve", "book", "purchase"],
+    idempotency: ["create", "update", "submit", "process"],
+    auth_matrix: ["create", "update", "delete", "get", "list"],
   };
 
   const kws = keywords[proofType] || [];
@@ -1276,7 +1326,7 @@ export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldCon
   return constraints;
 }
 
-function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisResult): ProofTarget | null {
+export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisResult): ProofTarget | null {
   const b = sb.behavior;
   const base = { behaviorId: b.id, proofType: pt, riskLevel: sb.riskLevel };
   const endpoint = resolveEndpoint(b.id, pt, analysis);
@@ -1518,6 +1568,101 @@ function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisR
       endpoint,
       sideEffects,
       resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
+    };
+  }
+  if (pt === "concurrency") {
+    // Build a valid payload for the concurrent operation
+    const epDef = endpoint ? analysis.ir.apiEndpoints.find(e => e.name === endpoint) : null;
+    const inputFields = epDef?.inputFields || [];
+    const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+    const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+    const resolvedPayload: Record<string, unknown> = {};
+    for (const f of inputFields) {
+      resolvedPayload[f.name] = getValidDefault(f, tenantConst);
+    }
+    return {
+      ...base,
+      id: `PROOF-${b.id}-CONCURRENCY`,
+      description: `Concurrent ${b.action} on ${b.object} must not cause race conditions or data corruption`,
+      preconditions: [
+        "Authenticated user",
+        "Shared resource exists",
+        "System under concurrent load",
+      ],
+      assertions: [
+        { type: "http_status", target: "responses[0]", operator: "in", value: [200, 201, 409, 429], rationale: "First concurrent request must succeed or be rejected cleanly" },
+        { type: "field_value", target: "finalState.count", operator: "eq", value: 1, rationale: "Exactly one operation must win — no double-processing" },
+        { type: "field_value", target: "finalState.integrity", operator: "eq", value: true, rationale: "Data integrity must be maintained after concurrent access" },
+      ],
+      mutationTargets: [
+        { description: `Remove mutex/lock around ${b.action} in ${endpoint || b.object}`, expectedKill: true },
+        { description: `Allow both concurrent requests to succeed (double-booking)`, expectedKill: true },
+        { description: `Not using atomic DB operation for ${b.object} update`, expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
+    };
+  }
+  if (pt === "idempotency") {
+    // Build a valid payload for the idempotent operation
+    const epDef = endpoint ? analysis.ir.apiEndpoints.find(e => e.name === endpoint) : null;
+    const inputFields = epDef?.inputFields || [];
+    const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+    const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+    const resolvedPayload: Record<string, unknown> = {};
+    for (const f of inputFields) {
+      resolvedPayload[f.name] = getValidDefault(f, tenantConst);
+    }
+    return {
+      ...base,
+      id: `PROOF-${b.id}-IDEMPOTENCY`,
+      description: `Duplicate ${b.action} on ${b.object} must be idempotent — second call must not create duplicate`,
+      preconditions: [
+        "Authenticated user",
+        "First request already succeeded",
+      ],
+      assertions: [
+        { type: "http_status", target: "response2", operator: "in", value: [200, 201, 409], rationale: "Second identical request must return success or conflict — not 500" },
+        { type: "field_value", target: "db.count", operator: "eq", value: 1, rationale: "Only one record must exist after two identical requests" },
+        { type: "field_value", target: "response1.id", operator: "eq", value: "response2.id", rationale: "Both calls must return the same resource ID" },
+      ],
+      mutationTargets: [
+        { description: `Remove duplicate-check before ${b.action} in ${endpoint || b.object}`, expectedKill: true },
+        { description: `Not returning existing resource on duplicate ${b.action}`, expectedKill: true },
+        { description: `Creating second record instead of returning existing one`, expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
+    };
+  }
+  if (pt === "auth_matrix") {
+    const roles = analysis.ir.authModel?.roles || [];
+    const roleNames = roles.map(r => r.name);
+    return {
+      ...base,
+      id: `PROOF-${b.id}-AUTHMATRIX`,
+      description: `Authorization matrix for ${endpoint || b.object}: each role gets exactly the access it should`,
+      preconditions: [
+        "Multiple roles configured",
+        "Endpoint requires specific role",
+      ],
+      assertions: [
+        { type: "http_status", target: "unauthorizedResponse", operator: "in", value: [401, 403], rationale: "Unauthorized role must be rejected" },
+        { type: "http_status", target: "authorizedResponse", operator: "in", value: [200, 201], rationale: "Authorized role must succeed" },
+        { type: "field_absent", target: "unauthorizedResponse.data", operator: "eq", value: null, rationale: "Unauthorized response must not leak data" },
+      ],
+      mutationTargets: [
+        { description: `Remove role check in ${endpoint || b.object}`, expectedKill: true },
+        { description: `Allow lower-privileged role to access ${b.object}`, expectedKill: true },
+        ...roleNames.slice(0, 2).map(role => ({
+          description: `${role} should not be able to ${b.action} ${b.object}`,
+          expectedKill: true,
+        })),
+      ],
+      endpoint,
+      sideEffects,
     };
   }
 
@@ -2193,6 +2338,9 @@ function getFilename(pt: ProofType): string {
     boundary: "tests/business/boundary.spec.ts",
     business_logic: "tests/business/logic.spec.ts",
     spec_drift: "tests/integration/spec-drift.spec.ts",
+    concurrency: "tests/concurrency/race-conditions.spec.ts",
+    idempotency: "tests/integration/idempotency.spec.ts",
+    auth_matrix: "tests/security/auth-matrix.spec.ts",
   };
   return map[pt];
 }
@@ -4235,6 +4383,331 @@ Spec chapter: ${analysis.ir.behaviors.find(b => b.id === target.behaviorId)?.cha
   return response.choices[0].message.content as string;
 }
 
+// ─── Concurrency Test Generator ──────────────────────────────────────────────
+export function generateConcurrencyTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
+  const roleFnName = adminRole
+    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    : "getAdminCookie";
+  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+  const inputFields = epDef?.inputFields || [];
+  const behaviorTitle = behavior?.title || target.description;
+  const object = behavior?.object || target.endpoint?.split(".").pop() || "resource";
+  const action = behavior?.action || "create";
+
+  // Build payload from resolvedPayload or inputFields
+  const payloadLines: string[] = [];
+  const resolved = target.resolvedPayload || {};
+  for (const f of inputFields) {
+    const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
+    payloadLines.push(`    ${f.name}: ${JSON.stringify(val)},`);
+  }
+  if (payloadLines.length === 0) {
+    payloadLines.push(`    ${tenantEntity}Id: ${tenantConst},`);
+  }
+  const payloadStr = payloadLines.join("\n");
+  const fnSuffix = target.id.replace(/-/g, "_");
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery, BASE_URL } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// Proof: ${target.id}
+// Behavior: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Kills: ${target.mutationTargets.map(m => m.description).join(" | ")}
+
+function basePayload_${fnSuffix}() {
+  return {
+${payloadStr}
+  };
+}
+
+test.describe("Concurrency: ${behaviorTitle}", () => {
+  let cookie: string;
+
+  test.beforeAll(async ({ request }) => {
+    cookie = await ${roleFnName}(request);
+  });
+
+  test("concurrent ${action} requests must not cause race conditions", async ({ request }) => {
+    const CONCURRENCY = 5;
+    // Fire \${CONCURRENCY} identical requests simultaneously
+    const responses = await Promise.all(
+      Array.from({ length: CONCURRENCY }, () =>
+        trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
+      )
+    );
+    // At most one must succeed (or all must return deterministic results)
+    const successCount = responses.filter(r => r.status === 200 || r.status === 201).length;
+    const conflictCount = responses.filter(r => r.status === 409 || r.status === 429).length;
+    // Either exactly one succeeds (optimistic locking) or all succeed idempotently
+    expect(successCount + conflictCount).toBe(CONCURRENCY);
+    // No 500 errors allowed — system must handle concurrency gracefully
+    const errorCount = responses.filter(r => r.status >= 500).length;
+    expect(errorCount).toBe(0);
+  });
+
+  test("concurrent ${action} must not create duplicate ${object}s", async ({ request }) => {
+    const CONCURRENCY = 3;
+    const responses = await Promise.all(
+      Array.from({ length: CONCURRENCY }, () =>
+        trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
+      )
+    );
+    const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
+    // If multiple succeed, they must return the same resource (idempotent)
+    if (successResponses.length > 1) {
+      const ids = successResponses.map(r => r.data?.result?.data?.id).filter(Boolean);
+      const uniqueIds = new Set(ids);
+      // All successful responses must reference the same resource
+      expect(uniqueIds.size).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("system remains consistent after concurrent ${action}", async ({ request }) => {
+    // Perform concurrent operations
+    await Promise.all(
+      Array.from({ length: 3 }, () =>
+        trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
+      )
+    );
+    // Verify system state is consistent (no partial writes, no corruption)
+    const listResponse = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
+    expect(listResponse.status).toBe(200);
+    const items = listResponse.data?.result?.data;
+    expect(Array.isArray(items)).toBe(true);
+    // No duplicate entries with identical data
+    if (items && items.length > 1) {
+      const seen = new Set<string>();
+      for (const item of items) {
+        const key = JSON.stringify(item);
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
+  });
+});
+`;
+}
+
+// ─── Idempotency Test Generator ───────────────────────────────────────────────
+export function generateIdempotencyTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
+  const roleFnName = adminRole
+    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    : "getAdminCookie";
+  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+  const inputFields = epDef?.inputFields || [];
+  const behaviorTitle = behavior?.title || target.description;
+  const object = behavior?.object || target.endpoint?.split(".").pop() || "resource";
+  const action = behavior?.action || "create";
+
+  // Build payload
+  const payloadLines: string[] = [];
+  const resolved = target.resolvedPayload || {};
+  for (const f of inputFields) {
+    const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
+    payloadLines.push(`    ${f.name}: ${JSON.stringify(val)},`);
+  }
+  if (payloadLines.length === 0) {
+    payloadLines.push(`    ${tenantEntity}Id: ${tenantConst},`);
+  }
+  const payloadStr = payloadLines.join("\n");
+  const fnSuffix = target.id.replace(/-/g, "_");
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery, BASE_URL } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// Proof: ${target.id}
+// Behavior: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Kills: ${target.mutationTargets.map(m => m.description).join(" | ")}
+
+function basePayload_${fnSuffix}() {
+  return {
+${payloadStr}
+  };
+}
+
+test.describe("Idempotency: ${behaviorTitle}", () => {
+  let cookie: string;
+
+  test.beforeAll(async ({ request }) => {
+    cookie = await ${roleFnName}(request);
+  });
+
+  test("duplicate ${action} request must not create a second ${object}", async ({ request }) => {
+    const payload = basePayload_${fnSuffix}();
+    // First request
+    const response1 = await trpcMutation(request, "${endpoint}", payload, cookie);
+    expect(response1.status).toBeOneOf([200, 201]);
+    const id1 = response1.data?.result?.data?.id;
+    // Second identical request
+    const response2 = await trpcMutation(request, "${endpoint}", payload, cookie);
+    // Must succeed or return conflict — never 500
+    expect(response2.status).toBeOneOf([200, 201, 409]);
+    if (response2.status === 200 || response2.status === 201) {
+      // If it succeeds, must return the same resource
+      const id2 = response2.data?.result?.data?.id;
+      if (id1 && id2) {
+        expect(id2).toBe(id1);
+      }
+    }
+  });
+
+  test("repeated ${action} must not multiply side effects", async ({ request }) => {
+    const payload = basePayload_${fnSuffix}();
+    // Perform the operation twice
+    await trpcMutation(request, "${endpoint}", payload, cookie);
+    await trpcMutation(request, "${endpoint}", payload, cookie);
+    // Verify the list endpoint does not contain duplicates
+    const listResponse = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
+    expect(listResponse.status).toBe(200);
+    const items = listResponse.data?.result?.data;
+    if (Array.isArray(items)) {
+      // Count items matching our payload
+      const matchingItems = items.filter((item: Record<string, unknown>) => {
+        return Object.entries(payload).every(([k, v]) => item[k] === v);
+      });
+      // At most one matching item should exist
+      expect(matchingItems.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("${action} with idempotency key must return same result", async ({ request }) => {
+    const idempotencyKey = \`idem-\${Date.now()}-\${Math.random().toString(36).slice(2)}\`;
+    const payload = { ...basePayload_${fnSuffix}(), idempotencyKey };
+    // First call
+    const response1 = await trpcMutation(request, "${endpoint}", payload, cookie);
+    expect(response1.status).toBeOneOf([200, 201, 422]); // 422 if idempotencyKey not supported
+    // Second call with same key
+    const response2 = await trpcMutation(request, "${endpoint}", payload, cookie);
+    expect(response2.status).toBeOneOf([200, 201, 409, 422]);
+    // If both succeed, they must return identical data
+    if ((response1.status === 200 || response1.status === 201) &&
+        (response2.status === 200 || response2.status === 201)) {
+      const data1 = response1.data?.result?.data;
+      const data2 = response2.data?.result?.data;
+      if (data1?.id && data2?.id) {
+        expect(data2.id).toBe(data1.id);
+      }
+    }
+  });
+});
+`;
+}
+
+// ─── Auth Matrix Test Generator ───────────────────────────────────────────────
+export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
+  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const roles = analysis.ir.authModel?.roles || [];
+  const adminRole = roles.find(r => r.name.toLowerCase().includes("admin")) || roles[0];
+  const nonAdminRoles = roles.filter(r => r !== adminRole);
+  const adminFnName = adminRole
+    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    : "getAdminCookie";
+  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+  const inputFields = epDef?.inputFields || [];
+  const behaviorTitle = behavior?.title || target.description;
+  const object = behavior?.object || target.endpoint?.split(".").pop() || "resource";
+  const action = behavior?.action || "access";
+  const isWrite = ["create", "update", "delete", "cancel", "approve", "reject"].includes(action.toLowerCase());
+  const trpcFn = isWrite ? "trpcMutation" : "trpcQuery";
+
+  // Build payload
+  const payloadLines: string[] = [];
+  const resolved = target.resolvedPayload || {};
+  for (const f of inputFields) {
+    const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
+    payloadLines.push(`    ${f.name}: ${JSON.stringify(val)},`);
+  }
+  if (payloadLines.length === 0) {
+    payloadLines.push(`    ${tenantEntity}Id: ${tenantConst},`);
+  }
+  const payloadStr = payloadLines.join("\n");
+  const fnSuffix = target.id.replace(/-/g, "_");
+
+  // Build role cookie imports
+  const roleFnNames = roles.map(r =>
+    "get" + r.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+  );
+  const uniqueRoleFns = Array.from(new Set([adminFnName, ...roleFnNames]));
+
+  // Build non-admin role test blocks
+  const nonAdminTests = nonAdminRoles.slice(0, 2).map(role => {
+    const roleFn = "get" + role.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie";
+    return `
+  test("${role.name} must NOT be able to ${action} ${object}", async ({ request }) => {
+    const roleCookie = await ${roleFn}(request);
+    const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });`;
+  }).join("\n");
+
+  return `import { test, expect } from "@playwright/test";
+import { ${trpcFn}, trpcQuery, BASE_URL } from "../../helpers/api";
+import { ${uniqueRoleFns.join(", ")} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// Proof: ${target.id}
+// Behavior: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Kills: ${target.mutationTargets.map(m => m.description).join(" | ")}
+
+function basePayload_${fnSuffix}() {
+  return {
+${payloadStr}
+  };
+}
+
+test.describe("Auth Matrix: ${behaviorTitle}", () => {
+  test("${adminRole?.name || "admin"} must be able to ${action} ${object}", async ({ request }) => {
+    const cookie = await ${adminFnName}(request);
+    const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+  });
+
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+${nonAdminTests}
+  test("cross-tenant ${action} must be rejected", async ({ request }) => {
+    const cookie = await ${adminFnName}(request);
+    // Attempt to access a different tenant's ${object}
+    const crossTenantPayload = {
+      ...basePayload_${fnSuffix}(),
+      ${tenantEntity}Id: "DIFFERENT_TENANT_ID_THAT_DOES_NOT_BELONG_TO_CALLER",
+    };
+    const response = await ${trpcFn}(request, "${endpoint}", crossTenantPayload, cookie);
+    // Must be rejected — not allowed to access other tenants' data
+    expect(response.status).toBeOneOf([401, 403, 404]);
+  });
+});
+`;
+}
+
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const t0 = Date.now();
 
@@ -4249,6 +4722,9 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     business_logic: generateBusinessLogicTest,
     rate_limit: generateRateLimitTest,
     spec_drift: generateSpecDriftTest,
+    concurrency: generateConcurrencyTest,
+    idempotency: generateIdempotencyTest,
+    auth_matrix: generateAuthMatrixTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -4812,29 +5288,39 @@ export async function runAnalysisJob(
   };
 
   await progress(1, "Layer 1: Analysiere Spec...");
-
-  // Schicht 1: Spec parsing (ALL chunks parallel)
+  // Schicht 1: Spec parsing — OpenAPI fast-path or LLM-based
   const t1 = Date.now();
-  const analysisResult = await parseSpec(specText);
-  console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
-
-  // Assess spec health immediately after parsing
+  let analysisResult: AnalysisResult;
+  let llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
+  const { isOpenAPIDocument, parseOpenAPI } = await import("./openapi-parser");
+  if (isOpenAPIDocument(specText)) {
+    // Fast path: parse OpenAPI/Swagger directly — no LLM call, deterministic
+    console.log(`[TestForge] OpenAPI detected — using deterministic parser (no LLM)`);
+    await progress(1, "OpenAPI erkannt — deterministischer Parser (kein LLM-Call)...");
+    analysisResult = parseOpenAPI(specText);
+    // LLM Checker is skipped for OpenAPI — all behaviors are structurally derived
+    llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
+    console.log(`[TestForge] Schicht 1 (OpenAPI) done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+  } else {
+    // Standard LLM path
+    analysisResult = await parseSpec(specText);
+    console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+    // LLM Checker: verify all behaviors (parallel)
+    await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+    const t_checker = Date.now();
+    const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+      analysisResult.ir.behaviors,
+      specText
+    );
+    analysisResult.ir.behaviors = checkedBehaviors;
+    llmCheckerStats = checkerStats;
+    console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+    await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+  }
+  // Assess spec health (both paths)
   analysisResult.specHealth = assessSpecHealth(analysisResult.ir);
   console.log(`[TestForge] Spec Health: ${analysisResult.specHealth.score}/100 (${analysisResult.specHealth.grade}) — ${analysisResult.specHealth.summary}`);
-
   await progress(1, `Layer 1 fertig: ${analysisResult.ir.behaviors.length} Behaviors, ${analysisResult.ir.apiEndpoints.length} Endpoints gefunden`, { analysisResult });
-
-  // LLM Checker: verify all behaviors (parallel)
-  await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
-  const t_checker = Date.now();
-  const { checkedBehaviors, stats: llmCheckerStats } = await runLLMChecker(
-    analysisResult.ir.behaviors,
-    specText
-  );
-  analysisResult.ir.behaviors = checkedBehaviors;
-  console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
-
-  await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
 
   // Schicht 2: Risk model
   const t2 = Date.now();
