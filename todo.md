@@ -292,3 +292,16 @@
 - [x] SpecHealthPanel: Balken-Diagramm, Tooltips mit Verbesserungstipps, Grade-Badge
 - [x] 72/72 Unit-Tests grün, 0 TS-Fehler
 - [x] Publish + ZIP
+
+## Phase 26: Delta-Briefing Verifikation (pasted_content_8.txt)
+- [x] Alle 4 Fixes bereits in Phase 21-25 implementiert
+- [x] Fix generateRiskScoringTest: createPayload nutzt getValidDefault statt TODO_
+- [x] Check 1: 0 TODO_ Payload-Werte (nur TODO_REPLACE_WITH_* Fallbacks erlaubt)
+- [x] Check 2: 8 Treffer für numerische Boundary-Werte (999999, 0.01, isDecimal)
+- [x] Check 3: 15 Treffer für arrayItemFields
+- [x] Check 4: 6 Treffer für stockBefore/sideEffectSetup
+- [x] Check 5: zod in package.json
+- [x] Check 6: schemasTs in analyzer.ts
+- [x] Check 7: spec_drift in templateMap
+- [x] Check 8: 0 test-price/test-stock/test-sku
+- [x] 72/72 Tests grün, 0 TS-Fehler

@@ -3452,8 +3452,12 @@ function generateRiskScoringTest(target: ProofTarget, analysis: AnalysisResult):
   // Build create payload from known fields
   const createEpDef = analysis.ir.apiEndpoints.find(e => e.name === createEp);
   const createFields = createEpDef?.inputFields || [];
+  // Build create payload using getValidDefault (no TODO_ placeholders)
+  const tenantConst2 = analysis.ir.tenantModel?.tenantIdField
+    ? analysis.ir.tenantModel.tenantIdField.replace(/([A-Z])/g, '_$1').toUpperCase()
+    : 'TENANT_ID';
   const createPayload = createFields.length > 0
-    ? createFields.map(f => `    ${f.name}: "TODO_${f.name.toUpperCase()}",`).join("\n")
+    ? createFields.map(f => `    ${f.name}: ${getValidDefault(f as EndpointField, tenantConst2)},`).join("\n")
     : `    // TODO: Add the actual input fields for ${createEp}`;
 
   return `import { test, expect } from "@playwright/test";
