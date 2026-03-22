@@ -190,6 +190,69 @@ export function compressSpec(specText: string, maxChars: number): string {
 
 // ─── Pass 1: Structural Map ──────────────────────────────────────────────────
 
+// Normalize LLM output to ensure consistent types
+export function normalizeStructuralMap(raw: Record<string, unknown>): StructuralMap {
+  const sm = raw.statusMachine as Record<string, unknown> | null | undefined;
+  const am = raw.authModel as Record<string, unknown> | null | undefined;
+  return {
+    endpoints: Array.isArray(raw.endpoints) ? raw.endpoints as StructuralMap["endpoints"] : [],
+    statusMachine: sm ? {
+      entity: String(sm.entity || ""),
+      states: Array.isArray(sm.states) ? sm.states as string[] : [],
+      // Normalize transitions: accept [from,to] tuples OR {from,to} objects
+      transitions: Array.isArray(sm.transitions)
+        ? (sm.transitions as unknown[]).map((t: unknown): [string, string] => {
+            if (Array.isArray(t)) return [String(t[0]), String(t[1])];
+            if (t && typeof t === "object") {
+              const o = t as Record<string, unknown>;
+              return [String(o.from || o[0] || ""), String(o.to || o[1] || "")];
+            }
+            return [String(t), ""];
+          })
+        : [],
+      forbidden: Array.isArray(sm.forbidden)
+        ? (sm.forbidden as unknown[]).map((t: unknown): [string, string] => {
+            if (Array.isArray(t)) return [String(t[0]), String(t[1])];
+            if (t && typeof t === "object") {
+              const o = t as Record<string, unknown>;
+              return [String(o.from || o[0] || ""), String(o.to || o[1] || "")];
+            }
+            return [String(t), ""];
+          })
+        : [],
+      initialState: String(sm.initialState || ""),
+      terminalStates: Array.isArray(sm.terminalStates) ? sm.terminalStates as string[] : [],
+    } : null,
+    tenantModel: raw.tenantModel ? {
+      entity: String((raw.tenantModel as Record<string, unknown>).entity || ""),
+      idField: String((raw.tenantModel as Record<string, unknown>).idField || ""),
+    } : null,
+    authModel: am ? {
+      loginEndpoint: String(am.loginEndpoint || ""),
+      csrfEndpoint: String(am.csrfEndpoint || ""),
+      csrfPattern: String(am.csrfPattern || ""),
+      // Normalize roles: accept {name,permissions} or plain strings
+      roles: Array.isArray(am.roles)
+        ? (am.roles as unknown[]).map((r: unknown) => {
+            if (typeof r === "string") return { name: r, permissions: [] };
+            if (r && typeof r === "object") {
+              const o = r as Record<string, unknown>;
+              return { name: String(o.name || o.role || ""), permissions: Array.isArray(o.permissions) ? o.permissions as string[] : [] };
+            }
+            return { name: String(r), permissions: [] };
+          })
+        : [],
+    } : null,
+    enums: (raw.enums && typeof raw.enums === "object" && !Array.isArray(raw.enums))
+      ? Object.fromEntries(
+          Object.entries(raw.enums as Record<string, unknown>).map(([k, v]) => [k, Array.isArray(v) ? v as string[] : []])
+        )
+      : {},
+    piiTables: Array.isArray(raw.piiTables) ? raw.piiTables as string[] : [],
+    chapters: Array.isArray(raw.chapters) ? raw.chapters as StructuralMap["chapters"] : [],
+  };
+}
+
 export interface StructuralMap {
   endpoints: Array<{ name: string; method: string; auth: string; chapter: string }>;
   statusMachine: {
@@ -245,7 +308,8 @@ Output ONLY valid JSON. No markdown, no explanation.`;
 
   const content = response.choices[0].message.content as string;
   const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  const map = JSON.parse(cleaned) as StructuralMap;
+  const rawMap = JSON.parse(cleaned) as Record<string, unknown>;
+  const map = normalizeStructuralMap(rawMap);
 
   console.log(`[TestForge] Pass 1 done in ${Date.now() - t0}ms — ${map.endpoints?.length || 0} endpoints, ${map.statusMachine?.states?.length || 0} states, ${map.enums ? Object.keys(map.enums).length : 0} enums`);
   return map;

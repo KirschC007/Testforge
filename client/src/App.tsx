@@ -8,6 +8,7 @@ import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import AnalysisDetail from "./pages/AnalysisDetail";
 import NewAnalysis from "./pages/NewAnalysis";
+import Pricing from "./pages/Pricing";
 
 function Router() {
   return (
@@ -15,6 +16,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/analysis/new" component={NewAnalysis} />
+      <Route path="/pricing" component={Pricing} />
       <Route path="/analysis/:id" component={AnalysisDetail} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

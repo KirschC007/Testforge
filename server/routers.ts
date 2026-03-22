@@ -12,6 +12,11 @@ import {
   countAnalysesToday,
 } from "./db";
 import { runAnalysisJob, assessSpecHealth, type AnalysisIR } from "./analyzer";
+import { diffAnalysisIR } from "./analyzer/spec-diff";
+import { buildPRComment, postGitHubPRComment } from "./github-pr";
+import { scanGitHubRepo, parseGitHubUrl } from "./analyzer/repo-scanner";
+import { listProofPacks, getProofPack, type IndustryPack } from "./analyzer/industry-proof-packs";
+import { generatePlaywrightConfig, generateCIWorkflow } from "./analyzer/playwright-mcp";
 import { storagePut, storageGet } from "./storage";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
@@ -115,7 +120,9 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       }
       // Add extended README (overwrites helpers README with full 6-layer version)
       archive.append(extended.readme, { name: "README.md" });
-
+      // Add Playwright feedback CI workflow (S5-3) — posts results back to TestForge
+      const feedbackCI = generateCIWorkflow(analysisId, "https://testforge.dev");
+      archive.append(feedbackCI, { name: ".github/workflows/testforge-feedback.yml" });
       // Wait for both finalize and stream finish
       await Promise.all([
         archive.finalize(),
@@ -228,18 +235,25 @@ export const appRouter = router({
         githubUrl: z.string().url().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // ─── Free-Tier Rate Limit ─────────────────────────────────────────────
-        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : 5;
+        // ─── Plan-Based Rate Limit ────────────────────────────────────────────────────
+        const PLAN_LIMITS: Record<string, number> = {
+          free: 3,
+          pro: 50,
+          team: 200,
+          enterprise: Infinity,
+        };
+        const userPlan = (ctx.user as any).plan || "free";
+        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
         if (DAILY_LIMIT !== Infinity) {
           const todayCount = await countAnalysesToday(ctx.user.id);
           if (todayCount >= DAILY_LIMIT) {
             throw new TRPCError({
               code: "TOO_MANY_REQUESTS",
-              message: `Daily limit reached: ${DAILY_LIMIT} analyses per day. Resets at UTC midnight.`,
+              message: `Daily limit reached: ${DAILY_LIMIT} analyses/day on ${userPlan} plan. Upgrade for more.`,
             });
           }
         }
-        // ─────────────────────────────────────────────────────────────────────
+        // ──────────────────────────────────────────────────────────────────────────────
         const analysisId = await createAnalysis({
           userId: ctx.user.id,
           projectName: input.projectName,
@@ -350,6 +364,213 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+  }),
+
+  // ─── Spec Diff (S4-1) ────────────────────────────────────────────────────
+  diff: router({
+    // Compare two analyses: returns a structured diff of behaviors, endpoints, status machine
+    compare: protectedProcedure
+      .input(z.object({ baseId: z.number(), headId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const [base, head] = await Promise.all([
+          getAnalysisById(input.baseId),
+          getAnalysisById(input.headId),
+        ]);
+        if (!base || !head) throw new TRPCError({ code: "NOT_FOUND" });
+        if (base.userId !== ctx.user.id || head.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (base.status !== "completed" || head.status !== "completed") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Both analyses must be completed" });
+        }
+        const baseIR = (base.resultJson as any)?.analysisResult?.ir || (base.layer1Json as any)?.ir;
+        const headIR = (head.resultJson as any)?.analysisResult?.ir || (head.layer1Json as any)?.ir;
+        if (!baseIR || !headIR) throw new TRPCError({ code: "BAD_REQUEST", message: "IR not available for diff" });
+        return diffAnalysisIR(baseIR as AnalysisIR, headIR as AnalysisIR);
+      }),
+  }),
+
+  // ─── Feedback Loop (S4-2) ─────────────────────────────────────────────────
+  feedback: router({
+    // Submit test execution results back to TestForge for re-analysis
+    submitResults: protectedProcedure
+      .input(z.object({
+        analysisId: z.number(),
+        results: z.array(z.object({
+          proofId: z.string(),
+          passed: z.boolean(),
+          errorMessage: z.string().optional(),
+          actualResponse: z.string().optional(),
+          durationMs: z.number().optional(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        // Store feedback in resultJson
+        const existing = (analysis.resultJson as any) || {};
+        const feedbackEntry = {
+          submittedAt: new Date().toISOString(),
+          results: input.results,
+          passRate: input.results.length > 0
+            ? Math.round(input.results.filter(r => r.passed).length / input.results.length * 100)
+            : 0,
+        };
+        const feedbackHistory = existing.feedbackHistory || [];
+        feedbackHistory.push(feedbackEntry);
+        await updateAnalysis(input.analysisId, {
+          resultJson: { ...existing, feedbackHistory, latestFeedback: feedbackEntry },
+        } as any);
+        return {
+          received: input.results.length,
+          passRate: feedbackEntry.passRate,
+          failedProofs: input.results.filter(r => !r.passed).map(r => r.proofId),
+        };
+      }),
+    // Get feedback history for an analysis
+    getHistory: protectedProcedure
+      .input(z.object({ analysisId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const existing = (analysis.resultJson as any) || {};
+        return {
+          history: existing.feedbackHistory || [],
+          latest: existing.latestFeedback || null,
+        };
+      }),
+  }),
+
+  // ─── Repo Scanner (S5-1) ─────────────────────────────────────────────────
+  repoScan: router({
+    scan: protectedProcedure
+      .input(z.object({
+        githubUrl: z.string().url(),
+        githubToken: z.string().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const parsed = parseGitHubUrl(input.githubUrl);
+        if (!parsed) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid GitHub URL" });
+        return scanGitHubRepo(parsed.owner, parsed.repo, parsed.branch, input.githubToken);
+      }),
+  }),
+
+  // ─── Industry Proof Packs (S5-2) ─────────────────────────────────────────
+  proofPacks: router({
+    list: publicProcedure.query(() => listProofPacks()),
+    get: publicProcedure
+      .input(z.object({ industry: z.enum(["fintech", "healthtech", "ecommerce", "saas"]) }))
+      .query(({ input }) => getProofPack(input.industry as IndustryPack)),
+  }),
+
+  // ─── Playwright MCP (S5-3) ────────────────────────────────────────────────
+  playwright: router({
+    // Generate Playwright config for a completed analysis
+    generateConfig: protectedProcedure
+      .input(z.object({
+        analysisId: z.number(),
+        baseUrl: z.string().url(),
+        authToken: z.string().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const config = generatePlaywrightConfig({
+          baseUrl: input.baseUrl,
+          authToken: input.authToken,
+          timeout: 30000,
+          workers: 1,
+        });
+        const ciWorkflow = generateCIWorkflow(input.analysisId, "https://testforge.dev");
+        return { config, ciWorkflow };
+      }),
+  }),
+
+  // ─── GitHub PR Integration (S4-3) ────────────────────────────────────────
+  github: router({
+    // Post a PR comment with analysis results
+    postPRComment: protectedProcedure
+      .input(z.object({
+        analysisId: z.number(),
+        prUrl: z.string().url(),
+        githubToken: z.string().min(1),
+        baseAnalysisId: z.number().optional(), // For spec diff
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        // Build diff if base analysis provided
+        let diff = null;
+        if (input.baseAnalysisId) {
+          const base = await getAnalysisById(input.baseAnalysisId);
+          if (base && base.status === "completed" && analysis.status === "completed") {
+            const baseIR = (base.resultJson as any)?.analysisResult?.ir;
+            const headIR = (analysis.resultJson as any)?.analysisResult?.ir;
+            if (baseIR && headIR) {
+              diff = diffAnalysisIR(baseIR as AnalysisIR, headIR as AnalysisIR);
+            }
+          }
+        }
+        const reportUrl = `${input.prUrl.split("/pull/")[0].replace("github.com", "testforge.dev")}/analysis/${input.analysisId}`;
+        const comment = buildPRComment({ analysis, reportUrl, diff });
+        const result = await postGitHubPRComment(input.prUrl, comment, input.githubToken);
+        if (!result.success) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error });
+        }
+        return { commentUrl: result.commentUrl };
+      }),
+    // Generate PR comment markdown (without posting)
+    generateComment: protectedProcedure
+      .input(z.object({
+        analysisId: z.number(),
+        baseAnalysisId: z.number().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        let diff = null;
+        if (input.baseAnalysisId) {
+          const base = await getAnalysisById(input.baseAnalysisId);
+          if (base && base.status === "completed" && analysis.status === "completed") {
+            const baseIR = (base.resultJson as any)?.analysisResult?.ir;
+            const headIR = (analysis.resultJson as any)?.analysisResult?.ir;
+            if (baseIR && headIR) {
+              diff = diffAnalysisIR(baseIR as AnalysisIR, headIR as AnalysisIR);
+            }
+          }
+        }
+        const reportUrl = `https://testforge.dev/analysis/${input.analysisId}`;
+        return { markdown: buildPRComment({ analysis, reportUrl, diff }) };
+      }),
+  }),
+
+  // ─── Analytics / Usage Stats ──────────────────────────────────────────────
+  analytics: router({
+    getUsage: protectedProcedure.query(async ({ ctx }) => {
+      const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 50, team: 200, enterprise: Infinity };
+      const userPlan = (ctx.user as any).plan || "free";
+      const dailyLimit = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+      const todayCount = await countAnalysesToday(ctx.user.id);
+      const allAnalyses = await getAnalysesByUserId(ctx.user.id);
+      const completed = allAnalyses.filter((a: any) => a.status === "completed");
+      const totalProofs = completed.reduce((s: number, a: any) => s + (a.validatedProofCount || 0), 0);
+      const avgScore = completed.length > 0
+        ? Math.round(completed.reduce((s: number, a: any) => s + (a.verdictScore || 0), 0) / completed.length)
+        : 0;
+      return {
+        plan: userPlan,
+        dailyLimit,
+        todayCount,
+        remaining: dailyLimit === Infinity ? null : Math.max(0, dailyLimit - todayCount),
+        totalAnalyses: allAnalyses.length,
+        completedAnalyses: completed.length,
+        totalProofsGenerated: totalProofs,
+        avgVerdictScore: avgScore,
+      };
+    }),
   }),
 });
 

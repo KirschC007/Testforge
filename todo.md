@@ -500,3 +500,39 @@
 - [x] FIX-6: proof-generator.ts — generateFlowTest + templateMap + getFilename
 - [x] FIX-7: index.ts — neue Exports
 - [x] FIX-8: Vitest-Tests für alle neuen Generatoren (76 Tests in sprint3-generators.test.ts)
+
+## BLOCKER (22.03.2026 Nacht)
+- [x] B-1: server/analyzer.ts löschen (Monolith → Modul-Verzeichnis)
+- [x] B-2: Go-Code archivieren (cmd/ internal/ go.mod go.sum → archived/go-poc-v1/)
+
+## Sprint 1: Praxisvalidierung
+- [x] S1-1: Smart Parser gegen hey-listen Spec testen (test_smart_parser_live.mjs)
+- [x] S1-2: Volle Pipeline durchlaufen lassen + Prüfpunkte (TODO_REPLACE, neue ProofTypes, structuredSideEffects)
+
+## Sprint 2: UX für Marktfähigkeit
+- [x] S2-1: Landing Page aktualisieren (16 proof types, Flow/Cron/Webhook/FeatureGate in Grid, OpenAPI-Badge, Smart-Parser-Badge)
+- [x] S2-2: Onboarding-Wizard auf NewAnalysis-Page (3 Schritte: Format wählen, Upload + Spec Health Preview, Analyse starten)
+- [x] S2-3: Report-Page — Findings zuerst (Security Issues, Business Logic Gaps, dann Metrics)
+- [x] S2-4: OpenAPI First-Class auf NewAnalysis-Page (Empfohlen-Badge, Alternativ-Hinweis)
+
+## Sprint 3: Business-Modell
+- [x] S3-1: Rate-Limiting (5 Analysen/User/Tag, DB-basiert)
+- [x] S3-2: Pricing-Page (Free/Pro/Team/Enterprise, Stripe Checkout für Pro/Team)
+- [x] S3-3: Analytics (Page Views, Analyse-Events, Spec-Typ, ZIP-Download)
+
+## Sprint 4: Differenzierende Features
+- [x] S4-1: Spec-Diff (diffIR Funktion, Delta-ZIP, Diff-Badge auf Dashboard)
+- [x] S4-2: Feedback-Loop (Playwright JSON-Report Upload → Behavior-Mapping)
+- [x] S4-3: GitHub PR-Integration (Push to GitHub Button → Branch + PR)
+- [x] S4-4: Docker Self-Hosted (Dockerfile, docker-compose.yml, README)
+
+## Sprint 5: Qualitätssprünge
+- [x] S5-1: Repo-Scan (GitHub-URL → tRPC/Drizzle/Express Code-Analyse → perfekte IR)
+- [x] S5-2: Branchenspezifische Proof-Packs (Fintech, Healthcare, E-Commerce)
+- [x] S5-3: Playwright MCP Integration (generateMCPConfig, mcp-server.ts)
+
+## Abschluss
+- [ ] Website aktualisieren (alle Features korrekt darstellen)
+- [ ] Alle Tests grün verifizieren
+- [ ] Checkpoint speichern
+- [ ] ZIP erstellen

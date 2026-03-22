@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock,
   AlertCircle, ChevronDown, ChevronUp, Ban, RotateCcw, FileText,
-  Package, GitBranch, Zap, Lock, Scale, Activity, Search
+  Package, GitBranch, Zap, Lock, Scale, Activity, Search,
+  RefreshCw, Database, Star, ChevronRight, Layers
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
@@ -33,6 +34,17 @@ const PROOF_CATEGORIES: Record<string, { label: string; color: string; icon: Rea
   dsgvo:             { label: "DSGVO / GDPR",            color: "var(--tf-green)",  icon: <Scale className="w-3.5 h-3.5" />,    dir: "tests/compliance/" },
   status_transition: { label: "Status Transitions",      color: "var(--tf-blue)",   icon: <GitBranch className="w-3.5 h-3.5" />,dir: "tests/integration/" },
   risk_scoring:      { label: "Risk Scoring",            color: "var(--tf-blue)",   icon: <Activity className="w-3.5 h-3.5" />, dir: "tests/integration/" },
+  sqli:              { label: "SQL Injection",            color: "var(--tf-red)",    icon: <AlertCircle className="w-3.5 h-3.5" />,dir: "tests/security/" },
+  xss:               { label: "XSS / Injection",          color: "var(--tf-orange)", icon: <Shield className="w-3.5 h-3.5" />,    dir: "tests/security/" },
+  concurrency:       { label: "Concurrency / Race",       color: "var(--tf-red)",    icon: <Layers className="w-3.5 h-3.5" />,    dir: "tests/integration/" },
+  idempotency:       { label: "Idempotency",              color: "var(--tf-blue)",   icon: <RefreshCw className="w-3.5 h-3.5" />, dir: "tests/integration/" },
+  auth_matrix:       { label: "Auth Matrix",              color: "var(--tf-purple)", icon: <Lock className="w-3.5 h-3.5" />,      dir: "tests/security/" },
+  flow:              { label: "User Flows",               color: "var(--tf-blue)",   icon: <ChevronRight className="w-3.5 h-3.5" />,dir: "tests/integration/" },
+  cron_job:          { label: "Cron Jobs",                color: "var(--tf-green)",  icon: <Star className="w-3.5 h-3.5" />,      dir: "tests/integration/" },
+  webhook:           { label: "Webhooks",                 color: "var(--tf-orange)", icon: <Package className="w-3.5 h-3.5" />,   dir: "tests/integration/" },
+  feature_gate:      { label: "Feature Gates",            color: "var(--tf-purple)", icon: <Database className="w-3.5 h-3.5" />,  dir: "tests/integration/" },
+  data_integrity:    { label: "Data Integrity",           color: "var(--tf-yellow)", icon: <GitBranch className="w-3.5 h-3.5" />, dir: "tests/integration/" },
+  rbac:              { label: "RBAC / Permissions",       color: "var(--tf-purple)", icon: <Shield className="w-3.5 h-3.5" />,    dir: "tests/security/" },
 };
 
 function ProgressSteps({
@@ -402,11 +414,35 @@ export default function AnalysisDetail() {
               </Button>
             )}
             {analysis.status === "completed" && analysis.outputZipUrl && (
-              <a href={analysis.outputZipUrl} download>
-                <Button className="gap-2">
-                  <Download className="w-4 h-4" /> Download Tests (.zip)
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    const prUrl = window.prompt("GitHub PR URL (e.g. https://github.com/org/repo/pull/42):");
+                    if (!prUrl) return;
+                    const token = window.prompt("GitHub Personal Access Token (repo scope):");
+                    if (!token) return;
+                    fetch("/api/trpc/github.postPRComment", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "include",
+                      body: JSON.stringify({ json: { analysisId: parseInt(id || "0"), prUrl, githubToken: token } }),
+                    }).then(r => r.json()).then(d => {
+                      if (d.error) { alert("Error: " + d.error.message); return; }
+                      alert("PR comment posted: " + (d.result?.data?.commentUrl || "success"));
+                    }).catch(e => alert("Error: " + e.message));
+                  }}
+                >
+                  <GitBranch className="w-3.5 h-3.5" /> Post PR Comment
                 </Button>
-              </a>
+                <a href={analysis.outputZipUrl} download>
+                  <Button className="gap-2">
+                    <Download className="w-4 h-4" /> Download Tests (.zip)
+                  </Button>
+                </a>
+              </div>
             )}
           </div>
         </div>

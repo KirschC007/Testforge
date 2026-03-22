@@ -6,31 +6,37 @@ import {
   Shield, Zap, FileCode2, GitBranch, Lock, ArrowRight,
   CheckCircle2, Terminal, Package, Star, Activity,
   AlertTriangle, Layers, Database, RefreshCw, Eye,
-  Cpu, Repeat2, Users,
+  Cpu, Repeat2, Users, GitMerge, Clock, Webhook, ToggleLeft,
+  Code2, Sparkles,
 } from "lucide-react";
 
-// ─── Proof type definitions ────────────────────────────────────────────────
+// ─── Proof type definitions (16 types) ────────────────────────────────────
 const PROOF_TYPES = [
-  { id: "idor",            label: "IDOR",             icon: <Lock className="w-4 h-4" />,        color: "var(--tf-red)",    desc: "Cross-tenant isolation, ownership checks" },
-  { id: "csrf",            label: "CSRF",             icon: <Shield className="w-4 h-4" />,      color: "var(--tf-orange)", desc: "State-mutating endpoints, token validation" },
-  { id: "boundary",        label: "Boundary",         icon: <Activity className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "Min/max/null/overflow with decimal precision" },
-  { id: "business_logic",  label: "Business Logic",   icon: <Layers className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Before/after state, stock decrements, counters" },
-  { id: "status_transition", label: "Status Machine", icon: <RefreshCw className="w-4 h-4" />,   color: "var(--tf-purple)", desc: "Valid transitions, skip-prevention, terminal states" },
-  { id: "spec_drift",      label: "Spec Drift",       icon: <Eye className="w-4 h-4" />,         color: "var(--tf-green)",  desc: "Zod response schemas, field type validation" },
-  { id: "dsgvo",           label: "DSGVO / GDPR",     icon: <Database className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "PII anonymization, data export isolation" },
-  { id: "rate_limit",      label: "Rate Limit",       icon: <AlertTriangle className="w-4 h-4" />, color: "var(--tf-orange)", desc: "Auth brute-force, burst detection" },
-  { id: "concurrency",     label: "Concurrency",      icon: <Cpu className="w-4 h-4" />,          color: "var(--tf-red)",    desc: "Race conditions, double-booking, atomic operations" },
-  { id: "idempotency",     label: "Idempotency",      icon: <Repeat2 className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Duplicate requests, retry safety, deduplication" },
-  { id: "auth_matrix",     label: "Auth Matrix",      icon: <Users className="w-4 h-4" />,        color: "var(--tf-purple)", desc: "Role-based access: admin/user/unauthenticated/cross-tenant" },
+  { id: "idor",             label: "IDOR",             icon: <Lock className="w-4 h-4" />,        color: "var(--tf-red)",    desc: "Cross-tenant isolation, ownership checks" },
+  { id: "csrf",             label: "CSRF",             icon: <Shield className="w-4 h-4" />,      color: "var(--tf-orange)", desc: "State-mutating endpoints, token validation" },
+  { id: "boundary",         label: "Boundary",         icon: <Activity className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "Min/max/null/overflow with decimal precision" },
+  { id: "business_logic",   label: "Business Logic",   icon: <Layers className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Before/after state, stock decrements, counters" },
+  { id: "status_transition",label: "Status Machine",   icon: <RefreshCw className="w-4 h-4" />,   color: "var(--tf-purple)", desc: "Valid transitions, skip-prevention, terminal states" },
+  { id: "spec_drift",       label: "Spec Drift",       icon: <Eye className="w-4 h-4" />,         color: "var(--tf-green)",  desc: "Zod response schemas, field type validation" },
+  { id: "dsgvo",            label: "DSGVO / GDPR",     icon: <Database className="w-4 h-4" />,    color: "var(--tf-yellow)", desc: "PII anonymization, data export isolation" },
+  { id: "rate_limit",       label: "Rate Limit",       icon: <AlertTriangle className="w-4 h-4" />,color: "var(--tf-orange)", desc: "Auth brute-force, burst detection" },
+  { id: "concurrency",      label: "Concurrency",      icon: <Cpu className="w-4 h-4" />,         color: "var(--tf-red)",    desc: "Race conditions, double-booking, atomic operations" },
+  { id: "idempotency",      label: "Idempotency",      icon: <Repeat2 className="w-4 h-4" />,     color: "var(--tf-blue)",   desc: "Duplicate requests, retry safety, deduplication" },
+  { id: "auth_matrix",      label: "Auth Matrix",      icon: <Users className="w-4 h-4" />,       color: "var(--tf-purple)", desc: "Role-based access: admin/user/unauthenticated/cross-tenant" },
+  { id: "flow",             label: "Flow",             icon: <GitMerge className="w-4 h-4" />,    color: "var(--tf-blue)",   desc: "Multi-step workflows, saga patterns, rollback verification" },
+  { id: "cron_job",         label: "Cron Job",         icon: <Clock className="w-4 h-4" />,       color: "var(--tf-green)",  desc: "Scheduled jobs, periodic tasks, batch processing" },
+  { id: "webhook",          label: "Webhook",          icon: <Webhook className="w-4 h-4" />,     color: "var(--tf-orange)", desc: "Event delivery, HMAC signature, retry logic" },
+  { id: "feature_gate",     label: "Feature Gate",     icon: <ToggleLeft className="w-4 h-4" />,  color: "var(--tf-purple)", desc: "Plan-based gating, tier checks, A/B rollout" },
+  { id: "sqli",             label: "SQL Injection",    icon: <Code2 className="w-4 h-4" />,       color: "var(--tf-red)",    desc: "Input sanitization, parameterized queries" },
 ];
 
 // ─── 5-Layer pipeline ─────────────────────────────────────────────────────
 const LAYERS = [
-  { n: 1, label: "Spec Parse",        color: "var(--tf-blue)",   desc: "LLM extracts behaviors, endpoints, status machines, invariants, tenant keys" },
-  { n: 2, label: "Risk Model",        color: "var(--tf-orange)", desc: "Tenant isolation vectors, CSRF surfaces, boundary constraints, side effects" },
-  { n: 3, label: "Test Generation",   color: "var(--tf-purple)", desc: "12 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config" },
-  { n: 4, label: "LLM Verification",  color: "var(--tf-yellow)", desc: "Independent checker validates each test against the original spec" },
-  { n: 5, label: "False-Green Guard", color: "var(--tf-green)",  desc: "8 mutation rules discard tests that can't catch real regressions" },
+  { n: 1, label: "Spec Parse",        color: "var(--tf-blue)",   desc: "LLM extracts behaviors, endpoints, status machines, invariants, tenant keys — 3-pass Smart Parser for large specs (>50KB)" },
+  { n: 2, label: "Risk Model",        color: "var(--tf-orange)", desc: "Tenant isolation vectors, CSRF surfaces, boundary constraints, side effects, flow definitions, cron jobs, feature gates" },
+  { n: 3, label: "Test Generation",   color: "var(--tf-purple)", desc: "16 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config, validate-payloads.mjs" },
+  { n: 4, label: "LLM Verification",  color: "var(--tf-yellow)", desc: "Independent checker validates each test against the original spec — cross-validates behaviors, improves weak ones" },
+  { n: 5, label: "False-Green Guard", color: "var(--tf-green)",  desc: "8 mutation rules discard tests that can't catch real regressions — mutation score per test" },
 ];
 
 // ─── ZIP output items (6 layers) ─────────────────────────────────────────────
@@ -56,7 +62,10 @@ export default function Home() {
             <span className="font-bold text-sm tracking-tight">TestForge</span>
             <span className="text-xs text-muted-foreground ml-1 hidden sm:inline">by Manus</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <Link href="/pricing">
+              <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Pricing</span>
+            </Link>
             {!loading && (
               isAuthenticated ? (
                 <Link href="/dashboard">
@@ -84,9 +93,23 @@ export default function Home() {
           style={{ background: "radial-gradient(ellipse, var(--tf-blue) 0%, transparent 70%)" }} />
 
         <div className="container relative py-20 md:py-28 text-center">
-          <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-full px-3 py-1 mb-6">
-            <Zap className="w-3 h-3 text-[var(--tf-yellow)]" />
-            <span>12 Proof Types · 6 Test Layers · Spec Health Score</span>       </div>
+          {/* Badges row */}
+          <div className="flex items-center justify-center gap-2 flex-wrap mb-6">
+            <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground border border-border rounded-full px-3 py-1">
+              <Zap className="w-3 h-3 text-[var(--tf-yellow)]" />
+              <span>16 Proof Types · 6 Test Layers · Spec Health Score</span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 text-xs border rounded-full px-3 py-1"
+              style={{ color: "var(--tf-blue)", borderColor: "var(--tf-blue)40", background: "var(--tf-blue)10" }}>
+              <Sparkles className="w-3 h-3" />
+              <span>OpenAPI 3.x / Swagger 2.x — 100% deterministic, no LLM</span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 text-xs border rounded-full px-3 py-1"
+              style={{ color: "var(--tf-purple)", borderColor: "var(--tf-purple)40", background: "var(--tf-purple)10" }}>
+              <Cpu className="w-3 h-3" />
+              <span>Large specs (&gt;50KB) use 3-pass Smart Parser for 2× better extraction</span>
+            </div>
+          </div>
 
           <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4 leading-tight">
             Proof-Grade Tests<br />
@@ -131,10 +154,10 @@ export default function Home() {
           {/* Quick stats */}
           <div className="flex items-center justify-center gap-8 mt-12 text-sm">
             {[
-              { v: "12",  l: "Proof Types" },
-              { v: "6",   l: "Test Layers" },
-              { v: "~2min", l: "Avg Analysis Time" },
-              { v: "0",   l: "Config Required" },
+              { v: "16",    l: "Proof Types" },
+              { v: "6",     l: "Test Layers" },
+              { v: "3-Pass",l: "Smart Parser" },
+              { v: "0",     l: "Config Required" },
             ].map(s => (
               <div key={s.l} className="text-center">
                 <div className="text-xl font-bold font-mono" style={{ color: "var(--tf-blue)" }}>{s.v}</div>
@@ -149,7 +172,7 @@ export default function Home() {
       <section className="border-b border-border/50 py-16">
         <div className="container">
           <div className="text-center mb-10">
-            <h2 className="text-2xl font-bold mb-2">12 Proof Types — Automatically Detected</h2>
+            <h2 className="text-2xl font-bold mb-2">16 Proof Types — Automatically Detected</h2>
             <p className="text-muted-foreground text-sm max-w-lg mx-auto">
               TestForge reads your spec and determines which proof types apply to each endpoint.
               No manual configuration needed.
@@ -276,7 +299,7 @@ export default function Home() {
               <div className="bg-card border border-border rounded-lg overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-border bg-muted/30">
                   <div className="font-mono text-xs text-[var(--tf-green)]">
-                    $ unzip testforge-output.zip &amp;&amp; npm install &amp;&amp; npm run test:all
+                    $ unzip testforge-output.zip &amp;&amp; npm install &amp;&amp; npm run validate &amp;&amp; npm test
                   </div>
                 </div>
                 <div className="p-3 space-y-1.5">
@@ -292,11 +315,12 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="mt-4 grid grid-cols-4 gap-2 text-center">
                 {[
-                  { v: "npm install", l: "Step 1" },
-                  { v: "npm run test:all", l: "Step 2" },
-                  { v: "Done ✓",     l: "Step 3" },
+                  { v: "npm install",   l: "Step 1" },
+                  { v: "npm run validate", l: "Step 2" },
+                  { v: "npm test",      l: "Step 3" },
+                  { v: "Done ✓",        l: "Step 4" },
                 ].map(s => (
                   <div key={s.l} className="bg-card border border-border rounded-lg p-3">
                     <div className="text-xs font-mono font-bold text-foreground">{s.v}</div>
@@ -320,17 +344,17 @@ export default function Home() {
               {
                 n: "01", icon: <FileCode2 className="w-6 h-6" />, color: "var(--tf-blue)",
                 title: "Upload your Spec",
-                desc: "PDF, Markdown, Word, or plain text. TestForge accepts any format and extracts the relevant information automatically.",
+                desc: "OpenAPI/Swagger (JSON/YAML) for 100% deterministic results, or Markdown/PDF/Word for LLM-based extraction. Large specs use the 3-pass Smart Parser automatically.",
               },
               {
                 n: "02", icon: <Layers className="w-6 h-6" />, color: "var(--tf-purple)",
                 title: "5-Layer Analysis",
-                desc: "The pipeline parses behaviors, builds a risk model, generates tests, verifies them, and filters false-greens — in ~2 minutes.",
+                desc: "The pipeline parses behaviors, builds a risk model, generates 16 proof types in parallel, verifies them with an independent LLM checker, and filters false-greens.",
               },
               {
                 n: "03", icon: <GitBranch className="w-6 h-6" />, color: "var(--tf-green)",
                 title: "Download & Run",
-                desc: "Get a ZIP with Playwright tests, CI/CD pipeline, Zod schemas, and a full setup guide. npm install → npm test.",
+                desc: "Get a ZIP with Playwright tests, CI/CD pipeline, Zod schemas, validate-payloads.mjs, and a full setup guide. npm install → npm run validate → npm test.",
               },
             ].map(step => (
               <div key={step.n} className="bg-card border border-border rounded-lg p-5">
@@ -349,13 +373,80 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── Differentiators (Sprint 4+5) ────────────────────────────────── */}
+      <section className="border-b border-border/50 py-16">
+        <div className="container">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold mb-2">What Makes TestForge Different</h2>
+            <p className="text-muted-foreground text-sm max-w-lg mx-auto">
+              Beyond test generation — a complete quality compiler with feedback loops, diff tracking, and CI/CD integration.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              {
+                icon: <GitBranch className="w-5 h-5" />, color: "var(--tf-blue)",
+                title: "Spec Diff Engine",
+                desc: "Compare two analyses side-by-side. See exactly which behaviors changed, which endpoints were added/removed, and which proof types are now affected.",
+                badge: "Sprint 4",
+              },
+              {
+                icon: <RefreshCw className="w-5 h-5" />, color: "var(--tf-green)",
+                title: "Feedback Loop",
+                desc: "Run your tests, post results back to TestForge. Pass rates, failed proof IDs, and error messages flow back — improving the next analysis.",
+                badge: "Sprint 4",
+              },
+              {
+                icon: <Code2 className="w-5 h-5" />, color: "var(--tf-purple)",
+                title: "GitHub PR Comments",
+                desc: "Automatically post analysis results as PR comments. Includes verdict score, spec diff summary, and a link to the full report.",
+                badge: "Sprint 4",
+              },
+              {
+                icon: <Database className="w-5 h-5" />, color: "var(--tf-orange)",
+                title: "Docker Self-Hosted",
+                desc: "Enterprise plan: run TestForge entirely in your VPC. Docker Compose stack with MySQL, MinIO S3, and Nginx TLS termination included.",
+                badge: "Enterprise",
+              },
+              {
+                icon: <Eye className="w-5 h-5" />, color: "var(--tf-yellow)",
+                title: "GitHub Repo Scanner",
+                desc: "Point TestForge at any GitHub repo. It scans the tree for OpenAPI/Swagger specs, detects their type, and lets you pick which one to analyze.",
+                badge: "Sprint 5",
+              },
+              {
+                icon: <Layers className="w-5 h-5" />, color: "var(--tf-red)",
+                title: "Industry Proof Packs",
+                desc: "FinTech (PSD2/KYC), HealthTech (HIPAA/FHIR), eCommerce (PCI-DSS), SaaS (multi-tenancy). Pre-configured proof type sets with compliance frameworks.",
+                badge: "Sprint 5",
+              },
+            ].map(f => (
+              <div key={f.title} className="bg-card border border-border rounded-lg p-5 relative">
+                <div className="absolute top-3 right-3">
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-full border"
+                    style={{ color: f.color, borderColor: `${f.color}40`, background: `${f.color}10` }}>
+                    {f.badge}
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                  style={{ color: f.color, background: `${f.color}15` }}>
+                  {f.icon}
+                </div>
+                <h3 className="font-semibold text-sm mb-1.5">{f.title}</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ─────────────────────────────────────────────────────── */}
       <section className="py-20">
         <div className="container text-center">
           <h2 className="text-3xl font-black mb-4">Ready to forge your tests?</h2>
           <p className="text-muted-foreground mb-8 max-w-md mx-auto">
             Upload your first spec and get a proof-grade test suite in minutes.
-            No credit card, no setup.
+            Free plan includes 3 analyses per month.
           </p>
           <div className="flex items-center justify-center gap-3">
             {isAuthenticated ? (
@@ -365,11 +456,18 @@ export default function Home() {
                 </Button>
               </Link>
             ) : (
-              <a href={getLoginUrl()}>
-                <Button size="lg" className="gap-2">
-                  <Shield className="w-4 h-4" /> Sign In to Get Started
-                </Button>
-              </a>
+              <>
+                <a href={getLoginUrl()}>
+                  <Button size="lg" className="gap-2">
+                    <Shield className="w-4 h-4" /> Sign In to Get Started
+                  </Button>
+                </a>
+                <Link href="/pricing">
+                  <Button size="lg" variant="outline" className="gap-2">
+                    View Pricing
+                  </Button>
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -382,7 +480,10 @@ export default function Home() {
             <Shield className="w-3.5 h-3.5" />
             <span>TestForge</span>
           </div>
-          <span>Built with Manus</span>
+          <div className="flex items-center gap-4">
+            <Link href="/pricing"><span className="hover:text-foreground transition-colors cursor-pointer">Pricing</span></Link>
+            <span>Built with Manus</span>
+          </div>
         </div>
       </footer>
     </div>

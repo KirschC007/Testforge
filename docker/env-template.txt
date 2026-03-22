@@ -1,0 +1,16 @@
+# TestForge Self-Hosted — Environment Variables Template
+# Copy to .env and fill in your values before running docker compose up
+
+MYSQL_ROOT_PASSWORD=changeme_root
+MYSQL_PASSWORD=changeme_testforge
+MINIO_ROOT_USER=testforge
+MINIO_ROOT_PASSWORD=changeme_minio
+S3_BUCKET=testforge
+JWT_SECRET=changeme_jwt_secret_min_32_chars_long
+LLM_API_KEY=sk-...
+LLM_API_URL=https://api.openai.com/v1
+VITE_APP_ID=your_app_id
+OAUTH_SERVER_URL=https://api.manus.im
+VITE_OAUTH_PORTAL_URL=https://manus.im
+OWNER_OPEN_ID=your_open_id
+OWNER_NAME=Your Name

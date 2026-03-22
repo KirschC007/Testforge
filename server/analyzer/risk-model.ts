@@ -487,7 +487,16 @@ export function determineProofTypes(b: Behavior): ProofType[] {
     types.add("auth_matrix");
   }
   // flow: multi-step flows defined in IR, or behaviors tagged with "flow" or "multi-step"
-  if (combined.includes("flow") || combined.includes("multi-step") || combined.includes("multi_step")) {
+  if (
+    combined.includes("flow") ||
+    combined.includes("multi-step") ||
+    combined.includes("multi_step") ||
+    combined.includes("workflow") ||
+    combined.includes("end-to-end") ||
+    combined.includes("orchestration") ||
+    combined.includes("saga") ||
+    combined.includes("rollback")
+  ) {
     types.add("flow");
   }
   // cron_job: scheduled jobs, cron triggers, background tasks
@@ -497,7 +506,10 @@ export function determineProofTypes(b: Behavior): ProofType[] {
     combined.includes("background-job") ||
     combined.includes("background_job") ||
     combined.includes("no-show-release") ||
-    combined.includes("noshowrelease")
+    combined.includes("noshowrelease") ||
+    combined.includes("periodic") ||
+    combined.includes("batch") ||
+    combined.includes("recurring")
   ) {
     types.add("cron_job");
   }
@@ -506,8 +518,12 @@ export function determineProofTypes(b: Behavior): ProofType[] {
     combined.includes("webhook") ||
     combined.includes("callback-url") ||
     combined.includes("callback_url") ||
+    combined.includes("callback") ||
     combined.includes("event-delivery") ||
-    combined.includes("event_delivery")
+    combined.includes("event_delivery") ||
+    combined.includes("async-notification") ||
+    combined.includes("hmac") ||
+    combined.includes("signature")
   ) {
     types.add("webhook");
   }
@@ -519,7 +535,15 @@ export function determineProofTypes(b: Behavior): ProofType[] {
     combined.includes("plan_upgrade") ||
     combined.includes("professional-plan") ||
     combined.includes("enterprise-plan") ||
-    combined.includes("gated")
+    combined.includes("gated") ||
+    combined.includes("plan-gated") ||
+    combined.includes("plan_gated") ||
+    combined.includes("premium") ||
+    combined.includes("tier") ||
+    combined.includes("toggle") ||
+    combined.includes("rollout") ||
+    combined.includes("canary") ||
+    combined.includes("a/b-test")
   ) {
     types.add("feature_gate");
   }

@@ -402,6 +402,7 @@ export default defineConfig({
       "test:list": "playwright test --list",
       "test:dry-run": "playwright test --dry-run",
       "install:browsers": "playwright install --with-deps chromium",
+      "validate": "node validate-payloads.mjs",
     },
     dependencies: {
       zod: "^3.22.0",
@@ -447,10 +448,11 @@ npm run install:browsers
 cp .env.example .env
 # Edit .env and set BASE_URL, TEST_TENANT_ID, and credentials
 
-# 4. Run all tests
+## 4. Validate payloads (no server needed)
+npm run validate
+# 5. Run all tests
 npm test
-
-# 5. View HTML report
+# 6. View HTML report
 npx playwright show-report
 \`\`\`
 

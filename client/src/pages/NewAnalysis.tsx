@@ -80,7 +80,7 @@ const LAYERS = [
   {
     n: 3, label: "Test Generation",   color: "var(--tf-purple)",
     icon: <Layers className="w-3.5 h-3.5" />,
-    desc: "8 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config",
+    desc: "16 proof types generated in parallel — typed payloads, Zod schemas, CI/CD config",
     output: "TypeScript Playwright tests + helpers + schemas",
   },
   {
@@ -99,14 +99,22 @@ const LAYERS = [
 
 // ─── Proof type icons ─────────────────────────────────────────────────────
 const PROOF_ICONS = [
-  { id: "idor",              label: "IDOR",        icon: <Lock className="w-3.5 h-3.5" />,         color: "var(--tf-red)" },
-  { id: "csrf",              label: "CSRF",        icon: <Shield className="w-3.5 h-3.5" />,       color: "var(--tf-orange)" },
-  { id: "boundary",          label: "Boundary",    icon: <Activity className="w-3.5 h-3.5" />,     color: "var(--tf-yellow)" },
-  { id: "business_logic",    label: "Business",    icon: <Layers className="w-3.5 h-3.5" />,       color: "var(--tf-blue)" },
-  { id: "status_transition", label: "Status",      icon: <RefreshCw className="w-3.5 h-3.5" />,    color: "var(--tf-purple)" },
-  { id: "spec_drift",        label: "Spec Drift",  icon: <Eye className="w-3.5 h-3.5" />,          color: "var(--tf-green)" },
-  { id: "dsgvo",             label: "DSGVO",       icon: <Database className="w-3.5 h-3.5" />,     color: "var(--tf-yellow)" },
-  { id: "rate_limit",        label: "Rate Limit",  icon: <AlertTriangle className="w-3.5 h-3.5" />, color: "var(--tf-orange)" },
+  { id: "idor",              label: "IDOR",         icon: <Lock className="w-3.5 h-3.5" />,          color: "var(--tf-red)" },
+  { id: "csrf",              label: "CSRF",         icon: <Shield className="w-3.5 h-3.5" />,        color: "var(--tf-orange)" },
+  { id: "sqli",              label: "SQL Injection", icon: <AlertTriangle className="w-3.5 h-3.5" />, color: "var(--tf-red)" },
+  { id: "xss",               label: "XSS",          icon: <AlertCircle className="w-3.5 h-3.5" />,   color: "var(--tf-orange)" },
+  { id: "boundary",          label: "Boundary",     icon: <Activity className="w-3.5 h-3.5" />,      color: "var(--tf-yellow)" },
+  { id: "business_logic",    label: "Business",     icon: <Layers className="w-3.5 h-3.5" />,        color: "var(--tf-blue)" },
+  { id: "status_transition", label: "Status",       icon: <RefreshCw className="w-3.5 h-3.5" />,     color: "var(--tf-purple)" },
+  { id: "spec_drift",        label: "Spec Drift",   icon: <Eye className="w-3.5 h-3.5" />,           color: "var(--tf-green)" },
+  { id: "dsgvo",             label: "DSGVO/GDPR",   icon: <Database className="w-3.5 h-3.5" />,      color: "var(--tf-yellow)" },
+  { id: "rate_limit",        label: "Rate Limit",   icon: <AlertTriangle className="w-3.5 h-3.5" />, color: "var(--tf-orange)" },
+  { id: "concurrency",       label: "Concurrency",  icon: <Layers className="w-3.5 h-3.5" />,        color: "var(--tf-red)" },
+  { id: "idempotency",       label: "Idempotency",  icon: <RefreshCw className="w-3.5 h-3.5" />,     color: "var(--tf-blue)" },
+  { id: "auth_matrix",       label: "Auth Matrix",  icon: <Shield className="w-3.5 h-3.5" />,        color: "var(--tf-purple)" },
+  { id: "flow",              label: "Flow",          icon: <ChevronRight className="w-3.5 h-3.5" />,  color: "var(--tf-blue)" },
+  { id: "cron_job",          label: "Cron Job",      icon: <Star className="w-3.5 h-3.5" />,          color: "var(--tf-green)" },
+  { id: "webhook",           label: "Webhook",       icon: <Package className="w-3.5 h-3.5" />,       color: "var(--tf-orange)" },
 ];
 
 export default function NewAnalysis() {
@@ -416,7 +424,7 @@ export default function NewAnalysis() {
             {/* Proof Types */}
             <div className="bg-card border border-border rounded-lg overflow-hidden">
               <div className="px-4 py-3 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">8 Proof Types Generated</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">16 Proof Types Generated</p>
               </div>
               <div className="p-3 grid grid-cols-2 gap-1.5">
                 {PROOF_ICONS.map(pt => (
@@ -436,13 +444,17 @@ export default function NewAnalysis() {
               </div>
               <div className="p-3 space-y-1">
                 {[
-                  "tests/security/   — IDOR, CSRF, Rate-Limit, Spec-Drift",
-                  "tests/business/   — Business Logic, Boundary",
-                  "tests/compliance/ — DSGVO/GDPR",
-                  "helpers/          — api, auth, factories, schemas",
+                  "tests/unit/        — Vitest: service isolation, validation",
+                  "tests/integration/ — Vitest: CRUD lifecycle, auth",
+                  "tests/e2e/         — Playwright: user flows, create→verify",
+                  "tests/security/    — IDOR, CSRF, Rate-Limit, Spec-Drift",
+                  "tests/uat/         — Cucumber/Gherkin: acceptance criteria",
+                  "tests/performance/ — k6: load, spike, stress",
+                  "helpers/           — api, auth, factories, schemas",
                   ".github/workflows/testforge.yml",
+                  ".github/workflows/testforge-feedback.yml",
                   "playwright.config.ts + tsconfig.json",
-                  "README.md + .env.example",
+                  "README.md + validate-payloads.mjs",
                 ].map(item => (
                   <div key={item} className="flex items-start gap-2">
                     <div className="w-1 h-1 rounded-full bg-muted-foreground/50 shrink-0 mt-1.5" />

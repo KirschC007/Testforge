@@ -29,6 +29,13 @@
       "when": 1774085523624,
       "tag": "0003_large_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1774220060374,
+      "tag": "0004_powerful_bastion",
+      "breakpoints": true
     }
   ]
 }
