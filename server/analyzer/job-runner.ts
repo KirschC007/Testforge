@@ -1,0 +1,128 @@
+import { invokeLLM } from "../_core/llm";
+import { generateProofs } from "./proof-generator";
+import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
+import { parseSpec } from "./llm-parser";
+import { runLLMChecker, assessSpecHealth, buildRiskModel } from "./risk-model";
+import { generateHelpers } from "./helpers-generator";
+import { validateProofs, runIndependentChecker, mergeProofsToFile } from "./validator";
+import { generateReport } from "./report";
+import { generateExtendedTestSuite } from "./extended-suite";
+
+// ─── Main Job Runner ───────────────────────────────────────────────────────────
+
+export type ProgressCallback = (layer: number, message: string, data?: {
+  analysisResult?: AnalysisResult;
+  riskModel?: RiskModel;
+  proofCount?: number;
+}) => Promise<void>;
+
+export async function runAnalysisJob(
+  specText: string,
+  projectName: string,
+  onProgress?: ProgressCallback
+): Promise<AnalysisJobResult> {
+  const jobStart = Date.now();
+  console.log(`[TestForge] Job START v3.0 — ${specText.length} chars, project: ${projectName}`);
+
+  const progress = async (layer: number, message: string, data?: Parameters<ProgressCallback>[2]) => {
+    console.log(`[TestForge] Progress Layer ${layer}: ${message}`);
+    if (onProgress) {
+      try { await onProgress(layer, message, data); } catch (e) { console.error("[TestForge] Progress callback error:", e); }
+    }
+  };
+
+  await progress(1, "Layer 1: Analysiere Spec...");
+  // Schicht 1: Spec parsing — OpenAPI fast-path or LLM-based
+  const t1 = Date.now();
+  let analysisResult: AnalysisResult;
+  let llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
+  const { isOpenAPIDocument, parseOpenAPI } = await import("../openapi-parser");
+  if (isOpenAPIDocument(specText)) {
+    // Fast path: parse OpenAPI/Swagger directly — no LLM call, deterministic
+    console.log(`[TestForge] OpenAPI detected — using deterministic parser (no LLM)`);
+    await progress(1, "OpenAPI erkannt — deterministischer Parser (kein LLM-Call)...");
+    analysisResult = parseOpenAPI(specText);
+    // LLM Checker is skipped for OpenAPI — all behaviors are structurally derived
+    llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
+    console.log(`[TestForge] Schicht 1 (OpenAPI) done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+  } else {
+    // Standard LLM path
+    analysisResult = await parseSpec(specText);
+    console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+    // LLM Checker: verify all behaviors (parallel)
+    await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+    const t_checker = Date.now();
+    const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+      analysisResult.ir.behaviors,
+      specText
+    );
+    analysisResult.ir.behaviors = checkedBehaviors;
+    llmCheckerStats = checkerStats;
+    console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+    await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+  }
+  // Assess spec health (both paths)
+  analysisResult.specHealth = assessSpecHealth(analysisResult.ir);
+  console.log(`[TestForge] Spec Health: ${analysisResult.specHealth.score}/100 (${analysisResult.specHealth.grade}) — ${analysisResult.specHealth.summary}`);
+  await progress(1, `Layer 1 fertig: ${analysisResult.ir.behaviors.length} Behaviors, ${analysisResult.ir.apiEndpoints.length} Endpoints gefunden`, { analysisResult });
+
+  // Schicht 2: Risk model
+  const t2 = Date.now();
+  const riskModel = buildRiskModel(analysisResult);
+  console.log(`[TestForge] Schicht 2 done in ${Date.now() - t2}ms — ${riskModel.proofTargets.length} proof targets`);
+
+  await progress(2, `Layer 2 fertig: ${riskModel.proofTargets.length} Proof-Targets, ${riskModel.idorVectors} IDOR-Vektoren`, { analysisResult, riskModel });
+
+  // Helpers Generator
+  const helpers = generateHelpers(analysisResult);
+  console.log(`[TestForge] Helpers generated — ${Object.keys(helpers).length} files`);
+
+  // Schicht 3: Proof generation (ALL parallel)
+  await progress(3, "Layer 3: Generiere Tests (alle parallel)...");
+  const t3 = Date.now();
+  const rawProofs = await generateProofs(riskModel, analysisResult);
+  console.log(`[TestForge] Schicht 3 done in ${Date.now() - t3}ms — ${rawProofs.length} raw proofs`);
+
+  await progress(3, `Layer 3 fertig: ${rawProofs.length} Tests generiert`, { proofCount: rawProofs.length });
+
+  // Schicht 5: Independent Checker (before Schicht 4)
+  await progress(4, `Layer 4: Independent Checker prüft ${rawProofs.length} Tests...`);
+  const t5 = Date.now();
+  const { checkedProofs } = await runIndependentChecker(rawProofs, analysisResult);
+  console.log(`[TestForge] Schicht 5 done in ${Date.now() - t5}ms — ${checkedProofs.length} proofs after independent check`);
+
+  await progress(4, `Layer 4 fertig: ${checkedProofs.length} Tests nach Independent Check`);
+
+  // Schicht 4: False-green validation
+  const t4 = Date.now();
+  const behaviorIds = analysisResult.ir.behaviors.map(b => b.id);
+  const validatedSuite = validateProofs(checkedProofs, behaviorIds);
+  console.log(`[TestForge] Schicht 4 done in ${Date.now() - t4}ms — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`);
+
+  await progress(5, `Layer 5 fertig: ${validatedSuite.proofs.length} validierte Tests, ${validatedSuite.discardedProofs.length} verworfen`);
+
+  // Report
+  const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);
+
+  // Test files (deduplicated by filename, properly structured)
+  // Bug 5 Fix: deduplicate imports and shared let-declarations per file
+  const fileMap = new Map<string, ValidatedProof[]>();
+  for (const proof of validatedSuite.proofs) {
+    if (!fileMap.has(proof.filename)) fileMap.set(proof.filename, []);
+    fileMap.get(proof.filename)!.push(proof);
+  }
+  const testFiles = Array.from(fileMap.entries()).map(([filename, proofs]) => ({
+    filename,
+    content: mergeProofsToFile(proofs),
+  }));
+
+  // Extended Test Suite (6 layers)
+  const extendedSuite = generateExtendedTestSuite(analysisResult, testFiles);
+  console.log(`[TestForge] Extended Suite: ${extendedSuite.files.length} files across 6 layers`);
+
+  console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
+
+  return { analysisResult, riskModel, validatedSuite, report, testFiles, helpers, llmCheckerStats, extendedSuite };
+}
+
+

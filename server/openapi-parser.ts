@@ -180,7 +180,7 @@ export function parseOpenAPI(text: string): AnalysisResult {
       }
     : (doc as OpenAPI3Doc).components || {};
 
-  const resolver = buildRefResolver(components);
+  const resolver = buildRefResolver(doc);
 
   // Parse all paths → APIEndpoints + Behaviors
   const paths = doc.paths || {};
@@ -334,14 +334,16 @@ function parseRawDocument(text: string): unknown {
 
 type RefResolver = (ref: string) => unknown;
 
-function buildRefResolver(components: OAComponents): RefResolver {
+function buildRefResolver(doc: OADoc): RefResolver {
   return function resolve(ref: string): unknown {
     if (!ref.startsWith("#/")) return null;
     const parts = ref.slice(2).split("/");
-    // Navigate the components object
-    let current: unknown = components;
+    // Navigate from the document root — refs are absolute JSON pointers
+    // e.g. "#/components/schemas/Pet" → doc.components.schemas.Pet
+    // e.g. "#/definitions/Pet" (Swagger 2.x) → doc.definitions.Pet
+    let current: unknown = doc;
     for (const part of parts) {
-      // Handle URL-encoded parts
+      // Handle JSON Pointer escaping: ~1 → /, ~0 → ~
       const decoded = part.replace(/~1/g, "/").replace(/~0/g, "~");
       if (current == null || typeof current !== "object") return null;
       current = (current as Record<string, unknown>)[decoded];
@@ -424,10 +426,11 @@ function camelToDot(id: string): string {
     if (lower.startsWith(prefix)) {
       const rest = lower.slice(prefix.length);
       if (rest.length === 0) return "";
-      // Convert rest to snake_case resource name
+      // Convert rest to snake_case resource name (e.g. "Pet" → "pet")
       const resource = rest.charAt(0).toLowerCase() + rest.slice(1);
-      // Pluralize for list operations
-      const resourceName = prefix === "list" ? pluralize(resource) : resource;
+      // Always pluralize the resource name for REST convention
+      // createPet → pets.create, getPet → pets.get, listPets → pets.list
+      const resourceName = pluralize(resource);
       return `${resourceName}.${prefix}`;
     }
   }
@@ -484,6 +487,16 @@ function buildInputFields(
   // From parameters (path, query — skip header/cookie for test purposes)
   for (const param of params) {
     if (param.in === "header" || param.in === "cookie") continue;
+    // Swagger 2.x: in:"body" parameter contains the full request body schema
+    // Extract all fields from the body schema instead of treating it as a single field
+    if (param.in === "body") {
+      const bodySchema = param.schema ? resolveSchema(param.schema, resolver) : null;
+      if (bodySchema) {
+        const bodyFields = extractFieldsFromSchema(bodySchema, resolver, allEnums, bodySchema.required || []);
+        fields.push(...bodyFields);
+      }
+      continue;
+    }
     const schema = param.schema ? resolveSchema(param.schema, resolver) : null;
     const field = schemaToEndpointField(
       param.name,
@@ -602,10 +615,14 @@ function schemaToEndpointField(
   }
 
   // Detect tenant key by naming convention
+  // Any field ending in "Id" that represents an ownership/membership relationship
   const nameLower = name.toLowerCase();
   const isTenantKey =
     nameLower.endsWith("id") &&
-    (nameLower.includes("tenant") || nameLower.includes("org") || nameLower.includes("workspace") || nameLower.includes("company") || nameLower.includes("account") || nameLower.includes("bank"));
+    (nameLower.includes("tenant") || nameLower.includes("org") || nameLower.includes("workspace") ||
+     nameLower.includes("company") || nameLower.includes("account") || nameLower.includes("bank") ||
+     nameLower.includes("owner") || nameLower.includes("shop") || nameLower.includes("store") ||
+     nameLower.includes("team") || nameLower.includes("group") || nameLower.includes("project"));
 
   // Detect boundary field
   const isBoundaryField =
@@ -711,11 +728,14 @@ function detectTenantField(fields: EndpointField[], path: string): string | null
     }
   }
 
-  // Field naming convention
-  const tenantKeywords = ["tenantid", "orgid", "organizationid", "workspaceid", "bankid", "companyid", "accountid"];
+  // Field naming convention — any field ending in Id that implies ownership
+  const tenantKeywords = ["tenantid", "orgid", "organizationid", "workspaceid", "bankid", "companyid", "accountid", "ownerid", "shopid", "storeid", "teamid", "groupid", "projectid"];
   for (const f of fields) {
     if (tenantKeywords.includes(f.name.toLowerCase())) return f.name;
   }
+  // Fallback: any field already marked as isTenantKey by schema
+  const markedField = fields.find(f => f.isTenantKey);
+  if (markedField) return markedField.name;
 
   return null;
 }

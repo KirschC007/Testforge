@@ -408,3 +408,60 @@
 - [x] templateMap: alle 3 neuen Generatoren registriert (kein LLM-Fallback mehr)
 - [x] Vitest: 66 neue Tests in server/new-proof-types.test.ts — alle grün
 - [x] Gesamt: 215/215 Tests grün, 0 TS-Fehler
+
+## Phase 21: OpenAPI-Import
+- [ ] Upload-Endpoint: .json und .yaml MIME-Types + Dateiendungen erlauben
+- [ ] Backend: detectSpecType() — erkennt openapi/swagger Key im JSON/YAML
+- [ ] Backend: OpenAPI-to-IR Parser (Endpoints, Behaviors, AuthModel aus Spec)
+- [ ] Backend: Route zu OpenAPI-Parser wenn Spec erkannt, sonst LLM-Parser
+- [ ] Frontend: Upload-Hinweis aktualisieren (OpenAPI .json/.yaml jetzt unterstützt)
+- [ ] Vitest: Tests für OpenAPI-Parser
+
+## Phase 22: Architektur-Split (mechanisch 1:1)
+- [ ] server/routers/types.ts — alle Interfaces und Types aus analyzer.ts
+- [ ] server/routers/risk-model.ts — buildRiskModel, assessRiskLevel, determineProofTypes, buildProofTarget
+- [ ] server/routers/generators/ — alle generate*Test Funktionen (eine Datei pro Typ)
+- [ ] server/routers/helpers-generator.ts — generateHelpers
+- [ ] server/routers/validator.ts — validateProofs, checkTypeScriptSyntax
+- [ ] server/routers/report.ts — generateReport
+- [ ] server/analyzer.ts — nur noch Re-Exports (kein Logik-Code)
+- [ ] Tests: alle 215 Tests grün nach Split
+
+## Phase 23: Code-Builder
+- [ ] generatePlaywrightPackage() — erzeugt package.json, playwright.config.ts, .env.example, README.md
+- [ ] package.json: @playwright/test + dotenv als devDependencies, test-Script
+- [ ] playwright.config.ts: baseURL aus .env, timeout 30s, retries 1
+- [ ] .env.example: alle benötigten Env-Vars aus IR (TEST_TENANT_ID, E2E_*_USER/PASS, BASE_URL)
+- [ ] README.md: Setup-Anleitung (cp .env.example .env, pnpm install, pnpm playwright test)
+- [ ] ZIP: Code-Builder Output in bestehenden ZIP einbinden
+- [ ] Vitest: Tests für generatePlaywrightPackage
+
+## Phase 21: OpenAPI-Import Tests
+- [x] Vitest tests for isOpenAPIDocument (JSON + YAML, OpenAPI 3.x + Swagger 2.x)
+- [x] Vitest tests for parseOpenAPI (endpoints, behaviors, auth model, inputFields)
+- [x] Bug fix: $ref resolver navigated from components/ instead of document root
+- [x] Bug fix: camelToDot pluralization for non-list methods (create, update, delete)
+- [x] Bug fix: Swagger 2.x body parameter extraction
+- [x] 61 new tests in server/openapi-parser.test.ts — all green
+
+## Phase 22: Architektur-Split (mechanisch 1:1)
+- [x] server/analyzer/types.ts — alle Interfaces und Types
+- [x] server/analyzer/llm-parser.ts — LLM_TIMEOUT_MS, withTimeout, parseSpecChunk, parseSpec
+- [x] server/analyzer/risk-model.ts — assessRiskLevel, determineProofTypes, buildProofTarget, buildRiskModel
+- [x] server/analyzer/helpers-generator.ts — generateHelpers (alle Helper-Dateien)
+- [x] server/analyzer/proof-generator.ts — alle generateXxxTest Funktionen + generateProofs
+- [x] server/analyzer/validator.ts — validateProof, validateProofs, runIndependentChecker
+- [x] server/analyzer/report.ts — generateReport
+- [x] server/analyzer/job-runner.ts — runAnalysisJob, assessSpecHealth
+- [x] server/analyzer/extended-suite.ts — generateExtendedTestSuite
+- [x] server/analyzer/index.ts — re-exportiert alle oeffentlichen Symbole
+- [x] Alle 276 Tests bleiben gruen nach dem Split
+- [x] 0 TS-Fehler in Sub-Files
+
+## Phase 23: Code-Builder (validate-payloads.mjs)
+- [x] validate-payloads.mjs Generator in helpers-generator.ts (ESM, ANSI-Farben, Payload-Validator)
+- [x] GeneratedHelpers Interface um validate-payloads.mjs erweitert
+- [x] validate-Script in package.json (node validate-payloads.mjs)
+- [x] README Quick-Start um Schritt 4 (npm run validate) erweitert
+- [x] 39 neue Vitest-Tests in server/code-builder.test.ts — alle gruen
+- [x] Gesamt: 315/315 Tests gruen, 0 TS-Fehler
