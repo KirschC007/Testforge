@@ -1,0 +1,343 @@
+/**
+ * TestForge — Run all 4 test scenarios and produce quality-gate reports
+ * Usage: npx tsx scripts/run-all-scenarios.mjs
+ */
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "fs";
+import { join } from "path";
+import AdmZip from "adm-zip";
+import archiver from "archiver";
+import { createWriteStream } from "fs";
+
+// Load the pipeline
+const { runAnalysisJob } = await import("../server/analyzer/job-runner.ts");
+
+const OUTPUT_DIR = "/home/ubuntu/testforge/scenario-outputs";
+mkdirSync(OUTPUT_DIR, { recursive: true });
+
+// ── ZIP builder ───────────────────────────────────────────────────────────────
+async function buildZip(result, outputPath) {
+  return new Promise((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const output = createWriteStream(outputPath);
+    output.on("close", resolve);
+    archive.on("error", reject);
+    archive.pipe(output);
+
+    for (const f of result.testFiles || []) {
+      archive.append(f.content, { name: f.filename });
+    }
+    // Add helpers
+    const helpers = result.helpers || {};
+    for (const [name, content] of Object.entries(helpers)) {
+      if (typeof content === "string") {
+        archive.append(content, { name });
+      }
+    }
+    // Add extended suite
+    const ext = result.extendedSuite || {};
+    for (const [name, content] of Object.entries(ext.files || {})) {
+      if (typeof content === "string") {
+        archive.append(content, { name });
+      }
+    }
+    if (result.report) {
+      archive.append(result.report, { name: "testforge-report.md" });
+    }
+    archive.finalize();
+  });
+}
+
+// ── Walk directory ────────────────────────────────────────────────────────────
+function walkDir(dir, files = []) {
+  try {
+    for (const f of readdirSync(dir)) {
+      const full = join(dir, f);
+      if (statSync(full).isDirectory()) walkDir(full, files);
+      else if (f.endsWith(".spec.ts") || f.endsWith(".test.ts")) {
+        files.push({ path: full, rel: full.replace(dir + "/", ""), content: readFileSync(full, "utf8") });
+      }
+    }
+  } catch {}
+  return files;
+}
+
+// ── Quality Gate ──────────────────────────────────────────────────────────────
+function runQualityGate(testFiles, scenarioName) {
+  const results = [];
+  let failCount = 0;
+
+  function fail(msg) { results.push(`❌ FAIL: ${msg}`); failCount++; }
+  function warn(msg) { results.push(`⚠️  WARN: ${msg}`); }
+  function pass(msg) { results.push(`✅ PASS: ${msg}`); }
+
+  // 1. Import-Mismatch: every get*Cookie used must be imported
+  for (const f of testFiles) {
+    const usedFns = [...new Set((f.content.match(/\bget\w*Cookie\b/g) || []))];
+    const importBlock = (f.content.match(/^import\s+\{[^}]+\}[^;]+;/gm) || []).join("\n");
+    for (const fn of usedFns) {
+      if (!importBlock.includes(fn)) {
+        fail(`[${f.rel}] uses ${fn}() but not imported`);
+      }
+    }
+  }
+  if (failCount === 0) pass("Import-Mismatch: all get*Cookie functions properly imported");
+
+  // 2. No uninitialized cookies
+  for (const f of testFiles) {
+    if (f.content.includes("let cookie: string") && !f.content.includes("cookie = await")) {
+      fail(`[${f.rel}] has uninitialized cookie variable`);
+    }
+  }
+
+  // 3. No string-instead-of-variable for tenant IDs
+  for (const f of testFiles) {
+    const bad = (f.content.match(/(?:bankId|workspaceId|shopId):\s*"TEST_[A-Z_]+"/g) || []);
+    if (bad.length > 0) {
+      fail(`[${f.rel}] string literal instead of variable: ${bad[0]}`);
+    }
+  }
+
+  // 4. No TODO_REPLACE placeholders
+  for (const f of testFiles) {
+    if (f.content.includes("TODO_REPLACE_WITH")) {
+      fail(`[${f.rel}] contains TODO_REPLACE_WITH placeholder`);
+    }
+  }
+
+  // 5. No escaped double-quotes in payloads
+  for (const f of testFiles) {
+    const escaped = (f.content.match(/:\s*"\\"[^"]*\\""/g) || []);
+    if (escaped.length > 0) {
+      fail(`[${f.rel}] escaped string in payload: ${escaped[0]}`);
+    }
+  }
+
+  // 6. Sanitized filenames
+  for (const f of testFiles) {
+    const segments = f.rel.split("/");
+    for (const seg of segments) {
+      if (/[ \\:*?"<>|]/.test(seg)) {
+        fail(`Bad filename segment "${seg}" in ${f.rel}`);
+      }
+    }
+  }
+
+  // 7. Status-transition: no invalid status values
+  const stFile = testFiles.find(f => f.rel.includes("status-transition") || f.rel.includes("status_transition"));
+  if (stFile) {
+    const knownStatuses = [
+      "pending", "processing", "completed", "failed", "reversed",
+      "active", "frozen", "closed",
+      "todo", "in_progress", "review", "done", "archived",
+      "PENDING", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "REFUNDED",
+    ];
+    const statusMatches = stFile.content.match(/status:\s*"([^"]+)"/g) || [];
+    for (const m of statusMatches) {
+      const val = m.match(/"([^"]+)"/)[1];
+      if (!knownStatuses.includes(val)) {
+        fail(`[${stFile.rel}] invalid status value: "${val}"`);
+      }
+    }
+    pass("Status-Transition: all status values valid");
+  }
+
+  // 8. DSGVO: checks real PII fields (name, email, phone)
+  const dsgvoFile = testFiles.find(f => /dsgvo|gdpr|compliance/i.test(f.rel));
+  if (dsgvoFile) {
+    const hasPII = /name|email|phone/i.test(dsgvoFile.content);
+    if (!hasPII) {
+      fail(`[${dsgvoFile.rel}] DSGVO test does not check PII fields (name/email/phone)`);
+    } else {
+      pass("DSGVO: checks real PII fields");
+    }
+    // No fake fields
+    if (/deletedResource\?\.log|deletedResource\?\.pers/.test(dsgvoFile.content)) {
+      fail(`[${dsgvoFile.rel}] DSGVO checking fake fields (.log, .pers)`);
+    }
+  }
+
+  // 9. Auth-matrix: uses variable references not string literals for tenant ID
+  const authFile = testFiles.find(f => f.rel.includes("auth-matrix"));
+  if (authFile) {
+    const badLiterals = (authFile.content.match(/(?:bankId|workspaceId|shopId):\s*"[A-Z][A-Z_0-9]+"/g) || []);
+    if (badLiterals.length > 0) {
+      fail(`[${authFile.rel}] string literal for tenant ID: ${badLiterals[0]}`);
+    } else {
+      pass("Auth-Matrix: tenant IDs use variable references");
+    }
+  }
+
+  // 10. Boundary: uses real field name (not "value")
+  const boundFile = testFiles.find(f => f.rel.includes("boundary"));
+  if (boundFile) {
+    const valueFields = (boundFile.content.match(/\bvalue:\s*[-\d]+/g) || []);
+    if (valueFields.length > 0) {
+      fail(`[${boundFile.rel}] boundary test uses generic "value" field: ${valueFields[0]}`);
+    } else {
+      pass("Boundary: uses real field names");
+    }
+  }
+
+  // 11. Helpers path: no double-nesting
+  for (const f of testFiles) {
+    if (f.content.includes("helpers/helpers/")) {
+      fail(`[${f.rel}] double-nested helpers path: helpers/helpers/`);
+    }
+  }
+
+  const passed = results.filter(r => r.startsWith("✅")).length;
+  const failed = results.filter(r => r.startsWith("❌")).length;
+  const warned = results.filter(r => r.startsWith("⚠️")).length;
+
+  return { pass: failCount === 0, failCount, passed, warned, results, testFileCount: testFiles.length };
+}
+
+// ── Run a single spec scenario ────────────────────────────────────────────────
+async function runSpecScenario(name, specText, outputZipPath) {
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`Szenario: ${name} [SPEC]`);
+  console.log("=".repeat(60));
+
+  const result = await runAnalysisJob(specText, name, (layer, msg) => {
+    process.stdout.write(`  [L${layer}] ${msg}\n`);
+  });
+
+  await buildZip(result, outputZipPath);
+  const sizeKB = Math.round(statSync(outputZipPath).size / 1024);
+  console.log(`ZIP saved: ${outputZipPath} (${sizeKB}KB)`);
+
+  // Extract for quality gate — always clear first to avoid stale files from previous runs
+  const extractDir = outputZipPath.replace(".zip", "-extracted");
+  try { rmSync(extractDir, { recursive: true, force: true }); } catch {}
+  mkdirSync(extractDir, { recursive: true });
+  const zip = new AdmZip(outputZipPath);
+  zip.extractAllTo(extractDir, true);
+
+  const testFiles = walkDir(extractDir);
+  return { result, extractDir, testFiles };
+}
+
+// ── Run a single code-scan scenario ──────────────────────────────────────────
+async function runCodeScenario(name, codeFiles, outputZipPath) {
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`Szenario: ${name} [CODE-SCAN]`);
+  console.log("=".repeat(60));
+
+  const result = await runAnalysisJob("", name, (layer, msg) => {
+    process.stdout.write(`  [L${layer}] ${msg}\n`);
+  }, undefined, { codeFiles });
+
+  await buildZip(result, outputZipPath);
+  const sizeKB = Math.round(statSync(outputZipPath).size / 1024);
+  console.log(`ZIP saved: ${outputZipPath} (${sizeKB}KB)`);
+
+  // Extract for quality gate — always clear first to avoid stale files from previous runs
+  const extractDir = outputZipPath.replace(".zip", "-extracted");
+  try { rmSync(extractDir, { recursive: true, force: true }); } catch {}
+  mkdirSync(extractDir, { recursive: true });
+  const zip = new AdmZip(outputZipPath);
+  zip.extractAllTo(extractDir, true);
+
+  const testFiles = walkDir(extractDir);
+  return { result, extractDir, testFiles };
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+console.log("TestForge — Running all 4 scenarios...");
+console.log(`Timestamp: ${new Date().toISOString()}`);
+
+const scenarios = [];
+
+// Szenario 1: BankingCore Spec
+const bankingSpec = readFileSync("/tmp/bankingcore-input/spec-1-bankingcore/bankingcore-spec.md", "utf8");
+const s1 = await runSpecScenario("BankingCore", bankingSpec, `${OUTPUT_DIR}/s1-bankingcore.zip`);
+scenarios.push({ name: "BankingCore Spec", ...s1 });
+
+// Szenario 2: ProjectManager Spec
+const pmSpec = readFileSync("/tmp/scenario-2-projectmanager/projectmanager-spec.md", "utf8");
+const s2 = await runSpecScenario("ProjectManager", pmSpec, `${OUTPUT_DIR}/s2-projectmanager.zip`);
+scenarios.push({ name: "ProjectManager Spec", ...s2 });
+
+// Szenario 3: TaskManager Vibe-Code
+const tmFiles = [
+  { path: "drizzle/schema.ts", content: readFileSync("/tmp/scenario-3-taskmanager/schema.ts", "utf8") },
+  { path: "server/routers.ts", content: readFileSync("/tmp/scenario-3-taskmanager/routers.ts", "utf8") },
+  { path: "server/db.ts", content: readFileSync("/tmp/scenario-3-taskmanager/db.ts", "utf8") },
+  { path: "shared/types.ts", content: readFileSync("/tmp/scenario-3-taskmanager/types.ts", "utf8") },
+];
+const s3 = await runCodeScenario("TaskManager", tmFiles, `${OUTPUT_DIR}/s3-taskmanager.zip`);
+scenarios.push({ name: "TaskManager Vibe", ...s3 });
+
+// Szenario 4: E-Commerce Vibe-Code
+const ecFiles = [
+  { path: "prisma/schema.prisma", content: readFileSync("/tmp/scenario-4-ecommerce/schema.prisma", "utf8") },
+  { path: "server/routers.ts", content: readFileSync("/tmp/scenario-4-ecommerce/routers.ts", "utf8") },
+  { path: "server/db.ts", content: readFileSync("/tmp/scenario-4-ecommerce/db.ts", "utf8") },
+  { path: "shared/types.ts", content: readFileSync("/tmp/scenario-4-ecommerce/types.ts", "utf8") },
+];
+const s4 = await runCodeScenario("E-Commerce", ecFiles, `${OUTPUT_DIR}/s4-ecommerce.zip`);
+scenarios.push({ name: "E-Commerce Vibe", ...s4 });
+
+// ── Quality Gate for all scenarios ───────────────────────────────────────────
+console.log("\n" + "=".repeat(60));
+console.log("QUALITY GATE RESULTS");
+console.log("=".repeat(60));
+
+const gateResults = [];
+for (const s of scenarios) {
+  const gate = runQualityGate(s.testFiles, s.name);
+  gateResults.push({ name: s.name, gate, result: s.result });
+  const icon = gate.pass ? "✅" : "❌";
+  console.log(`\n${icon} [${s.name}] ${gate.pass ? "ALL CHECKS PASSED" : `${gate.failCount} CHECKS FAILED`} (${gate.testFileCount} test files)`);
+  for (const r of gate.results) {
+    console.log(`  ${r}`);
+  }
+}
+
+// ── Summary Table ─────────────────────────────────────────────────────────────
+console.log("\n" + "=".repeat(60));
+console.log("SUMMARY TABLE");
+console.log("=".repeat(60));
+console.log("| Szenario | Behaviors | Proofs | Test-Files | Gate |");
+console.log("|----------|-----------|--------|------------|------|");
+for (const { name, result, gate } of gateResults) {
+  const b = result?.analysisResult?.ir?.behaviors?.length ?? "?";
+  const p = result?.validatedSuite?.proofs?.length ?? "?";
+  const t = result?.testFiles?.length ?? "?";
+  const g = gate.pass ? "✅ PASS" : `❌ FAIL (${gate.failCount})`;
+  console.log(`| ${name} | ${b} | ${p} | ${t} | ${g} |`);
+}
+
+// ── Save detailed summary ─────────────────────────────────────────────────────
+let summaryMd = `# TestForge — Scenario Quality Gate Report\n\nGenerated: ${new Date().toISOString()}\n\n`;
+summaryMd += `## Summary\n\n`;
+summaryMd += `| Szenario | Behaviors | Proofs | Test-Files | Gate |\n`;
+summaryMd += `|----------|-----------|--------|------------|------|\n`;
+for (const { name, result, gate } of gateResults) {
+  const b = result?.analysisResult?.ir?.behaviors?.length ?? "?";
+  const p = result?.validatedSuite?.proofs?.length ?? "?";
+  const t = result?.testFiles?.length ?? "?";
+  const g = gate.pass ? "✅ PASS" : `❌ FAIL (${gate.failCount})`;
+  summaryMd += `| ${name} | ${b} | ${p} | ${t} | ${g} |\n`;
+}
+summaryMd += `\n## Detailed Results\n\n`;
+for (const { name, gate } of gateResults) {
+  summaryMd += `### ${name}\n\n`;
+  for (const r of gate.results) summaryMd += `- ${r}\n`;
+  summaryMd += "\n";
+}
+
+const summaryPath = `${OUTPUT_DIR}/quality-gate-report.md`;
+writeFileSync(summaryPath, summaryMd);
+console.log(`\nQuality gate report saved: ${summaryPath}`);
+console.log("All scenario ZIPs saved to:", OUTPUT_DIR);
+
+// Exit with error if any scenario failed
+const anyFailed = gateResults.some(g => !g.gate.pass);
+if (anyFailed) {
+  console.log("\n⚠️  Some quality gate checks failed — see report above");
+  process.exit(1);
+} else {
+  console.log("\n✅ All quality gate checks passed!");
+  process.exit(0);
+}

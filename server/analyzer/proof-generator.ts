@@ -118,6 +118,10 @@ export function getValidDefault(f: EndpointField, tenantConst: string): string {
       return f.enumValues?.length ? `"${f.enumValues[0]}"` : `"active"`;
     case "number":
       if (fl.includes("price") || fl.includes("amount")) return f.min !== undefined ? String(Math.max(f.min, 0.01)) : "1.00";
+      // Paired reference IDs: "toAccountId" gets 2, "fromAccountId" gets 1
+      // This prevents SAME_ACCOUNT validation errors in transfer/transaction tests
+      if (fl.includes("to") && fl.includes("account")) return "2";
+      if (fl.includes("to") && fl.includes("id")) return "2";
       return f.min !== undefined ? String(Math.max(f.min, 1)) : "1";
     case "boolean":
       return "false";
@@ -138,7 +142,8 @@ export function getValidDefault(f: EndpointField, tenantConst: string): string {
       if (fl.includes("email")) return `"test@example.com"`;
       if (fl.includes("phone")) return `"+49176${Date.now().toString().slice(-8)}"`;
       if (fl.includes("sku")) return `"SKU-${Date.now()}"`;
-      if (fl.includes("name") || fl.includes("title")) return `"Test ${f.name}-${Date.now()}"`;
+      if (fl.includes("idempotency") || fl.includes("key")) return `"idempotency-key-\${Date.now()}"`;
+      if (fl.includes("name") || fl.includes("title")) return `"Test ${f.name}-\${Date.now()}"`;
       if (fl.includes("description")) return `"Test description"`;
       if (fl.includes("status")) return `"active"`;
       if (fl.includes("priority")) return `"medium"`;
@@ -833,9 +838,34 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
-  // Use resolved endpoint from IR, or TODO placeholder
-  const endpoint = target.endpoint || analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("status") || e.name.toLowerCase().includes("update"))?.name || "TODO_REPLACE_WITH_STATUS_ENDPOINT";
+  // Smart endpoint resolution for status transitions:
+  // Different transitions may use different endpoints (e.g. accounts.freeze vs transactions.status)
+  // Strategy: match the transition target state to endpoint names
+  const behaviorText = [behavior?.title || "", ...behavior?.preconditions || [], ...behavior?.postconditions || []].join(" ").toLowerCase();
+  const resolveTransitionEndpoint = (toState: string): string => {
+    // 1. Direct match: endpoint name contains the target state (e.g. "freeze", "unfreeze", "close", "cancel")
+    const stateEndpoint = analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes(toState.replace(/_/g, ""))
+    );
+    if (stateEndpoint) return stateEndpoint.name;
+    // 2. Behavior text mentions a specific endpoint (e.g. "PATCH /api/transactions/:id/status")
+    const epMatch = behaviorText.match(/(?:patch|post|put)\s+\/api\/([a-z/_:]+)/i);
+    if (epMatch) {
+      const pathEndpoint = analysis.ir.apiEndpoints.find(e =>
+        e.method?.toLowerCase().includes(epMatch[1].split("/")[0])
+      );
+      if (pathEndpoint) return pathEndpoint.name;
+    }
+    // 3. Endpoint explicitly named in behavior (e.g. "accounts.freeze", "transactions.status")
+    for (const ep of analysis.ir.apiEndpoints) {
+      if (behaviorText.includes(ep.name.toLowerCase())) return ep.name;
+    }
+    // 4. Fallback: any endpoint with "status" or "update" in name
+    return target.endpoint || analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("status") || e.name.toLowerCase().includes("update"))?.name || "TODO_REPLACE_WITH_STATUS_ENDPOINT";
+  };
+  // Will be called with actual toStatus once computed below
+  let endpoint = "TODO_REPLACE_WITH_STATUS_ENDPOINT";
   const hasEndpoint = !!target.endpoint;
   // Find a GET endpoint to verify status after transition
   // Prefer getById, but fall back to any list/get endpoint (orders.list, products.list, etc.)
@@ -887,17 +917,27 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const fromStatus = (isValidState(rawFromStatus) ? rawFromStatus : assignedTransition?.[0] || firstTransition?.[0] || "pending") as string;
   const toStatus = (isValidState(rawToStatus) ? rawToStatus : assignedTransition?.[1] || firstTransition?.[1] || "completed") as string;
 
+  // Now resolve the correct endpoint for this specific transition
+  endpoint = resolveTransitionEndpoint(toStatus);
+
   // Find a skip-target: a state that is NOT directly reachable from fromStatus
   // Goldstandard: use statusMachine.forbidden or statusMachine.states to find skip candidates
+  // CRITICAL: Only use states that actually appear in transitions — sm.states may contain resource names
+  // (e.g. "account") that the LLM incorrectly included. Filtering to transition-used states prevents
+  // Quality Gate failure: invalid status value.
+  const statesUsedInTransitions = new Set(sm?.transitions.flatMap(t => [t[0], t[1]]) || []);
   let skipStatus: string | undefined;
   if (sm) {
     // Find a state that is not directly reachable from fromStatus (not in transitions from fromStatus)
     const directlyReachable = new Set(sm.transitions.filter(t => t[0] === fromStatus).map(t => t[1]));
-    skipStatus = sm.states.find(s => s !== fromStatus && s !== toStatus && !directlyReachable.has(s));
+    // Only consider states that appear in the transitions table (not sm.states which may have resource names)
+    skipStatus = Array.from(statesUsedInTransitions).find(
+      s => s !== fromStatus && s !== toStatus && !directlyReachable.has(s)
+    );
   }
   // Bug 4 Fix: Do NOT fall back to text extraction for skipStatus — unreliable regex matches
-  // normal words as status values. Only use statusMachine.states (already done above).
-  // If no skipStatus found from statusMachine, leave it undefined (no skip-transition test generated).
+  // normal words as status values. Only use transition-verified states (already done above).
+  // If no skipStatus found, leave it undefined (no skip-transition test generated).
 
   // Detect side-effects from sideEffects array
   const hasCounter = target.sideEffects?.some(se => se.toLowerCase().includes("count"));
@@ -1893,6 +1933,121 @@ test("${target.id}c — ${target.description.slice(0, 60)} persists to DB", asyn
   const items = Array.isArray(fetched) ? fetched : (fetched as Record<string, unknown[]>)?.items || (fetched as Record<string, unknown[]>)?.tasks || [];
   expect(items.some((r: unknown) => (r as Record<string, unknown>).id === ${resourceIdField})).toBe(true); // Kills: Don't persist to DB
 });`}
+
+${(() => {
+  // CONSTRAINT VIOLATION TESTS: Generate dedicated negative tests for error codes mentioned in behavior
+  // These are the tests that actually PROVE business rules are enforced
+  const constraintTests: string[] = [];
+  const errorCases = behavior?.errorCases || [];
+  const errorCodes = (behavior as any)?.errorCodes || [];
+  const allErrorText = [...errorCases, ...errorCodes, behavior?.title || "", ...behavior?.postconditions || []].join(" ").toLowerCase();
+  const epFields = epDef?.inputFields || [];
+
+  // Pattern: INSUFFICIENT_BALANCE — transfer more than available
+  if (allErrorText.includes("insufficient") || allErrorText.includes("balance") && allErrorText.includes("422")) {
+    const fromField = epFields.find(f => f.name.toLowerCase().includes("from") && f.name.toLowerCase().includes("account"));
+    const toField = epFields.find(f => f.name.toLowerCase().includes("to") && f.name.toLowerCase().includes("account"));
+    const amountField = epFields.find(f => f.name.toLowerCase().includes("amount"));
+    if (fromField && amountField) {
+      constraintTests.push(`
+test("${target.id}d — INSUFFICIENT_BALANCE: transfer exceeding balance must fail", async ({ request }) => {
+  // Arrange: create account with known low balance
+  const account = await createTestResource(request, adminCookie, { initialDeposit: 100 }) as Record<string, unknown>;
+  ${toField ? `const toAccount = await createTestResource(request, adminCookie) as Record<string, unknown>;` : ""}
+  
+  // Act: try to transfer MORE than available balance
+  const { status, data } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${fromField.name}: account.id as number,
+    ${toField ? `${toField.name}: toAccount.id as number,` : ""}
+    ${amountField.name}: 999999, // Way more than 100
+    ${epFields.filter(f => f.name !== fromField.name && f.name !== (toField?.name || "") && f.name !== amountField.name && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(422);
+  // Kills: Allow transfer with insufficient balance (no balance check)
+  
+  // Verify balance unchanged
+  const { data: afterAttempt } = await trpcQuery(request, "${getEp}",
+    { id: account.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  const balanceAfter = (afterAttempt as Record<string, unknown>)?.balance;
+  expect(balanceAfter).toBe(100); // Must be unchanged
+  // Kills: Deduct balance even on failed transfer
+});`);
+    }
+  }
+
+  // Pattern: SAME_ACCOUNT — fromAccountId == toAccountId
+  if (allErrorText.includes("same") || (allErrorText.includes("from") && allErrorText.includes("to") && allErrorText.includes("400"))) {
+    const fromField = epFields.find(f => f.name.toLowerCase().includes("from"));
+    const toField = epFields.find(f => f.name.toLowerCase().includes("to") && f.name.toLowerCase().includes("account"));
+    if (fromField && toField) {
+      constraintTests.push(`
+test("${target.id}e — SAME_ACCOUNT: transfer to self must be rejected", async ({ request }) => {
+  const account = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${fromField.name}: account.id as number,
+    ${toField.name}: account.id as number, // SAME account!
+    ${epFields.filter(f => f.name !== fromField.name && f.name !== toField.name && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(400);
+  // Kills: Allow transfer to same account (missing fromId != toId check)
+});`);
+    }
+  }
+
+  // Pattern: ACCOUNT_NOT_ACTIVE — action on frozen/closed resource
+  if (allErrorText.includes("not_active") || allErrorText.includes("frozen") || allErrorText.includes("closed")) {
+    const freezeEp = analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("freeze"));
+    if (freezeEp) {
+      constraintTests.push(`
+test("${target.id}f — ACCOUNT_NOT_ACTIVE: action on frozen resource must fail", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  
+  // Freeze the resource first
+  await trpcMutation(request, "${freezeEp.name}",
+    { id: resource.id, ${tenantField}: ${tenantConst}, reason: "test-freeze" }, adminCookie);
+  
+  // Attempt action on frozen resource
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("from")) return `${f.name}: resource.id as number,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(422);
+  // Kills: Allow action on frozen/inactive resource
+});`);
+    }
+  }
+
+  // Pattern: ALREADY_CLOSED / ALREADY_FROZEN — idempotent state operations
+  if (allErrorText.includes("already_closed") || allErrorText.includes("already_frozen") || allErrorText.includes("409")) {
+    constraintTests.push(`
+test("${target.id}g — duplicate state change must return 409", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  
+  // First state change (should succeed)
+  const { status: first } = await trpcMutation(request, "${actionEp}",
+    { id: resource.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect([200, 204]).toContain(first);
+  
+  // Second identical state change (should be rejected)
+  const { status: second } = await trpcMutation(request, "${actionEp}",
+    { id: resource.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(second).toBe(409);
+  // Kills: Allow duplicate state change (no idempotency check)
+});`);
+  }
+
+  return constraintTests.join("\\n");
+})()}
 `;
 }
 

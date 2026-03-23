@@ -358,8 +358,9 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
     // Detect router name from file path
     const fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
 
-    // Match procedure definitions: name: (protectedProcedure|publicProcedure|requireXxx).input(...).query/mutation
-    const procRegex = /(\w+):\s*(protectedProcedure|publicProcedure|requireWorkspaceAuth|requireRestaurantAuth|requireAuth|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
+    // Match procedure definitions: name: (protectedProcedure|publicProcedure|requireXxx|xxxProcedure).input(...).query/mutation
+    // Covers all middleware patterns: requireShopAuth, requireShopAdmin, requireWorkspaceAuth, etc.
+    const procRegex = /(\w+):\s*(protectedProcedure|publicProcedure|require\w+|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
     let match;
     while ((match = procRegex.exec(content)) !== null) {
       const procName = match[1];

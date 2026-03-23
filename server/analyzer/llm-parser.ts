@@ -6,7 +6,7 @@ import { jsonrepair } from "jsonrepair";
 
 const CHUNK_SIZE = 10000; // Smaller chunks = smaller LLM output per chunk = no JSON truncation
 // No MAX_CHUNKS — analyze the full spec
-export const LLM_TIMEOUT_MS = 90000; // 90s timeout per LLM call
+export const LLM_TIMEOUT_MS = 150000; // 150s timeout per LLM call (increased for larger specs)
 
 export async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([

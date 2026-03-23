@@ -110,7 +110,12 @@ const checks = [
   })()],
   ["No TODO_REPLACE placeholders", !testFiles.some(f => f.content.includes("TODO_REPLACE_WITH"))],
   ["Sanitized filenames", (() => {
-    const bad = testFiles.filter(f => /[/ ]/.test(f.filename.replace(/^\//, "").replace(/^tests\//, "")));
+    // Check that individual filename segments don't contain spaces or illegal chars
+    // (path separators / are allowed as directory separators)
+    const bad = testFiles.filter(f => {
+      const segments = f.filename.split("/");
+      return segments.some(seg => /[ \\:*?"<>|]/.test(seg));
+    });
     if (bad.length > 0) console.log("  BAD filenames:", bad.map(f => f.filename));
     return bad.length === 0;
   })()],

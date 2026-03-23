@@ -247,6 +247,7 @@ function extractTestBody(code: string): string {
   const result: string[] = [];
   let skipDepth = 0;
   let inBeforeAll = false;
+  let nestDepth = 0; // 0 = top-level, 1+ = inside test.describe
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -255,11 +256,15 @@ function extractTestBody(code: string): string {
     // Skip import lines
     if (trimmed.startsWith("import ")) continue;
 
-    // Skip let cookie declarations
-    if (/^let\s+(adminCookie|staffCookie|tenantACookie|tenantBCookie)/.test(trimmed)) continue;
+    // Skip top-level let cookie declarations only
+    if (nestDepth === 0 && /^let\s+(adminCookie|staffCookie|tenantACookie|tenantBCookie)/.test(trimmed)) continue;
 
-    // Detect start of test.beforeAll block
-    if (trimmed.startsWith("test.beforeAll(")) {
+    // Track nesting: entering test.describe increases depth
+    if (trimmed.startsWith("test.describe(")) nestDepth++;
+
+    // Only skip test.beforeAll at top level (nestDepth === 0)
+    // Nested beforeAll inside test.describe must be preserved
+    if (nestDepth === 0 && trimmed.startsWith("test.beforeAll(")) {
       inBeforeAll = true;
       skipDepth = 0;
       // Count opening braces on this line
@@ -281,6 +286,9 @@ function extractTestBody(code: string): string {
       if (skipDepth <= 0) inBeforeAll = false;
       continue;
     }
+
+    // Track closing of test.describe blocks ("});") decrements nestDepth
+    if (nestDepth > 0 && trimmed === "});") nestDepth--;
 
     result.push(line);
   }
@@ -351,13 +359,24 @@ export function mergeProofsToFile(proofs: ValidatedProof[]): string {
   const allCode = proofs.map(p => p.code).join("\n");
   const needsTenantCookies = allCode.includes("tenantACookie") || allCode.includes("tenantBCookie");
   const needsStaffCookie = allCode.includes("staffCookie");
+  // Detect if all proofs have their own beforeAll inside test.describe (concurrency/idempotency/feature-gate)
+  // These tests manage their own cookie initialization and don't need a top-level adminCookie beforeAll
+  const allHaveOwnBeforeAll = proofs.every(p =>
+    p.code.includes("test.describe(") && p.code.includes("test.beforeAll("));
+  // Detect feature-gate tests (use proCookie/freeCookie, not adminCookie)
+  const hasFeatureGate = allCode.includes("proCookie") || allCode.includes("freeCookie");
 
   // Determine the login function from the first proof's beforeAll
   const loginFnMatch = allCode.match(/tenantACookie = await (\w+)\(request\)/);
   const tenantLoginFn = loginFnMatch?.[1] || "getAdminCookie";
 
-  // Shared beforeAll block
-  const beforeAll = needsTenantCookies ? `
+  // Shared beforeAll block — skip if all proofs have their own beforeAll inside test.describe
+  let beforeAll: string;
+  if (allHaveOwnBeforeAll && !needsTenantCookies) {
+    // Concurrency/idempotency/feature-gate: each test.describe has its own beforeAll — no top-level needed
+    beforeAll = "";
+  } else if (needsTenantCookies) {
+    beforeAll = `
 let tenantACookie: string;
 let tenantBCookie: string;
 
@@ -370,13 +389,22 @@ test.beforeAll(async ({ request }) => {
     process.env.E2E_TENANT_B_PASS || "TestPass2026x"
   );
 });
-` : `
+`;
+  } else {
+    beforeAll = `
 let adminCookie: string;${needsStaffCookie ? "\nlet staffCookie: string;" : ""}
 
 test.beforeAll(async ({ request }) => {
   adminCookie = await getAdminCookie(request);
 ${needsStaffCookie ? "  staffCookie = await getStaffCookie(request);\n" : ""}});
 `;
+    // Ensure getAdminCookie is imported (it's used in the generated beforeAll above)
+    const authMod = '"../../helpers/auth"';
+    const authSyms = importsByModule.get(authMod) || new Set<string>();
+    authSyms.add("getAdminCookie");
+    if (needsStaffCookie) authSyms.add("getStaffCookie");
+    importsByModule.set(authMod, authSyms);
+  }
 
   // Test bodies without repeated imports/declarations
   // Note: basePayload functions now have unique names (basePayload_PROOF_B_007_BOUND, etc.)
