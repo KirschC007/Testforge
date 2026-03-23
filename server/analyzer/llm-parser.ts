@@ -1,9 +1,10 @@
 import { invokeLLM } from "../_core/llm";
 import type { EndpointField, AnalysisIR, AnalysisResult } from "./types";
+import { jsonrepair } from "jsonrepair";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CHUNK_SIZE = 15000; // Smaller chunks = smaller LLM output per chunk = no JSON truncation
+const CHUNK_SIZE = 10000; // Smaller chunks = smaller LLM output per chunk = no JSON truncation
 // No MAX_CHUNKS — analyze the full spec
 export const LLM_TIMEOUT_MS = 90000; // 90s timeout per LLM call
 
@@ -83,114 +84,9 @@ CRITICAL RULES for statusMachine:
 - initialState: the state a new resource starts in
 - terminalStates: states from which no further transitions are allowed
 
---- FEW-SHOT EXAMPLE (TaskManager + ShopCore) ---
-Input: "Tasks have status: todo | in_progress | review | done. Transitions: todo→in_progress, in_progress→review, review→done. No skipping, no reverse. Tasks have priority: low | medium | high. POST /api/trpc/tasks.create (input: workspaceId, title, priority; output: id, title, status, priority, createdAt). POST /api/trpc/tasks.updateStatus (input: id, workspaceId, status; output: id, status, updatedAt). Login: POST /api/trpc/auth.login. Task descriptions may contain personal data. GET /api/trpc/workspace.exportData exports all workspace data for GDPR compliance. DELETE /api/trpc/workspace.deleteAll permanently deletes all workspace data. tasks.getById returns 403 if task belongs to a different workspace. POST /api/trpc/products.create (input: shopId, name (1-100 chars), price (0.01-999999.99), stock (0-10000), sku (3-50 chars), priority enum low|medium|high|critical). POST /api/trpc/orders.create (input: shopId, customerId, items array of {productId, quantity (1-100)}, max 50 items). When order is created, stock is decremented by quantity ordered."
-
-Output fragment:
-{
-  "behaviors": [
-    {
-      "id": "B-001",
-      "title": "System rejects todo→done skip-transition",
-      "subject": "System", "action": "rejects", "object": "status update",
-      "preconditions": ["task.status = 'todo'"],
-      "postconditions": ["HTTP 422 returned", "task.status unchanged in DB"],
-      "errorCases": ["todo→done → 422", "todo→review → 422"],
-      "tags": ["state-machine", "validation"], "riskHints": ["state-change"],
-      "chapter": "Tasks",
-      "specAnchor": "No skipping, no reverse"
-    },
-    {
-      "id": "B-002",
-      "title": "tasks.getById returns 403 if task belongs to a different workspace",
-      "subject": "System", "action": "returns 403", "object": "task",
-      "preconditions": ["task.workspaceId != caller.workspaceId"],
-      "postconditions": ["HTTP 403 returned"],
-      "errorCases": ["cross-tenant access → 403"],
-      "tags": ["authorization", "security", "error-handling"], "riskHints": ["idor", "cross-tenant"],
-      "chapter": "Tasks",
-      "specAnchor": "tasks.getById returns 403 if task belongs to a different workspace"
-    },
-    {
-      "id": "B-003",
-      "title": "Task descriptions may contain personal data",
-      "subject": "System", "action": "stores", "object": "personal data in task descriptions",
-      "preconditions": ["task has description field"],
-      "postconditions": ["personal data stored in description"],
-      "errorCases": [],
-      "tags": ["dsgvo", "pii"], "riskHints": ["dsgvo", "pii-leak"],
-      "chapter": "GDPR",
-      "specAnchor": "Task descriptions may contain personal data"
-    },
-    {
-      "id": "B-004",
-      "title": "workspace.deleteAll permanently deletes all workspace data",
-      "subject": "System", "action": "deletes", "object": "all workspace data",
-      "preconditions": ["caller is admin"],
-      "postconditions": ["all workspace data permanently deleted"],
-      "errorCases": [],
-      "tags": ["dsgvo", "delete"], "riskHints": ["dsgvo"],
-      "chapter": "GDPR",
-      "specAnchor": "DELETE /api/trpc/workspace.deleteAll permanently deletes all workspace data"
-    }
-  ],
-  "apiEndpoints": [
-    {"name": "tasks.create", "method": "POST /api/trpc/tasks.create", "auth": "requireAuth", "relatedBehaviors": ["B-002"],
-     "inputFields": [
-       {"name": "workspaceId", "type": "number", "required": true, "isTenantKey": true},
-       {"name": "title", "type": "string", "required": true, "min": 1, "max": 100, "isBoundaryField": true},
-       {"name": "priority", "type": "enum", "required": false, "enumValues": ["low", "medium", "high"]}
-     ],
-     "outputFields": ["id", "title", "status", "priority", "createdAt"]},
-    {"name": "tasks.updateStatus", "method": "POST /api/trpc/tasks.updateStatus", "auth": "requireAuth", "relatedBehaviors": ["B-001"],
-     "inputFields": [
-       {"name": "id", "type": "number", "required": true},
-       {"name": "workspaceId", "type": "number", "required": true, "isTenantKey": true},
-       {"name": "status", "type": "enum", "required": true, "enumValues": ["todo", "in_progress", "review", "done"]}
-     ],
-     "outputFields": ["id", "status", "updatedAt"]},
-    {"name": "products.create", "method": "POST /api/trpc/products.create", "auth": "requireShopAuth", "relatedBehaviors": ["B-003"],
-     "inputFields": [
-       {"name": "shopId", "type": "number", "required": true, "isTenantKey": true},
-       {"name": "name", "type": "string", "required": true, "min": 1, "max": 100, "isBoundaryField": true},
-       {"name": "price", "type": "number", "required": true, "min": 0.01, "max": 999999.99, "isBoundaryField": true},
-       {"name": "stock", "type": "number", "required": true, "min": 0, "max": 10000, "isBoundaryField": true},
-       {"name": "sku", "type": "string", "required": true, "min": 3, "max": 50, "isBoundaryField": true},
-       {"name": "priority", "type": "enum", "required": true, "enumValues": ["low", "medium", "high", "critical"], "isBoundaryField": true}
-     ],
-     "outputFields": ["id", "name", "price", "stock", "sku", "createdAt"]},
-    {"name": "orders.create", "method": "POST /api/trpc/orders.create", "auth": "requireShopAuth", "relatedBehaviors": ["B-004"],
-     "inputFields": [
-       {"name": "shopId", "type": "number", "required": true, "isTenantKey": true},
-       {"name": "customerId", "type": "number", "required": true},
-       {"name": "items", "type": "array", "required": true, "min": 1, "max": 50, "isBoundaryField": true,
-        "arrayItemType": "object",
-        "arrayItemFields": [
-          {"name": "productId", "type": "number", "required": true},
-          {"name": "quantity", "type": "number", "required": true, "min": 1, "max": 100, "isBoundaryField": true}
-        ]}
-     ],
-     "outputFields": ["id", "status", "totalAmount", "createdAt"]},
-    {"name": "auth.login", "method": "POST /api/trpc/auth.login", "auth": "public", "relatedBehaviors": [],
-     "inputFields": [
-       {"name": "username", "type": "string", "required": true},
-       {"name": "password", "type": "string", "required": true}
-     ],
-     "outputFields": ["token"]}
-  ],
-  "enums": {
-    "status": ["todo", "in_progress", "review", "done"],
-    "priority": ["low", "medium", "high"]
-  },
-  "statusMachine": {
-    "states": ["todo", "in_progress", "review", "done"],
-    "transitions": [["todo", "in_progress"], ["in_progress", "review"], ["review", "done"]],
-    "forbidden": [["done", "todo"], ["done", "in_progress"], ["review", "todo"], ["in_progress", "todo"]],
-    "initialState": "todo",
-    "terminalStates": ["done"]
-  },
-  "authModel": {"loginEndpoint": "/api/trpc/auth.login", "roles": [{"name": "admin", "envUserVar": "E2E_ADMIN_USER", "envPassVar": "E2E_ADMIN_PASS", "defaultUser": "test-admin", "defaultPass": "TestPass2026x"}]}
-}
+--- EXAMPLE ---
+Input: "tasks.getById returns 403 if task.workspaceId != caller.workspaceId. Tasks: status todo|in_progress|done, transitions todo→in_progress→done only. POST /api/trpc/tasks.create (workspaceId:number tenant, title:string 1-100, priority:enum low|medium|high). Task descriptions may contain personal data."
+Output: {"behaviors":[{"id":"B-001","title":"tasks.getById returns 403 for cross-workspace access","subject":"System","action":"returns 403","object":"task","preconditions":["task.workspaceId != caller.workspaceId"],"postconditions":["HTTP 403"],"errorCases":["cross-tenant → 403"],"tags":["authorization","security"],"riskHints":["idor","cross-tenant"],"chapter":"Tasks","specAnchor":"returns 403 if task.workspaceId != caller.workspaceId"},{"id":"B-002","title":"Status todo→done skip is rejected","subject":"System","action":"rejects","object":"status update","preconditions":["task.status=todo"],"postconditions":["HTTP 422"],"errorCases":["todo→done → 422"],"tags":["state-machine"],"riskHints":["state-change"],"chapter":"Tasks","specAnchor":"transitions todo→in_progress→done only"},{"id":"B-003","title":"Task descriptions may contain personal data","subject":"System","action":"stores","object":"PII in descriptions","preconditions":[],"postconditions":["PII stored"],"errorCases":[],"tags":["dsgvo","pii"],"riskHints":["dsgvo","pii-leak"],"chapter":"GDPR","specAnchor":"Task descriptions may contain personal data"}],"apiEndpoints":[{"name":"tasks.create","method":"POST","auth":"requireAuth","relatedBehaviors":["B-001"],"inputFields":[{"name":"workspaceId","type":"number","required":true,"isTenantKey":true},{"name":"title","type":"string","required":true,"min":1,"max":100,"isBoundaryField":true},{"name":"priority","type":"enum","required":false,"enumValues":["low","medium","high"]}],"outputFields":["id","title","status"]}],"enums":{"status":["todo","in_progress","done"],"priority":["low","medium","high"]},"statusMachine":{"states":["todo","in_progress","done"],"transitions":[["todo","in_progress"],["in_progress","done"]],"forbidden":[["todo","done"]],"initialState":"todo","terminalStates":["done"]},"invariants":[],"ambiguities":[],"contradictions":[],"tenantModel":{"tenantEntity":"workspace","tenantIdField":"workspaceId"},"resources":[{"name":"task","table":"tasks","tenantKey":"workspaceId","operations":["create","read","update"],"hasPII":true}],"authModel":{"loginEndpoint":"/api/trpc/auth.login","roles":[{"name":"user","envUserVar":"E2E_USER","envPassVar":"E2E_PASS","defaultUser":"test-user","defaultPass":"TestPass2026x"}]},"services":[],"userFlows":[],"dataModels":[],"qualityScore":8,"specType":"api-spec"}
 --- END EXAMPLE ---
 
 Output ONLY valid JSON. No markdown, no explanation.`;
@@ -202,12 +98,26 @@ Output ONLY valid JSON. No markdown, no explanation.`;
     ],
     response_format: { type: "json_object" },
     thinkingBudget: 0,
-    maxTokens: 16384, // Large enough for 15k-char chunks with 20+ behaviors
+    maxTokens: 32768, // Must be large enough: 10k-char chunk + few-shot prompt can produce 20k+ token output
   });
 
   const content = response.choices[0].message.content as string;
   const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  return JSON.parse(cleaned);
+  // Robust JSON parsing: try direct parse first, then jsonrepair for truncated/malformed LLM output
+  try {
+    return JSON.parse(cleaned);
+  } catch (_parseErr) {
+    console.warn(`[TestForge] Chunk ${chunkIndex}: JSON.parse failed (truncated output?), attempting jsonrepair...`);
+    try {
+      const repaired = jsonrepair(cleaned);
+      const result = JSON.parse(repaired);
+      console.log(`[TestForge] Chunk ${chunkIndex}: jsonrepair succeeded — recovered partial behaviors`);
+      return result;
+    } catch (repairErr) {
+      console.error(`[TestForge] Chunk ${chunkIndex}: jsonrepair also failed:`, repairErr);
+      throw _parseErr; // throw original error so caller can log it properly
+    }
+  }
 }
 
 export async function parseSpec(specText: string): Promise<AnalysisResult> {

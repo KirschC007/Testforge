@@ -35,9 +35,11 @@ export function generateExtendedTestSuite(
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const loginEndpoint = (ir.authModel?.loginEndpoint || "/api/trpc/auth.login")
     .replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
-  const roles = ir.authModel?.roles || [
-    { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" },
-  ];
+  const DEFAULT_ROLE = { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" };
+  // Filter out roles without a name (malformed LLM output) and ensure at least one role
+  const rawRoles: AuthRole[] = ir.authModel?.roles || [];
+  const roles: AuthRole[] = rawRoles.filter((r: AuthRole) => r && typeof r.name === "string" && r.name.length > 0);
+  if (roles.length === 0) roles.push(DEFAULT_ROLE);
   const primaryRole = roles[0];
   const roleFnName = `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
 
@@ -426,7 +428,9 @@ function generateIntegrationTests(
   specType: string
 ): ExtendedTestFile[] {
   const files: ExtendedTestFile[] = [];
-  const roles = ir.authModel?.roles || [{ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" }];
+  const _rawRoles2 = ir.authModel?.roles || [];
+  const roles = _rawRoles2.filter((r: any) => r && typeof r.name === "string" && r.name.length > 0);
+  if (roles.length === 0) roles.push({ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" });
   const primaryRole = roles[0];
 
   // Group endpoints by module
@@ -1027,7 +1031,9 @@ function generatePerformanceTests(
   const files: ExtendedTestFile[] = [];
   const createEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"));
   const listEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"));
-  const roles = ir.authModel?.roles || [{ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" }];
+  const _rawRoles2 = ir.authModel?.roles || [];
+  const roles = _rawRoles2.filter((r: any) => r && typeof r.name === "string" && r.name.length > 0);
+  if (roles.length === 0) roles.push({ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" });
   const primaryRole = roles[0];
 
   // Rate-limit behaviors
