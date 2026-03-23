@@ -100,7 +100,7 @@ const PII_FIELD_NAMES = new Set([
 
 const TENANT_KEY_NAMES = new Set([
   "tenantId", "workspaceId", "organizationId", "orgId", "bankId", "companyId",
-  "restaurantId", "shopId", "storeId", "accountId", "teamId", "projectId",
+  "restaurantId", "shopId", "storeId", "accountId", "teamId",
   "customerId", "clientId",
 ]);
 
@@ -532,7 +532,32 @@ function buildIRFromCode(
   const dataModels: DataModel[] = [];
 
   // Detect global tenant key from tables
-  const globalTenantKey = tables.find(t => t.tenantKey)?.tenantKey || null;
+  // First: check known TENANT_KEY_NAMES list
+  let globalTenantKey = tables.find(t => t.tenantKey)?.tenantKey || null;
+  // Second: if not found, use 60%-threshold heuristic for any *Id field
+  if (!globalTenantKey && tables.length >= 2) {
+    const fieldCounts: Record<string, number> = {};
+    for (const table of tables) {
+      for (const field of table.fields) {
+        const fn = field.name;
+        if ((fn.endsWith("Id") || fn.endsWith("id")) && fn !== "id" && !TENANT_KEY_NAMES.has(fn)) {
+          fieldCounts[field.name] = (fieldCounts[field.name] || 0) + 1;
+        }
+      }
+    }
+    const totalTables = tables.length;
+    const detected = Object.entries(fieldCounts)
+      .filter(([, count]) => count / totalTables >= 0.6)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    if (detected) {
+      globalTenantKey = detected;
+      // Mark the field as tenant key in all tables
+      for (const table of tables) {
+        const f = table.fields.find(fld => fld.name === detected);
+        if (f) { f.isTenantKey = true; table.tenantKey = detected; }
+      }
+    }
+  }
 
   // Build behaviors from procedures
   let behaviorIdx = 0;
@@ -827,6 +852,7 @@ export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult
   const ir = buildIRFromCode(allTables, allProcedures, framework);
 
   // 5. Collect metadata
+  // The buildIRFromCode call above already applied the 60%-threshold heuristic and mutated allTables
   const tenantKey = allTables.find(t => t.tenantKey)?.tenantKey || null;
   const piiFields: string[] = [];
   for (const table of allTables) {
