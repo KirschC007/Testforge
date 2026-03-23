@@ -19,6 +19,7 @@ import { listProofPacks, getProofPack, type IndustryPack } from "./analyzer/indu
 import { generatePlaywrightConfig, generateCIWorkflow } from "./analyzer/playwright-mcp";
 import { DEMO_ANALYSIS } from "./demo-data";
 import { runTests } from "./test-runner";
+import { emitTestResult, emitRunComplete, emitRunError } from "./test-run-sse";
 import { testRuns } from "../drizzle/schema";
 import { getDb } from "./db";
 import { eq } from "drizzle-orm";
@@ -600,32 +601,53 @@ export const appRouter = router({
           timeout: input.timeout || 10000,
           concurrency: input.concurrency || 5,
         };
-        // Run in background
-        runTests(testFiles, config).then(async (result) => {
+        // Count total test cases for progress reporting
+        const { extractTestCases } = await import("./test-runner");
+        let totalTestCount = 0;
+        for (const file of testFiles) {
+          const proofType = (file as any).proofType ||
+            (file as any).filename?.replace(/\.spec\.ts$/, "").split("/").pop() || "unknown";
+          totalTestCount += extractTestCases((file as any).content, proofType, input.baseUrl, config).length;
+        }
+
+        // Run in background with SSE streaming
+        let completedCount = 0;
+        runTests(testFiles, config, (result) => {
+          // Called after each individual test completes — emit to SSE clients
+          completedCount++;
+          emitTestResult(runId, result, { completed: completedCount, total: totalTestCount });
+        }).then(async (result) => {
+          // Persist final results to DB
           const db2 = await getDb();
-          if (!db2) return;
-          await db2.update(testRuns)
-            .set({
-              status: "completed",
-              totalTests: result.totalTests,
-              passed: result.passed,
-              failed: result.failed,
-              errors: result.errors,
-              passRate: result.passRate,
-              mutationScore: result.mutationScore,
-              resultsJson: result.results as any,
-              summary: result.summary,
-              completedAt: new Date(),
-            })
-            .where(eq(testRuns.id, testRunId));
+          if (db2) {
+            await db2.update(testRuns)
+              .set({
+                status: "completed",
+                totalTests: result.totalTests,
+                passed: result.passed,
+                failed: result.failed,
+                errors: result.errors,
+                passRate: result.passRate,
+                mutationScore: result.mutationScore,
+                resultsJson: result.results as any,
+                summary: result.summary,
+                completedAt: new Date(),
+              })
+              .where(eq(testRuns.id, testRunId));
+          }
+          // Emit completion event to all SSE clients
+          emitRunComplete(runId, result);
         }).catch(async (err) => {
           const db2 = await getDb();
-          if (!db2) return;
-          await db2.update(testRuns)
-            .set({ status: "failed", summary: String(err) })
-            .where(eq(testRuns.id, testRunId));
+          if (db2) {
+            await db2.update(testRuns)
+              .set({ status: "failed", summary: String(err) })
+              .where(eq(testRuns.id, testRunId));
+          }
+          // Emit error event to all SSE clients
+          emitRunError(runId, String(err));
         });
-        return { testRunId, runId, message: "Test run started. Poll getResults for status." };
+        return { testRunId, runId, message: "Test run started. Connect to /api/test-runs/" + runId + "/stream for live results." };
       }),
     getResults: protectedProcedure
       .input(z.object({ testRunId: z.number() }))

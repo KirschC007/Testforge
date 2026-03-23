@@ -275,12 +275,15 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/demo">
+              <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Demo</span>
+            </Link>
             {user && (
               <span className="text-xs text-muted-foreground hidden sm:inline">{user.name}</span>
             )}
             <Link href="/analysis/new">
               <Button size="sm" className="gap-1.5">
-                <Plus className="w-3.5 h-3.5" /> New Analysis
+                <Zap className="w-3.5 h-3.5" /> Run Tests
               </Button>
             </Link>
           </div>

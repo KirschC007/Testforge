@@ -1,16 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   Play, CheckCircle2, XCircle, AlertCircle, Clock, Zap,
   ChevronDown, ChevronRight, Shield, ArrowLeft, RefreshCw,
-  Target, TrendingUp, Eye, EyeOff
+  Target, TrendingUp, Eye, EyeOff, Wifi, WifiOff
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 
@@ -28,6 +27,20 @@ interface TestResult {
   mutationKill?: string;
 }
 
+interface RunSummary {
+  runId: string;
+  totalTests: number;
+  passed: number;
+  failed: number;
+  errors: number;
+  passRate: number;
+  mutationScore: number;
+  results: TestResult[];
+  summary: string;
+  startedAt: Date;
+  completedAt: Date;
+}
+
 interface TestRun {
   id: number;
   runId: string;
@@ -43,6 +56,13 @@ interface TestRun {
   startedAt: Date;
   completedAt: Date | null;
 }
+
+// SSE event types
+type SSEEvent =
+  | { type: "connected"; runId: string }
+  | { type: "test_result"; result: TestResult; progress: { completed: number; total: number } }
+  | { type: "run_complete"; summary: RunSummary }
+  | { type: "run_error"; error: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -73,12 +93,12 @@ function ProofTypeBadge({ type }: { type: string }) {
 
 // ─── Test Result Row ──────────────────────────────────────────────────────────
 
-function TestResultRow({ result }: { result: TestResult }) {
+function TestResultRow({ result, isNew }: { result: TestResult; isNew?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const hasFail = result.status === "fail" || result.status === "error";
 
   return (
-    <div className={`border-b border-zinc-800 last:border-0 ${hasFail ? "bg-red-950/10" : ""}`}>
+    <div className={`border-b border-zinc-800 last:border-0 transition-all duration-300 ${hasFail ? "bg-red-950/10" : ""} ${isNew ? "animate-pulse-once" : ""}`}>
       <button
         className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-800/40 transition-colors"
         onClick={() => hasFail && setExpanded(!expanded)}
@@ -137,6 +157,43 @@ function MetricCard({
   );
 }
 
+// ─── Live Progress Bar ────────────────────────────────────────────────────────
+
+function LiveProgressBar({ completed, total, passed, failed }: {
+  completed: number; total: number; passed: number; failed: number;
+}) {
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const passPct = completed > 0 ? Math.round((passed / completed) * 100) : 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-zinc-300 font-medium">
+          {completed} / {total} tests
+        </span>
+        <span className="text-zinc-500">{pct}%</span>
+      </div>
+      <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-300 bg-gradient-to-r from-violet-600 to-violet-400"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex gap-4 text-xs">
+        <span className="text-emerald-400 flex items-center gap-1">
+          <CheckCircle2 className="w-3 h-3" /> {passed} passed
+        </span>
+        <span className="text-red-400 flex items-center gap-1">
+          <XCircle className="w-3 h-3" /> {failed} failed
+        </span>
+        {completed > 0 && (
+          <span className="text-zinc-500">{passPct}% pass rate so far</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TestRunner() {
@@ -155,30 +212,105 @@ export default function TestRunner() {
 
   // Run state
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
+  const [activeRunStringId, setActiveRunStringId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "fail" | "pass">("all");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // SSE live state
+  const [sseConnected, setSseConnected] = useState(false);
+  const [liveResults, setLiveResults] = useState<TestResult[]>([]);
+  const [liveProgress, setLiveProgress] = useState<{ completed: number; total: number }>({ completed: 0, total: 0 });
+  const [runComplete, setRunComplete] = useState<RunSummary | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [newResultIds, setNewResultIds] = useState<Set<string>>(new Set());
+  const sseRef = useRef<EventSource | null>(null);
+  const resultsEndRef = useRef<HTMLDivElement | null>(null);
 
   // tRPC
   const startMutation = trpc.testRuns.start.useMutation();
-  const { data: runData, refetch: refetchRun } = trpc.testRuns.getResults.useQuery(
-    { testRunId: activeRunId! },
-    { enabled: !!activeRunId, refetchInterval: false }
-  );
   const { data: pastRuns } = trpc.testRuns.listByAnalysis.useQuery(
     { analysisId },
     { enabled: !!analysisId }
   );
 
-  // Poll while running
+  // Auto-scroll to bottom as new results arrive
   useEffect(() => {
-    if (!activeRunId) return;
-    if (runData?.status === "running" || runData?.status === "pending") {
-      pollRef.current = setInterval(() => refetchRun(), 2000);
-    } else {
-      if (pollRef.current) clearInterval(pollRef.current);
+    if (liveResults.length > 0) {
+      resultsEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [activeRunId, runData?.status, refetchRun]);
+  }, [liveResults.length]);
+
+  // SSE connection management
+  const connectSSE = useCallback((runId: string) => {
+    // Close any existing connection
+    if (sseRef.current) {
+      sseRef.current.close();
+      sseRef.current = null;
+    }
+
+    const es = new EventSource(`/api/test-runs/${runId}/stream`, { withCredentials: true });
+    sseRef.current = es;
+
+    es.onopen = () => {
+      setSseConnected(true);
+    };
+
+    es.onmessage = (event) => {
+      try {
+        const data: SSEEvent = JSON.parse(event.data);
+
+        if (data.type === "connected") {
+          setSseConnected(true);
+        } else if (data.type === "test_result") {
+          const { result, progress } = data;
+          setLiveResults(prev => [...prev, result]);
+          setLiveProgress(progress);
+          // Mark as new for animation
+          setNewResultIds(prev => {
+            const next = new Set(prev);
+            next.add(result.testId);
+            setTimeout(() => {
+              setNewResultIds(curr => {
+                const s = new Set(curr);
+                s.delete(result.testId);
+                return s;
+              });
+            }, 1000);
+            return next;
+          });
+        } else if (data.type === "run_complete") {
+          setRunComplete(data.summary);
+          setIsRunning(false);
+          setSseConnected(false);
+          es.close();
+        } else if (data.type === "run_error") {
+          setRunError(data.error);
+          setIsRunning(false);
+          setSseConnected(false);
+          es.close();
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      setSseConnected(false);
+      // Don't close — browser will auto-reconnect for transient errors
+    };
+
+    return () => {
+      es.close();
+      sseRef.current = null;
+    };
+  }, []);
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => {
+      sseRef.current?.close();
+    };
+  }, []);
 
   if (!user) {
     return (
@@ -198,6 +330,13 @@ export default function TestRunner() {
       if (advisorToken) roleTokens["advisor"] = advisorToken;
       if (customerToken) roleTokens["customer"] = customerToken;
 
+      // Reset live state
+      setLiveResults([]);
+      setLiveProgress({ completed: 0, total: 0 });
+      setRunComplete(null);
+      setRunError(null);
+      setIsRunning(true);
+
       const result = await startMutation.mutateAsync({
         analysisId,
         baseUrl: baseUrl.replace(/\/$/, ""),
@@ -206,29 +345,48 @@ export default function TestRunner() {
         timeout: 10000,
         concurrency: 5,
       });
+
       setActiveRunId(result.testRunId);
+      setActiveRunStringId(result.runId);
+
+      // Connect SSE for live streaming
+      connectSSE(result.runId);
     } catch (err: unknown) {
+      setIsRunning(false);
       console.error("Failed to start test run:", err);
     }
   };
 
-  const run = runData as TestRun | undefined;
-  const results: TestResult[] = (run?.resultsJson as TestResult[]) || [];
-  const filteredResults = results.filter(r => {
+  // Compute display results: live during run, final after complete
+  const displayResults: TestResult[] = runComplete
+    ? runComplete.results
+    : liveResults;
+
+  const filteredResults = displayResults.filter(r => {
     if (filter === "fail") return r.status === "fail" || r.status === "error";
     if (filter === "pass") return r.status === "pass";
     return true;
   });
 
-  const isRunning = run?.status === "running" || run?.status === "pending";
-  const isDone = run?.status === "completed" || run?.status === "failed";
+  // Live metrics
+  const livePassed = liveResults.filter(r => r.status === "pass").length;
+  const liveFailed = liveResults.filter(r => r.status === "fail" || r.status === "error").length;
+
+  // Final metrics (from SSE complete event or live)
+  const finalPassed = runComplete?.passed ?? livePassed;
+  const finalFailed = runComplete?.failed ?? liveFailed;
+  const finalTotal = runComplete?.totalTests ?? liveProgress.total;
+  const finalPassRate = runComplete?.passRate ?? (finalTotal > 0 ? Math.round((finalPassed / finalTotal) * 100) : 0);
+  const finalMutationScore = runComplete?.mutationScore ?? 100;
 
   // Group results by proof type
-  const byProofType = results.reduce((acc, r) => {
+  const byProofType = displayResults.reduce((acc, r) => {
     if (!acc[r.proofType]) acc[r.proofType] = { pass: 0, fail: 0, error: 0 };
     acc[r.proofType][r.status === "skip" ? "pass" : r.status]++;
     return acc;
   }, {} as Record<string, { pass: number; fail: number; error: number }>);
+
+  const isDone = !!runComplete || !!runError;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -236,25 +394,35 @@ export default function TestRunner() {
       <div className="border-b border-zinc-800 bg-zinc-900/50">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-4">
           <button
-            onClick={() => navigate(`/analysis/${analysisId}`)}
+            onClick={() => navigate(analysisId ? `/analysis/${analysisId}` : "/dashboard")}
             className="text-zinc-400 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
+          <div className="flex-1">
             <h1 className="text-lg font-semibold flex items-center gap-2">
               <Zap className="w-5 h-5 text-violet-400" />
               Test Runner
+              {isRunning && (
+                <span className="flex items-center gap-1.5 text-xs font-normal text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-full px-2.5 py-0.5">
+                  {sseConnected
+                    ? <><Wifi className="w-3 h-3" /> Live</>
+                    : <><WifiOff className="w-3 h-3" /> Connecting...</>
+                  }
+                </span>
+              )}
             </h1>
-            <p className="text-xs text-zinc-500">Analysis #{analysisId} — Execute tests against your live API</p>
+            <p className="text-xs text-zinc-500">
+              {analysisId ? `Analysis #${analysisId} — ` : ""}Execute tests against your live API
+            </p>
           </div>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
-        {/* Config Form */}
-        {!activeRunId && (
+        {/* Config Form — shown when not running */}
+        {!isRunning && !isDone && (
           <Card className="bg-zinc-900 border-zinc-800">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -355,16 +523,15 @@ export default function TestRunner() {
                   <p className="text-xs text-zinc-500 mb-3">Previous runs</p>
                   <div className="space-y-2">
                     {(pastRuns as TestRun[]).slice(-5).reverse().map(r => (
-                      <button
+                      <div
                         key={r.id}
-                        onClick={() => setActiveRunId(r.id)}
-                        className="w-full flex items-center gap-3 text-left px-3 py-2 rounded bg-zinc-800/50 hover:bg-zinc-800 transition-colors"
+                        className="w-full flex items-center gap-3 text-left px-3 py-2 rounded bg-zinc-800/50"
                       >
                         <span className={`w-2 h-2 rounded-full ${r.status === "completed" ? "bg-emerald-400" : r.status === "failed" ? "bg-red-400" : "bg-amber-400"}`} />
-                        <span className="text-xs text-zinc-300 flex-1">{r.runId}</span>
+                        <span className="text-xs text-zinc-300 flex-1 font-mono truncate">{r.runId}</span>
                         <span className="text-xs text-zinc-500">{r.passRate}% pass</span>
                         <span className="text-xs text-zinc-600">{new Date(r.startedAt).toLocaleString()}</span>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -373,47 +540,100 @@ export default function TestRunner() {
           </Card>
         )}
 
-        {/* Running state */}
-        {activeRunId && isRunning && (
+        {/* Live Running State */}
+        {isRunning && (
           <Card className="bg-zinc-900 border-zinc-800">
-            <CardContent className="py-8 text-center space-y-4">
-              <RefreshCw className="w-10 h-10 text-violet-400 animate-spin mx-auto" />
-              <p className="text-white font-medium">Running tests against your API...</p>
-              <p className="text-zinc-400 text-sm">Tests execute with 5 parallel workers. Results appear when complete.</p>
-              <Progress className="w-64 mx-auto" value={undefined} />
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 text-violet-400 animate-spin" />
+                Running Tests Live
+                <span className="ml-auto flex items-center gap-1.5 text-xs font-normal text-zinc-400">
+                  {sseConnected
+                    ? <><Wifi className="w-3 h-3 text-emerald-400" /> SSE Connected</>
+                    : <><WifiOff className="w-3 h-3 text-amber-400" /> Connecting...</>
+                  }
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <LiveProgressBar
+                completed={liveProgress.completed}
+                total={liveProgress.total}
+                passed={livePassed}
+                failed={liveFailed}
+              />
             </CardContent>
           </Card>
         )}
 
-        {/* Results */}
-        {activeRunId && isDone && run && (
+        {/* Live Results (shown during run) */}
+        {isRunning && liveResults.length > 0 && (
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Zap className="w-4 h-4 text-violet-400" />
+                Live Results
+                <span className="text-xs font-normal text-zinc-500 ml-auto">
+                  {liveResults.length} completed
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 max-h-96 overflow-y-auto">
+              {liveResults.map(r => (
+                <TestResultRow key={r.testId} result={r} isNew={newResultIds.has(r.testId)} />
+              ))}
+              <div ref={resultsEndRef} />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Error state */}
+        {runError && (
+          <Card className="bg-red-950/20 border-red-800">
+            <CardContent className="py-6 text-center space-y-3">
+              <AlertCircle className="w-10 h-10 text-red-400 mx-auto" />
+              <p className="text-red-300 font-medium">Test run failed</p>
+              <p className="text-red-400/70 text-sm font-mono">{runError}</p>
+              <Button
+                variant="outline"
+                onClick={() => { setRunError(null); setIsRunning(false); setLiveResults([]); }}
+                className="border-red-700 text-red-300 hover:text-white"
+              >
+                Try Again
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Final Results */}
+        {isDone && runComplete && (
           <div className="space-y-6">
             {/* Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <MetricCard
                 label="Pass Rate"
-                value={`${run.passRate}%`}
-                sub={`${run.passed}/${run.totalTests} tests`}
-                color={run.passRate >= 80 ? "text-emerald-400" : run.passRate >= 50 ? "text-amber-400" : "text-red-400"}
+                value={`${finalPassRate}%`}
+                sub={`${finalPassed}/${finalTotal} tests`}
+                color={finalPassRate >= 80 ? "text-emerald-400" : finalPassRate >= 50 ? "text-amber-400" : "text-red-400"}
               />
               <MetricCard
                 label="Mutation Score"
-                value={`${run.mutationScore}%`}
+                value={`${finalMutationScore}%`}
                 sub="Security kills caught"
-                color={run.mutationScore >= 80 ? "text-violet-400" : "text-amber-400"}
+                color={finalMutationScore >= 80 ? "text-violet-400" : "text-amber-400"}
               />
               <MetricCard
                 label="Failed"
-                value={run.failed}
-                sub={`${run.errors} errors`}
-                color={run.failed > 0 ? "text-red-400" : "text-zinc-400"}
+                value={finalFailed}
+                sub={`${runComplete.errors} errors`}
+                color={finalFailed > 0 ? "text-red-400" : "text-zinc-400"}
               />
               <MetricCard
                 label="Duration"
-                value={run.completedAt
-                  ? `${((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(1)}s`
+                value={runComplete.completedAt
+                  ? `${((new Date(runComplete.completedAt).getTime() - new Date(runComplete.startedAt).getTime()) / 1000).toFixed(1)}s`
                   : "—"}
-                sub={`${run.totalTests} total tests`}
+                sub={`${finalTotal} total tests`}
               />
             </div>
 
@@ -463,7 +683,7 @@ export default function TestRunner() {
                         onClick={() => setFilter(f)}
                         className={`text-xs px-3 py-1 rounded transition-colors ${filter === f ? "bg-violet-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
                       >
-                        {f === "all" ? `All (${results.length})` : f === "fail" ? `Failed (${run.failed + run.errors})` : `Passed (${run.passed})`}
+                        {f === "all" ? `All (${displayResults.length})` : f === "fail" ? `Failed (${finalFailed})` : `Passed (${finalPassed})`}
                       </button>
                     ))}
                   </div>
@@ -488,18 +708,28 @@ export default function TestRunner() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => { setActiveRunId(null); }}
+                onClick={() => {
+                  setRunComplete(null);
+                  setRunError(null);
+                  setLiveResults([]);
+                  setLiveProgress({ completed: 0, total: 0 });
+                  setIsRunning(false);
+                  setActiveRunId(null);
+                  setActiveRunStringId(null);
+                }}
                 className="border-zinc-700 text-zinc-300 hover:text-white"
               >
                 Run Again
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/analysis/${analysisId}`)}
-                className="border-zinc-700 text-zinc-300 hover:text-white"
-              >
-                Back to Analysis
-              </Button>
+              {analysisId > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/analysis/${analysisId}`)}
+                  className="border-zinc-700 text-zinc-300 hover:text-white"
+                >
+                  Back to Analysis
+                </Button>
+              )}
             </div>
           </div>
         )}

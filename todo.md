@@ -553,4 +553,9 @@
 - [ ] P2: Idempotency Detection — semantische Heuristiken (idempotencyKey/requestId)
 - [x] P3: Auth-Matrix Mutation Score 100% — Response-Body + Fehlermeldung + Datenleck
 - [x] P1: Server-Side Test Runner — Base URL + Token, Live-Ausführung, Pass/Fail Stream
-- [ ] P1: Test Runner UI — Live-Stream, Pass/Fail Dashboard, Feedback Loop
+- [x] P1: Test Runner UI — Live-Stream, Pass/Fail Dashboard, Feedback Loop
+
+## Audit-Findings (23.03.2026 — vor SSE/Navbar Sprint)
+- [x] SSE Live-Stream: Test Runner zeigt Ergebnisse erst nach Abschluss (Polling), kein Echtzeit-Stream
+- [x] Navbar: "Demo" Link fehlt in der Navbar (nur "Pricing" und "Sign In")
+- [x] Test-Runner Unit-Tests fehlen (test-runner.ts hat keine Vitest-Coverage)

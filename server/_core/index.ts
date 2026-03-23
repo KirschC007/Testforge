@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import multer from "multer";
+import { sdk } from "./sdk";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { writeFile, unlink, readFile } from "fs/promises";
@@ -125,6 +126,47 @@ async function startServer() {
       console.error("[upload-spec-text]", err);
       res.status(500).json({ error: err.message || "Upload failed" });
     }
+  });
+
+  // ─── SSE: Test Run Live Stream ─────────────────────────────────────────────
+  // GET /api/test-runs/:runId/stream
+  // Opens a Server-Sent Events connection. Emits:
+  //   { type: "test_result", result, progress: { completed, total } }
+  //   { type: "run_complete", summary }
+  //   { type: "run_error", error }
+  // Auth: session cookie required (same as tRPC)
+  app.get("/api/test-runs/:runId/stream", async (req: any, res: any) => {
+    const { runId } = req.params;
+    if (!runId || typeof runId !== "string") {
+      return res.status(400).json({ error: "runId required" });
+    }
+
+    // Authenticate via session cookie
+    let user: import("../../drizzle/schema").User | null = null;
+    try {
+      user = await sdk.authenticateRequest(req);
+    } catch {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+    res.flushHeaders();
+
+    // Send initial heartbeat so client knows connection is open
+    res.write(`data: ${JSON.stringify({ type: "connected", runId })}\n\n`);
+
+    // Register this client in the SSE bus
+    const { registerSSEClient } = await import("../test-run-sse");
+    const cleanup = registerSSEClient(runId, res);
+
+    // Clean up on client disconnect
+    req.on("close", cleanup);
+    res.on("close", cleanup);
   });
 
   // OAuth callback under /api/oauth/callback

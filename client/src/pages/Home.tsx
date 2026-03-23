@@ -63,16 +63,26 @@ export default function Home() {
             <span className="text-xs text-muted-foreground ml-1 hidden sm:inline">by Manus</span>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/demo">
+              <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Demo</span>
+            </Link>
             <Link href="/pricing">
               <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Pricing</span>
             </Link>
             {!loading && (
               isAuthenticated ? (
-                <Link href="/dashboard">
-                  <Button size="sm" className="gap-1.5">
-                    Dashboard <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link href="/analysis/new">
+                    <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex border-border/60">
+                      <Zap className="w-3.5 h-3.5" /> Run Tests
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard">
+                    <Button size="sm" className="gap-1.5">
+                      Dashboard <ArrowRight className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
+                </div>
               ) : (
                 <a href={getLoginUrl()}>
                   <Button size="sm">Sign In</Button>
