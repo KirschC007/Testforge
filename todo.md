@@ -582,3 +582,17 @@
 - [x] Bug 6: Dateinamen mit Leerzeichen/Slashes sanitisieren (extended-suite.ts)
 - [x] Bug 7: Boundary-Fallback auf echtes Feld statt "value" (findBoundaryFieldForBehavior)
 - [x] Bug 8: Drizzle Enum-Werte extrahieren (code-parser.ts)
+
+## Fix-Briefing 2 (23.03.2026 — 40% → 95%)
+- [ ] Fix 1+10: getPreferredRole() Hilfsfunktion + alle 12 Generatoren umstellen (Admin bevorzugen)
+- [ ] Fix 2: Skip-Status Text-Fallback entfernen (generateStatusTransitionTest)
+- [ ] Fix 3: Concurrency Cookie-Init + Payload-Typen (keine Strings statt Zahlen)
+- [ ] Fix 4: Auth-Matrix Payload escaped Strings (JSON.stringify entfernen)
+- [ ] Fix 5: Idempotency Cookie-Initialisierung
+- [ ] Fix 6: DSGVO PII-Felder (name/email/phone statt .log/.pers)
+- [ ] Fix 7: Helpers doppelt genested (ZIP-Builder in routers.ts)
+- [ ] Fix 8: DSGVO-Export Endpoint (customers.export statt customers.getById)
+- [ ] Fix 9: DSGVO-Audit Endpoint (customers.gdpr statt accounts.delete)
+- [ ] Verifikations-Script ausführen (Quality Gate)
+- [ ] BankingCore + alle Specs testen
+- [ ] 2 ZIPs liefern (Output + Code)

@@ -314,17 +314,35 @@ export function findBoundaryFieldForBehavior(
 
 // ─── Test Generators ────────────────────────────────────────────────────────────
 
+/**
+ * Returns the preferred role for test execution.
+ * Admin is preferred because most mutations require elevated privileges.
+ * Falls back to owner, then the first role if no admin role is found.
+ */
+function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
+  if (!authModel?.roles?.length) return undefined;
+  return authModel.roles.find((r: { name: string }) => r.name.toLowerCase().includes("admin"))
+    || authModel.roles.find((r: { name: string }) => r.name.toLowerCase().includes("owner"))
+    || authModel.roles[0];
+}
+
+/**
+ * Converts a role object to the corresponding getCookie function name.
+ * e.g. { name: "admin" } → "getAdminCookie"
+ * e.g. { name: "bank_admin" } → "getBankAdminCookie"
+ */
+function roleToCookieFn(role: { name: string } | undefined): string {
+  if (!role) return "getAdminCookie";
+  return `get${role.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
+}
+
 function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string {
   const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const tenantBConst = `TEST_${tenantEntity.toUpperCase()}_B_ID`;
-  const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
-
+   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
   // For IDOR tests: use the actual target endpoint for the attack, and list endpoint for positive control
   const listEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall") || e.name.toLowerCase().includes("search"))?.name
@@ -477,10 +495,7 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
     || analysis.ir.apiEndpoints[0]?.name
     || "list_endpoint_not_found";
   const csrfEndpoint = analysis.ir.authModel?.csrfEndpoint;
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   // Build minimal payload from known input fields
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
@@ -816,10 +831,7 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   // Use resolved endpoint from IR, or TODO placeholder
   const endpoint = target.endpoint || analysis.ir.apiEndpoints.find(e =>
@@ -1000,10 +1012,7 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   // Detect if this is an export behavior or a delete/anonymize behavior
   const isExportBehavior = (behavior?.title || '').toLowerCase().includes('export') ||
@@ -1025,13 +1034,18 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
   // CRITICAL: For hard-delete behaviors, prefer workspace.deleteAll over tasks.delete
   const endpoint = (() => {
     if (isExportBehavior) {
-      // Export: prefer export endpoint from IR
-      return target.endpoint?.toLowerCase().includes('export')
-        ? target.endpoint
-        : analysis.ir.apiEndpoints.find(e =>
-            e.name.toLowerCase().includes('export') || e.name.toLowerCase().includes('download'))?.name
-          || target.endpoint
-          || 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
+      // Fix 8: Export endpoint detection — prefer explicit export/gdprexport endpoints
+      if (target.endpoint?.toLowerCase().includes('export') || target.endpoint?.toLowerCase().includes('gdpr')) {
+        return target.endpoint;
+      }
+      return analysis.ir.apiEndpoints.find(e =>
+          e.name.toLowerCase().includes('export') ||
+          e.name.toLowerCase().includes('gdprexport') ||
+          e.name.toLowerCase().includes('download') ||
+          (e.name.toLowerCase().includes('gdpr') && e.name.toLowerCase().includes('export')))?.name
+        || analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes('gdpr'))?.name
+        || target.endpoint
+        || 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
     }
     if (isWorkspaceDeleteAll || (isHardDelete && !target.endpoint?.toLowerCase().includes('delete'))) {
       // Workspace-level hard delete: prefer workspace.deleteAll
@@ -1060,10 +1074,19 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
       e.name.toLowerCase().includes('dsgvo') || e.name.toLowerCase().includes('anon'))?.name
       || 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT';
   })();
-  const hasEndpoint = endpoint !== 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT' && endpoint !== 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
-
-  // Find list endpoint for history check — cascade fallback: list → history → getAll → any GET → first endpoint
+   const hasEndpoint = endpoint !== 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT' && endpoint !== 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
+  // Fix 9: For audit-log retention behaviors, detect and use GDPR-delete endpoint
+  const isAuditBehavior = (behavior?.title || '').toLowerCase().includes('audit') ||
+    (behavior?.title || '').toLowerCase().includes('retained') ||
+    (behavior?.specAnchor || '').toLowerCase().includes('audit');
+  // Find list endpoint for history check — prefer customer/user/person endpoints for DSGVO verify
+  // Fix 9: For DSGVO behaviors, prefer the entity endpoint (customer/user/guest) over generic list
+  const gdprEntityEndpoint = analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("customer") || e.name.toLowerCase().includes("user") ||
+    e.name.toLowerCase().includes("guest") || e.name.toLowerCase().includes("person"))?.name;
   const listEndpoint = (
+    (isAuditBehavior && gdprEntityEndpoint ? { name: gdprEntityEndpoint } : null) ??
+    analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("customer") && e.name.toLowerCase().includes("list")) ??
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list")) ??
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("history")) ??
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("getall")) ??
@@ -1101,9 +1124,15 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
       return words[words.length - 1]; // last word is usually the field name
     })
     .filter((f): f is string => !!f && f.length > 2 && !['data','export','workspace','task','member'].includes(f));
-  const piiFields = Array.from(new Set([...piiFromPostconds, ...(titlePiiMatch ? [titlePiiMatch.toLowerCase()] : []), ...piiResourceFields]));
-
-  // Determine the identifier field used for GDPR deletion
+  let piiFields = Array.from(new Set([...piiFromPostconds, ...(titlePiiMatch ? [titlePiiMatch.toLowerCase()] : []), ...piiResourceFields]));
+  // Fix 6: Fallback to standard PII fields if extraction found nothing useful
+  const STANDARD_PII_FIELDS = ["name", "email", "phone", "address"];
+  if (piiFields.length === 0 || piiFields.every(f => !STANDARD_PII_FIELDS.includes(f))) {
+    const specText = [(behavior?.title || ""), (behavior?.specAnchor || ""), ...(behavior?.postconditions || [])].join(" ").toLowerCase();
+    const fromSpec = STANDARD_PII_FIELDS.filter(f => specText.includes(f));
+    piiFields = fromSpec.length > 0 ? fromSpec : ["name", "email", "phone"];
+  }
+  // Determine the identifier fieldd used for GDPR deletion
   const idField = behavior?.preconditions.join(" ").match(/by\s+(\w+)/i)?.[1] || "id";
 
   // For export behaviors: collect output fields from the main resource endpoint (e.g. tasks.create outputFields)
@@ -1238,10 +1267,7 @@ function generateBoundaryTestLegacy(target: ProofTarget, analysis: AnalysisResul
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
   const hasEndpoint = !!target.endpoint;
@@ -1369,10 +1395,7 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId)!;
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   const endpointDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
 
@@ -1447,10 +1470,7 @@ function generateRiskScoringTest(target: ProofTarget, analysis: AnalysisResult):
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   // Resolve endpoints from IR
   const createEp = analysis.ir.apiEndpoints.find(e =>
@@ -1557,11 +1577,7 @@ export function generateBusinessLogicTest(target: ProofTarget, analysis: Analysi
   const getEp = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_QUERY_ENDPOINT";
 
-  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
-  const roleFnName = adminRole
-    ? `get${adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
-
+   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
   // Build payload from known input fields using getValidDefault (no TODO_ placeholders)
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === ep);
   const knownFields: EndpointField[] = epDef?.inputFields || [];
@@ -1932,10 +1948,7 @@ function generateSpecDriftTest(target: ProofTarget, analysis: AnalysisResult): s
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
-  const roleFnName = adminRole
-    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
@@ -2071,10 +2084,7 @@ const LAYER3_FEW_SHOT_EXAMPLE = [
 async function generateLLMTest(target: ProofTarget, analysis: AnalysisResult): Promise<string> {
   const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   const systemPrompt = [
     "You are TestForge Schicht 3 \u2014 a Gold Standard Playwright test generator.",
@@ -2196,10 +2206,7 @@ export function generateConcurrencyTest(target: ProofTarget, analysis: AnalysisR
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
-  const roleFnName = adminRole
-    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
   const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const inputFields = epDef?.inputFields || [];
@@ -2213,7 +2220,8 @@ export function generateConcurrencyTest(target: ProofTarget, analysis: AnalysisR
   for (const f of inputFields) {
     const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
     // Bug 3 Fix: if val is the tenantConst variable name, emit it as a variable reference, not a string literal
-    const valStr = (val === tenantConst) ? tenantConst : JSON.stringify(val);
+    // getValidDefault already returns TS literals (1, "checking", TEST_X_ID) — do NOT JSON.stringify
+    const valStr = val;
     payloadLines.push(`    ${f.name}: ${valStr},`);
   }
   if (payloadLines.length === 0) {
@@ -2311,10 +2319,7 @@ export function generateIdempotencyTest(target: ProofTarget, analysis: AnalysisR
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const adminRole = analysis.ir.authModel?.roles?.find(r => r.name.toLowerCase().includes("admin")) || analysis.ir.authModel?.roles?.[0];
-  const roleFnName = adminRole
-    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
   const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const inputFields = epDef?.inputFields || [];
@@ -2328,7 +2333,8 @@ export function generateIdempotencyTest(target: ProofTarget, analysis: AnalysisR
   for (const f of inputFields) {
     const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
     // Bug 3 Fix: if val is the tenantConst variable name, emit it as a variable reference, not a string literal
-    const valStr = (val === tenantConst) ? tenantConst : JSON.stringify(val);
+    // getValidDefault already returns TS literals (1, "checking", TEST_X_ID) — do NOT JSON.stringify
+    const valStr = val;
     payloadLines.push(`    ${f.name}: ${valStr},`);
   }
   if (payloadLines.length === 0) {
@@ -2446,7 +2452,8 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   for (const f of inputFields) {
     const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
     // Bug 3 Fix: if val is the tenantConst variable name, emit it as a variable reference, not a string literal
-    const valStr = (val === tenantConst) ? tenantConst : JSON.stringify(val);
+    // getValidDefault already returns TS literals (1, "checking", TEST_X_ID) — do NOT JSON.stringify
+    const valStr = val;
     payloadLines.push(`    ${f.name}: ${valStr},`);
   }
   if (payloadLines.length === 0) {
@@ -2573,10 +2580,7 @@ export function generateFlowTest(target: ProofTarget, analysis: AnalysisResult):
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   // Resolve flow steps from IR flows or behavior
   const flowDef = analysis.ir.flows?.find(f =>
@@ -2645,10 +2649,7 @@ export function generateCronJobTest(target: ProofTarget, analysis: AnalysisResul
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   // Resolve cron job def from IR
   const cronDef = analysis.ir.cronJobs?.find(c =>
@@ -2714,10 +2715,7 @@ export function generateWebhookTest(target: ProofTarget, analysis: AnalysisResul
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
-  const primaryRole = analysis.ir.authModel?.roles[0];
-  const roleFnName = primaryRole
-    ? `get${primaryRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie";
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
   const webhookEndpoint = target.endpoint ||
     analysis.ir.apiEndpoints.find(e =>
