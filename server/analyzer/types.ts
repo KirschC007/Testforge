@@ -276,6 +276,7 @@ export interface GeneratedHelpers {
   "helpers/reset.ts": string;
   "helpers/schemas.ts": string;
   "helpers/index.ts": string;
+  "helpers/browser.ts": string;
   "playwright.config.ts": string;
   "package.json": string;
   ".github/workflows/testforge.yml": string;
@@ -364,6 +365,18 @@ export interface ValidationResult {
   notes: string[];
   reason?: string;
   details?: string;
+}
+
+// ─── Browser Flow ────────────────────────────────────────────────────────────
+
+export interface BrowserFlowStep {
+  action: "navigate" | "fill" | "select" | "click" | "verify_text" | "verify_url" | "verify_api" | "wait" | "login";
+  target?: string;       // URL, selector, button name
+  field?: string;        // field name for fill/select
+  value?: string;        // value to fill/select
+  expected?: string;     // expected text/url/api value
+  endpoint?: string;     // for verify_api
+  timeout?: number;      // ms, default 10000
 }
 
 // ─── Boundary ─────────────────────────────────────────────────────────────────

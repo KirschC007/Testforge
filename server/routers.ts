@@ -13,7 +13,7 @@ import {
 } from "./db";
 import { runAnalysisJob, assessSpecHealth, parseCodeToIR, fetchRepoCodeFiles, type AnalysisIR, type CodeFile } from "./analyzer";
 import { diffAnalysisIR } from "./analyzer/spec-diff";
-import { buildPRComment, postGitHubPRComment } from "./github-pr";
+import { buildPRComment, postGitHubPRComment, createPR } from "./github-pr";
 import { scanGitHubRepo, parseGitHubUrl } from "./analyzer/repo-scanner";
 import { listProofPacks, getProofPack, type IndustryPack } from "./analyzer/industry-proof-packs";
 import { generatePlaywrightConfig, generateCIWorkflow } from "./analyzer/playwright-mcp";
@@ -781,6 +781,68 @@ export const appRouter = router({
         }
         const reportUrl = `https://testforge.dev/analysis/${input.analysisId}`;
         return { markdown: buildPRComment({ analysis, reportUrl, diff }) };
+      }),
+
+    // Create a real GitHub PR with all generated test files
+    createPR: protectedProcedure
+      .input(z.object({
+        analysisId: z.number(),
+        githubToken: z.string().min(1),
+        repoFullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "Must be owner/repo format"),
+        baseBranch: z.string().optional(),
+        branchName: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
+        if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (analysis.status !== "completed") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Analysis must be completed before creating PR" });
+        }
+
+        // Extract generated files from analysis result
+        const resultJson = analysis.resultJson as any;
+        const generatedFiles: Record<string, string> = {};
+
+        // Collect all generated test files from the analysis result
+        const testFiles = resultJson?.testFiles || [];
+        for (const f of testFiles) {
+          if (f.filename && f.content) {
+            generatedFiles[f.filename] = f.content;
+          }
+        }
+
+        // Also include helpers from generatedHelpers
+        const helpers = resultJson?.generatedHelpers || {};
+        for (const [key, value] of Object.entries(helpers)) {
+          if (typeof value === "string" && value.length > 0) {
+            generatedFiles[key] = value as string;
+          }
+        }
+
+        if (Object.keys(generatedFiles).length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No generated files found in analysis result" });
+        }
+
+        const result = await createPR({
+          githubToken: input.githubToken,
+          repoFullName: input.repoFullName,
+          baseBranch: input.baseBranch || "main",
+          branchName: input.branchName,
+          files: generatedFiles,
+          projectName: analysis.projectName,
+        });
+
+        if (!result.success && !result.prUrl) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error });
+        }
+
+        return {
+          prUrl: result.prUrl,
+          branchName: result.branchName,
+          filesCommitted: result.filesCommitted,
+          warning: result.error, // non-fatal warnings (e.g. PR already exists)
+        };
       }),
   }),
 

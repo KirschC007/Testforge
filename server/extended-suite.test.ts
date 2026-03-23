@@ -491,14 +491,16 @@ describe("generateExtendedTestSuite — E2E Tests (Layer 3)", () => {
     expect(allContent).toContain("Create Reservation");
   });
 
-  it("generates core-flows E2E test when no userFlows", () => {
+  it("generates auth E2E test when no userFlows (v5.0: auth.spec.ts always generated)", () => {
     const analysis = makeAnalysisResult({ userFlows: [] });
     const suite = generateExtendedTestSuite(analysis, []);
 
     const e2eFiles = suite.files.filter((f: ExtendedTestFile) => f.layer === "e2e");
     expect(e2eFiles.length).toBeGreaterThan(0);
-    const coreFile = e2eFiles.find((f: ExtendedTestFile) => f.filename.includes("core-flows"));
-    expect(coreFile).toBeDefined();
+    // v5.0: auth.spec.ts is always generated as the base E2E test
+    const authFile = e2eFiles.find((f: ExtendedTestFile) => f.filename.includes("auth"));
+    expect(authFile).toBeDefined();
+    expect(authFile!.content).toContain("page.goto");
   });
 });
 

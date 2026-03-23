@@ -140,3 +140,225 @@ export async function postGitHubPRComment(
     return { success: false, error: err.message };
   }
 }
+
+// ─── createPR: Create a real GitHub PR with all generated test files ──────────
+
+export interface CreatePROptions {
+  /** GitHub personal access token with repo scope */
+  githubToken: string;
+  /** Target repo, e.g. "owner/repo" */
+  repoFullName: string;
+  /** Base branch to PR against, e.g. "main" */
+  baseBranch?: string;
+  /** Branch name to create, e.g. "testforge/v5-proofs-2026-03-23" */
+  branchName?: string;
+  /** PR title */
+  prTitle?: string;
+  /** PR body (markdown) */
+  prBody?: string;
+  /** Map of file paths → file content to commit */
+  files: Record<string, string>;
+  /** Project name for commit message */
+  projectName: string;
+}
+
+export interface CreatePRResult {
+  success: boolean;
+  prUrl?: string;
+  branchName?: string;
+  filesCommitted?: number;
+  error?: string;
+}
+
+/**
+ * Creates a GitHub PR with all generated TestForge files.
+ *
+ * Flow:
+ *   1. GET /repos/{owner}/{repo}/git/refs/heads/{base} → get base SHA
+ *   2. POST /repos/{owner}/{repo}/git/refs → create branch
+ *   3. For each file: GET existing blob SHA (if any), then PUT /contents/{path}
+ *   4. POST /repos/{owner}/{repo}/pulls → create PR
+ */
+export async function createPR(opts: CreatePROptions): Promise<CreatePRResult> {
+  const {
+    githubToken,
+    repoFullName,
+    baseBranch = "main",
+    files,
+    projectName,
+  } = opts;
+
+  const now = new Date().toISOString().slice(0, 10);
+  const branchName = opts.branchName || `testforge/proofs-${now}`;
+  const prTitle = opts.prTitle || `🧪 TestForge: Add generated test suite for ${projectName}`;
+  const prBody = opts.prBody || buildDefaultPRBody(projectName, Object.keys(files));
+
+  const headers = {
+    "Authorization": `Bearer ${githubToken}`,
+    "Accept": "application/vnd.github+json",
+    "Content-Type": "application/json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  const apiBase = `https://api.github.com/repos/${repoFullName}`;
+
+  try {
+    // Step 1: Get base branch SHA
+    const refResp = await fetch(`${apiBase}/git/refs/heads/${baseBranch}`, { headers });
+    if (!refResp.ok) {
+      const err = await refResp.text();
+      return { success: false, error: `Failed to get base branch '${baseBranch}': ${err}` };
+    }
+    const refData = await refResp.json() as { object: { sha: string } };
+    const baseSha = refData.object.sha;
+
+    // Step 2: Create new branch
+    const createBranchResp = await fetch(`${apiBase}/git/refs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha }),
+    });
+    if (!createBranchResp.ok) {
+      const err = await createBranchResp.text();
+      // If branch already exists, that's fine — continue
+      if (!err.includes("Reference already exists")) {
+        return { success: false, error: `Failed to create branch '${branchName}': ${err}` };
+      }
+    }
+
+    // Step 3: Commit each file via Contents API
+    let filesCommitted = 0;
+    for (const [filePath, content] of Object.entries(files)) {
+      // Get existing file SHA if it exists (needed for updates)
+      let existingSha: string | undefined;
+      const existingResp = await fetch(`${apiBase}/contents/${filePath}?ref=${branchName}`, { headers });
+      if (existingResp.ok) {
+        const existing = await existingResp.json() as { sha: string };
+        existingSha = existing.sha;
+      }
+
+      // Encode content as base64
+      const contentBase64 = Buffer.from(content, "utf-8").toString("base64");
+
+      const putBody: Record<string, string> = {
+        message: `feat(testforge): add ${filePath}`,
+        content: contentBase64,
+        branch: branchName,
+      };
+      if (existingSha) putBody.sha = existingSha;
+
+      const putResp = await fetch(`${apiBase}/contents/${filePath}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(putBody),
+      });
+
+      if (!putResp.ok) {
+        const err = await putResp.text();
+        console.warn(`[TestForge] Failed to commit ${filePath}: ${err}`);
+        // Continue with other files
+      } else {
+        filesCommitted++;
+      }
+    }
+
+    if (filesCommitted === 0) {
+      return { success: false, error: "No files could be committed to the branch" };
+    }
+
+    // Step 4: Create PR
+    const prResp = await fetch(`${apiBase}/pulls`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title: prTitle,
+        body: prBody,
+        head: branchName,
+        base: baseBranch,
+        draft: false,
+      }),
+    });
+
+    if (!prResp.ok) {
+      const err = await prResp.text();
+      // If PR already exists, try to find it
+      if (err.includes("A pull request already exists")) {
+        return {
+          success: true,
+          branchName,
+          filesCommitted,
+          prUrl: `https://github.com/${repoFullName}/pulls`,
+          error: "PR already exists — files committed to branch",
+        };
+      }
+      return { success: false, error: `Failed to create PR: ${err}` };
+    }
+
+    const prData = await prResp.json() as { html_url: string };
+    return {
+      success: true,
+      prUrl: prData.html_url,
+      branchName,
+      filesCommitted,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+function buildDefaultPRBody(projectName: string, filePaths: string[]): string {
+  const e2eFiles = filePaths.filter(f => f.includes("tests/e2e/"));
+  const securityFiles = filePaths.filter(f => f.includes("tests/security/"));
+  const businessFiles = filePaths.filter(f => f.includes("tests/business/"));
+  const helperFiles = filePaths.filter(f => f.includes("helpers/"));
+  const configFiles = filePaths.filter(f => !f.includes("tests/") && !f.includes("helpers/"));
+
+  return `## 🧪 TestForge Generated Test Suite — ${projectName}
+
+This PR was automatically generated by [TestForge](https://testforge.dev).
+
+### What's included
+
+| Category | Files |
+|----------|-------|
+| 🌐 Browser E2E Tests | ${e2eFiles.length} files |
+| 🔒 Security Tests | ${securityFiles.length} files |
+| 📋 Business Logic Tests | ${businessFiles.length} files |
+| 🛠 Helpers | ${helperFiles.length} files |
+| ⚙️ Config | ${configFiles.length} files |
+
+### Test layers
+
+- **\`tests/e2e/\`** — Real browser tests (Playwright, Chromium) — Auth, CRUD, Status, Validation, GDPR flows
+- **\`tests/security/\`** — API security & tenant isolation tests
+- **\`tests/business/\`** — Business logic & compliance tests
+- **\`.github/workflows/testforge.yml\`** — CI/CD pipeline with 3 jobs (P0 Security → P1 Integration → P2 Browser E2E)
+
+### How to run
+
+\`\`\`bash
+npm install
+npx playwright install --with-deps chromium
+
+# API Security tests
+npx playwright test tests/security/ --project=api-security
+
+# Browser E2E tests
+BASE_URL=https://your-staging-url npx playwright test tests/e2e/ --project=browser-e2e
+
+# All tests
+npx playwright test
+\`\`\`
+
+### Required GitHub Secrets
+
+Add these to your repository settings → Secrets → Actions:
+
+- \`STAGING_URL\` — Your staging environment URL
+- \`E2E_ADMIN_USER\` / \`E2E_ADMIN_PASS\` — Admin credentials
+- \`TEST_TENANT_ID\` — Test tenant ID
+- \`DEBUG_API_TOKEN\` — Debug API token for state reset
+
+---
+*Generated by TestForge v5.0 — Quality Compiler for SaaS APIs*`;
+}

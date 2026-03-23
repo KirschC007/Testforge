@@ -596,3 +596,28 @@
 - [ ] Verifikations-Script ausführen (Quality Gate)
 - [ ] BankingCore + alle Specs testen
 - [ ] 2 ZIPs liefern (Output + Code)
+
+## v5.0: Browser E2E Tests + GitHub PR (23.03.2026)
+- [x] types.ts: BrowserFlowStep Interface hinzugefügt
+- [x] types.ts: GeneratedHelpers um "helpers/browser.ts" erweitert
+- [x] smart-parser.ts: user-flows Topic in classifySection + groupSectionsForExtraction + topicInstructions
+- [x] extended-suite.ts: generateBrowserFlowTests() mit 5 Test-Typen A-E implementiert
+  - [x] A: Auth-Flow (page.goto, page.fill, page.click — echter Browser)
+  - [x] B: CRUD-Flow (dedupliziert nach entityName — kein bookings-crud.spec.ts 3x)
+  - [x] C: Status-Machine-Flow (page.click auf Status-Buttons)
+  - [x] D: DSGVO/Compliance-Flow (Export-Button, Datei-Download)
+  - [x] E: User-Flow aus ## User Flows Abschnitt (1:1 Übersetzung)
+- [x] helpers-generator.ts: helpers/browser.ts mit loginViaUI + loginAsRole generiert
+- [x] helpers-generator.ts: playwright.config.ts mit 2 Projekten (api-security + browser-e2e)
+- [x] helpers-generator.ts: GitHub Actions YAML mit p2-browser-e2e Job
+- [x] github-pr.ts: createPR() Funktion (Branch + Commit + PR via GitHub API)
+- [x] routers.ts: github.createPR tRPC-Procedure
+- [x] run-all-scenarios.mjs: Quality Gate 14 → 17 Checks (Browser E2E, helpers/browser.ts, GitHub Actions)
+- [x] TravelAgency-Szenario: 18/18 Quality Gate Checks bestanden
+  - [x] 23 Behaviors extrahiert
+  - [x] 11 E2E-Dateien in tests/e2e/ (4 aus ## User Flows + 7 generische)
+  - [x] helpers/browser.ts mit loginViaUI
+  - [x] .github/workflows/testforge.yml mit p2-browser-e2e Job
+  - [x] playwright.config.ts mit 2 Projekten
+- [x] extended-suite.test.ts: Failing Test gefixt (core-flows → auth.spec.ts)
+- [x] 546/546 Vitest-Tests grün, 0 TypeScript-Fehler

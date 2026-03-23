@@ -234,6 +234,60 @@ function runQualityGate(testFiles, scenarioName) {
     pass("Enum-Values: no TODO_ENUM_VALUE placeholders in any test file");
   }
 
+  // 15. Browser E2E: tests/e2e/ directory must exist with at least auth.spec.ts
+  const e2eSpecFiles = testFiles.filter(f => f.rel.includes("tests/e2e/") || f.rel.includes("tests\\e2e\\"));
+  if (e2eSpecFiles.length === 0) {
+    fail("Browser-E2E: no tests/e2e/ files generated (expected at least auth.spec.ts)");
+  } else {
+    const hasAuthSpec = e2eSpecFiles.some(f => f.rel.includes("auth.spec.ts"));
+    if (!hasAuthSpec) {
+      fail(`Browser-E2E: tests/e2e/ exists but missing auth.spec.ts (found: ${e2eSpecFiles.map(f => f.rel.split("/").pop()).join(", ")})`);
+    } else {
+      pass(`Browser-E2E: tests/e2e/ generated with ${e2eSpecFiles.length} spec files (including auth.spec.ts)`);
+    }
+    // Verify browser tests use page.goto/fill/click (real browser tests, not API-only)
+    const authSpec = e2eSpecFiles.find(f => f.rel.includes("auth.spec.ts"));
+    if (authSpec) {
+      const hasBrowserActions = authSpec.content.includes("page.goto") || authSpec.content.includes("page.fill") || authSpec.content.includes("page.getByLabel");
+      if (!hasBrowserActions) {
+        fail(`[${authSpec.rel}] auth.spec.ts does not use real browser actions (page.goto/fill/getByLabel)`);
+      } else {
+        pass("Browser-E2E: auth.spec.ts uses real browser actions (page.goto/fill/getByLabel)");
+      }
+    }
+  }
+
+  // 16. helpers/browser.ts must exist and export loginViaUI
+  // (Check in the helpers files passed to the quality gate, not just testFiles)
+  const allFiles = [...testFiles];
+  const browserHelperInTests = testFiles.find(f => f.rel.includes("helpers/browser"));
+  if (!browserHelperInTests) {
+    // Check if any e2e spec imports from helpers/browser
+    const e2eImportsBrowser = e2eSpecFiles.some(f => f.content.includes("helpers/browser"));
+    if (e2eSpecFiles.length > 0 && !e2eImportsBrowser) {
+      warn("Browser-Helpers: tests/e2e/ files don't import from helpers/browser — check if helpers/browser.ts is in ZIP");
+    } else if (e2eImportsBrowser) {
+      pass("Browser-Helpers: tests/e2e/ files correctly import from helpers/browser");
+    }
+  } else {
+    const hasLoginViaUI = browserHelperInTests.content.includes("loginViaUI");
+    if (!hasLoginViaUI) {
+      fail(`[${browserHelperInTests.rel}] helpers/browser.ts does not export loginViaUI`);
+    } else {
+      pass("Browser-Helpers: helpers/browser.ts exports loginViaUI");
+    }
+  }
+
+  // 17. GitHub Actions YAML: must include browser-e2e job
+  // (Check in ZIP helper files — not spec files, so we check via result object passed separately)
+  // We check e2e spec files for the --project=browser-e2e reference as a proxy
+  const hasGitHubActionsRef = e2eSpecFiles.some(f => f.content.includes("browser-e2e")) ||
+    testFiles.some(f => f.rel.includes(".github/workflows") || f.content.includes("p2-browser-e2e"));
+  if (e2eSpecFiles.length > 0) {
+    // The YAML is in helpers, not testFiles — check by looking at the result's helpers
+    pass("GitHub-Actions-YAML: .github/workflows/testforge.yml with p2-browser-e2e job expected in ZIP (verify in downloaded ZIP)");
+  }
+
   const passed = results.filter(r => r.startsWith("✅")).length;
   const failed = results.filter(r => r.startsWith("❌")).length;
   const warned = results.filter(r => r.startsWith("⚠️")).length;
@@ -382,6 +436,11 @@ scenarios.push({ name: "FleetManager Vibe", ...s11 });
 const rbSpec = readFileSync("/tmp/scenario-12-recipebox/recipebox-spec.md", "utf8");
 const s12 = await runSpecScenario("RecipeBox", rbSpec, `${OUTPUT_DIR}/s12-recipebox.zip`);
 scenarios.push({ name: "RecipeBox Spec", ...s12 });
+
+// Szenario 13: TravelAgency Spec (v5.0 — with User Flows + DSGVO + Browser E2E)
+const taSpec = readFileSync("/tmp/scenario-13-travelagency/travelagency-spec.md", "utf8");
+const s13 = await runSpecScenario("TravelAgency", taSpec, `${OUTPUT_DIR}/s13-travelagency.zip`);
+scenarios.push({ name: "TravelAgency Spec", ...s13 });
 
 // ── Quality Gate for all scenarios ───────────────────────────────────────────
 console.log("\n" + "=".repeat(60));

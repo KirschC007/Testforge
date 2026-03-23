@@ -56,6 +56,8 @@ export interface SpecSection {
 
 export function classifySection(title: string, text: string): SpecSection["topic"] {
   const t = (title + " " + text.slice(0, 500)).toLowerCase();
+  // User Flows section — must be detected FIRST (before other patterns)
+  if (t.includes("user flow") || t.includes("user-flow") || t.includes("userflow") || t.includes("browser-test") || t.includes("flow 1") || t.includes("flow 2")) return "user-flows";
   if (t.includes("trpc") || t.includes("router") || t.includes("prozedur") || t.includes("endpoint") || t.includes("api v1")) return "endpoints";
   if (t.includes("schema") || t.includes("tabelle") || t.includes("datenbank") || t.includes("create table")) return "schema";
   if (t.includes("status") || t.includes("übergang") || t.includes("transition") || t.includes("state")) return "status";
@@ -331,7 +333,7 @@ export function groupSectionsForExtraction(sections: SpecSection[], structuralMa
   const MAX_GROUP_SIZE = 20000;
   const topicOrder: SpecSection["topic"][] = [
     "endpoints", "status", "auth", "security", "dsgvo",
-    "business-logic", "edge-cases", "schema", "other",
+    "business-logic", "edge-cases", "schema", "user-flows", "other",
   ];
 
   for (const topic of topicOrder) {
@@ -398,6 +400,7 @@ async function extractFromChunkGroup(
     "edge-cases": "Focus on extracting edge case behaviors: race conditions, concurrent access, error recovery. Tag with appropriate risk hints.",
     schema: "Focus on extracting data models, field constraints (min/max/required), relationships, and PII flags. Also extract any validation rules mentioned in field descriptions.",
     other: "Extract any testable behaviors from this section.",
+    "user-flows": "Focus on extracting User Flows for browser test generation. For EACH numbered flow: extract id (e.g. 'flow-1'), name, actor (customer/agent/admin), steps (array of strings describing each step), successCriteria (what must be true after the flow), errorScenarios (what can go wrong), relatedEndpoints (which API endpoints are used). Return them in the userFlows array.",
   };
 
   const topic = group.topics[0] || "other";
