@@ -850,7 +850,7 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
         { type: "field_absent", target: "response.data", operator: "not_contains", value: "TENANT_B_DATA", rationale: "No TENANT_B data must leak" },
       ],
       mutationTargets: [
-        { description: `Remove ${analysis.ir.tenantModel?.tenantIdField || "restaurantId"} filter in ${endpoint || "list"} query`, expectedKill: true },
+        { description: `Remove ${analysis.ir.tenantModel?.tenantIdField || "tenantId"} filter in ${endpoint || "list"} query`, expectedKill: true },
         { description: "Return all records without tenant isolation", expectedKill: true },
       ],
       endpoint,

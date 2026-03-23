@@ -142,7 +142,8 @@ export default function NewAnalysis() {
   // ── Code path state ───────────────────────────────────────────────────────
   const [codeTab, setCodeTab] = useState<CodeTab>("github");
   const [codeGithubUrl, setCodeGithubUrl] = useState("");
-  const [codeFiles, setCodeFiles] = useState<Array<{ path: string; content: string }>>([]);
+  const [codeGithubToken, setCodeGithubToken] = useState("");
+  const [codeFiles, setCodeFiles] = useState<Array<{ path: string; content: string }>>([]); 
   const [detectedFramework, setDetectedFramework] = useState("");
   const [codeZipFileName, setCodeZipFileName] = useState("");
   const [codeZipLoading, setCodeZipLoading] = useState(false);
@@ -161,6 +162,14 @@ export default function NewAnalysis() {
       navigate(`/analysis/${data.id}`);
     },
     onError: (err) => { toast.error(err.message || "Failed to start code scan"); },
+  });
+
+  const createFromGithubMutation = trpc.createFromGithub.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Analysis started! Found ${data.filesFound} code files in ${data.projectName}`);
+      navigate(`/analysis/${data.analysisId}`);
+    },
+    onError: (err) => { toast.error(err.message || "Failed to start GitHub analysis"); },
   });
 
   // Auto-fill demo spec if ?demo=1
@@ -267,6 +276,17 @@ export default function NewAnalysis() {
     if (!projectName.trim()) { toast.error("Project name is required"); return; }
     if (codeTab === "github") {
       if (!codeGithubUrl.trim()) { toast.error("GitHub URL is required"); return; }
+      // Use createFromGithub when a private token is provided (supports githubToken + baseUrl)
+      if (codeGithubToken.trim()) {
+        createFromGithubMutation.mutate({
+          githubUrl: codeGithubUrl.trim(),
+          githubToken: codeGithubToken.trim(),
+          baseUrl: discoveryBaseUrl.trim() || undefined,
+          authToken: discoveryAuthToken.trim() || undefined,
+          industryPack: industryPack || undefined,
+        });
+        return;
+      }
       createFromCodeMutation.mutate({
         projectName: projectName.trim(),
         githubUrl: codeGithubUrl.trim(),
@@ -299,7 +319,7 @@ export default function NewAnalysis() {
   }
 
   const specCanSubmit = !createMutation.isPending && !fileLoading && !!projectName.trim() && (!!specKey || specText.trim().length >= 100);
-  const codeCanSubmit = !createFromCodeMutation.isPending && !!projectName.trim() && (
+  const codeCanSubmit = !createFromCodeMutation.isPending && !createFromGithubMutation.isPending && !!projectName.trim() && (
     (codeTab === "github" && !!codeGithubUrl.trim()) ||
     (codeTab === "zip" && codeFiles.length > 0)
   );
@@ -629,6 +649,19 @@ export default function NewAnalysis() {
                       <div className="space-y-3">
                         <Input placeholder="https://github.com/owner/repo"
                           value={codeGithubUrl} onChange={(e) => setCodeGithubUrl(e.target.value)} className="font-mono text-sm" />
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Lock className="w-3 h-3" /> GitHub Token <span className="font-normal opacity-60">(optional — for private repos)</span>
+                          </Label>
+                          <Input
+                            type="password"
+                            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                            value={codeGithubToken}
+                            onChange={(e) => setCodeGithubToken(e.target.value)}
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-[10px] text-muted-foreground/70">Personal Access Token with <code>repo:read</code> scope. Never stored.</p>
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           TestForge scans your tRPC routers, Drizzle schemas, and auth middleware.
                           Works with public repositories. Max 100 files, 5MB total.

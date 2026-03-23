@@ -1144,10 +1144,21 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
   const EXCLUDED_VERIFY_ENDPOINTS = ["csrf", "token", "login", "logout", "auth.me", "health", "ping", "register", "signup", "refresh"];
   const isNotExcluded = (e: { name: string }) =>
     !EXCLUDED_VERIFY_ENDPOINTS.some(ex => e.name.toLowerCase().includes(ex));
-  // Build GDPR entity fallback from endpoint prefix (e.g. "owners.gdprDelete" → "owners.list")
-  const gdprEndpointPrefix = target.endpoint?.split(".")?.[0]; // "owners" from "owners.gdprDelete"
-  const gdprEntityFallback = gdprEndpointPrefix ? { name: `${gdprEndpointPrefix}.list` } : null;
+  // Bug C Fix: Derive verify endpoint from GDPR endpoint entity
+  // "drivers.gdprDelete" → "drivers.list", "owners.gdprAnonymize" → "owners.list"
+  const gdprEndpointPrefix = target.endpoint?.split(".")?.[0]; // "drivers" from "drivers.gdprDelete"
+  // First: try to find an actual endpoint matching the GDPR entity (e.g. drivers.list)
+  const gdprEntityListEndpoint = gdprEndpointPrefix
+    ? analysis.ir.apiEndpoints.find(e =>
+        e.name.startsWith(`${gdprEndpointPrefix}.`) &&
+        (e.name.includes("list") || e.name.includes("get")) &&
+        isNotExcluded(e)
+      )?.name ?? `${gdprEndpointPrefix}.list`
+    : null;
+  const gdprEntityFallback = gdprEntityListEndpoint ? { name: gdprEntityListEndpoint } : null;
   const listEndpoint = (
+    // HIGHEST PRIORITY: entity-specific list endpoint derived from GDPR endpoint
+    gdprEntityFallback ??
     (isAuditBehavior && gdprEntityEndpoint ? { name: gdprEntityEndpoint } : null) ??
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("customer") && e.name.toLowerCase().includes("list") && isNotExcluded(e)) ??
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list") && isNotExcluded(e)) ??
@@ -1155,7 +1166,6 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("getall") && isNotExcluded(e)) ??
     analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes("get") && !e.name.toLowerCase().includes("byid") && isNotExcluded(e)) ??
     analysis.ir.apiEndpoints.find(e => (e.method === "GET" || e.name.toLowerCase().startsWith("get")) && isNotExcluded(e)) ??
-    gdprEntityFallback ??
     analysis.ir.apiEndpoints.find(e => isNotExcluded(e)) ??
     analysis.ir.apiEndpoints[0]
   )?.name ?? "resource.list";

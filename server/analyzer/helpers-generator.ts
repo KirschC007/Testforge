@@ -4,8 +4,8 @@ import type { EndpointField, AnalysisResult, GeneratedHelpers } from "./types";
 
 export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const ir = analysis.ir;
-  const tenantField = ir.tenantModel?.tenantIdField || "restaurantId";
-  const tenantEntity = ir.tenantModel?.tenantEntity || "restaurant";
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
   // Strip HTTP method prefix if present (e.g. "POST /api/trpc/auth.login" → "/api/trpc/auth.login")
   const rawLoginEndpoint = ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
   const loginEndpoint = rawLoginEndpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");

@@ -603,6 +603,81 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── GitHub Repo Analysis (S5-1b) ──────────────────────────────────────────
+  // Dedicated endpoint for GitHub URL → auto-fetch code → run analysis
+  // Separate from createFromCode to support githubToken + baseUrl for live discovery
+  createFromGithub: protectedProcedure
+    .input(z.object({
+      githubUrl: z.string().url(),
+      githubToken: z.string().optional(),
+      baseUrl: z.string().url().optional(),
+      authToken: z.string().optional(),
+      industryPack: z.enum(["fintech", "healthtech", "ecommerce", "saas"]).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Rate-limit
+      const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 50, team: 200, enterprise: Infinity };
+      const userPlan = (ctx.user as any).plan || "free";
+      const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+      if (DAILY_LIMIT !== Infinity) {
+        const todayCount = await countAnalysesToday(ctx.user.id);
+        if (todayCount >= DAILY_LIMIT) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `Daily limit reached: ${DAILY_LIMIT} analyses/day on ${userPlan} plan. Upgrade for more.`,
+          });
+        }
+      }
+      const parsed = parseGitHubUrl(input.githubUrl);
+      if (!parsed) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid GitHub URL" });
+      let codeFiles: CodeFile[];
+      try {
+        codeFiles = await fetchRepoCodeFiles(parsed.owner, parsed.repo, parsed.branch, input.githubToken);
+      } catch (err: any) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Failed to fetch repo: ${err.message}` });
+      }
+      if (codeFiles.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No relevant code files found in repository" });
+      }
+      const projectName = `${parsed.owner}/${parsed.repo}`;
+      const analysisId = await createAnalysis({
+        userId: ctx.user.id,
+        projectName,
+        status: "pending",
+        specFileName: `github:${input.githubUrl}`,
+        githubUrl: input.githubUrl,
+      });
+      const pack = input.industryPack as IndustryPack | undefined;
+      setImmediate(async () => {
+        if (runningJobs.has(analysisId)) return;
+        runningJobs.add(analysisId);
+        try {
+          await updateAnalysis(analysisId, { status: "running" });
+          const result = await runAnalysisJob(
+            "",
+            projectName,
+            async (layer, message, data) => {
+              if (cancelledJobs.has(analysisId)) {
+                cancelledJobs.delete(analysisId);
+                throw new Error("Job cancelled by user");
+              }
+              const update: Record<string, unknown> = { progressLayer: layer, progressMessage: message };
+              if (data) update.progressData = JSON.stringify(data);
+              await updateAnalysis(analysisId, update as any);
+            },
+            pack,
+            { codeFiles, baseUrl: input.baseUrl, authToken: input.authToken }
+          );
+          await updateAnalysis(analysisId, { status: "completed", result } as any);
+        } catch (err: any) {
+          await updateAnalysis(analysisId, { status: err?.message === "Job cancelled by user" ? "cancelled" : "failed", error: err.message } as any);
+        } finally {
+          runningJobs.delete(analysisId);
+        }
+      });
+      return { analysisId, projectName, filesFound: codeFiles.length };
+    }),
+
   // ─── Repo Scanner (S5-1) ─────────────────────────────────────────────────
   repoScan: router({
     scan: protectedProcedure

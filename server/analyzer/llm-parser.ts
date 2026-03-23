@@ -290,6 +290,16 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
       }
     }
 
+    // Cleanup: "ownerDatas.export" → "owners.export", "petDatas.list" → "pets.list"
+    if (raw.includes(".")) {
+      let [left, right] = raw.split(".");
+      if (/Datas?$/i.test(left)) {
+        left = left.replace(/Datas?$/i, "s").replace(/^([A-Z])/, c => c.toLowerCase());
+        if (!left.endsWith("s") && left.length > 2) left += "s";
+        return `${left}.${right}`;
+      }
+    }
+
     // Already correct: simple resource.action dot-notation
     const simpleResource = /^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/;
     if (simpleResource.test(raw)) return raw;
@@ -329,8 +339,17 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
       return raw;
     }
 
+    // Compound verbs: gdprDeleteOwner → owners.gdprDelete, bulkDeletePets → pets.bulkDelete
+    const compoundMatch = raw.match(/^(gdprDelete|gdprExport|gdprAnonymize|bulkDelete|bulkUpdate|bulkCreate|softDelete|hardDelete|forceDelete)([A-Z]\w*)$/);
+    if (compoundMatch) {
+      const action = compoundMatch[1]; // "gdprDelete"
+      let resource = compoundMatch[2].replace(/^[A-Z]/, c => c.toLowerCase());
+      resource = resource.endsWith("s") ? resource : resource + "s";
+      return `${resource}.${action}`;
+    }
+
     // Pattern: pure camelCase without dot: "createAccount" → "accounts.create"
-    const verbFirst = raw.match(/^(create|list|get|find|update|patch|delete|remove|close|freeze|unfreeze|cancel|approve|reject|complete|archive|anonymize|export|send|mark)([A-Z]\w*)$/);
+    const verbFirst = raw.match(/^(create|list|get|find|update|patch|delete|remove|close|freeze|unfreeze|cancel|approve|reject|complete|archive|anonymize|export|send|mark|register|book|record|submit|assign|enroll|invite|verify|confirm|activate|suspend|ban|block|unblock|void|refund|grade|rate|publish|unpublish|schedule|reschedule|check)([A-Z]\w*)$/);
     if (verbFirst) {
       const verb = verbFirst[1].toLowerCase();
       let resource = verbFirst[2]
