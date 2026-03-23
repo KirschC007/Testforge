@@ -357,6 +357,32 @@ const imFiles = [
 const s8 = await runCodeScenario("InvoiceManager", imFiles, `${OUTPUT_DIR}/s8-invoicemanager.zip`);
 scenarios.push({ name: "InvoiceManager Vibe", ...s8 });
 
+// Szenario 9: PetVet Spec
+const pvSpec = readFileSync("/tmp/scenario-9-petvet/petvet-spec.md", "utf8");
+const s9 = await runSpecScenario("PetVet", pvSpec, `${OUTPUT_DIR}/s9-petvet.zip`);
+scenarios.push({ name: "PetVet Spec", ...s9 });
+
+// Szenario 10: CoursePortal Spec
+const cpSpec = readFileSync("/tmp/scenario-10-courseportal/courseportal-spec.md", "utf8");
+const s10 = await runSpecScenario("CoursePortal", cpSpec, `${OUTPUT_DIR}/s10-courseportal.zip`);
+scenarios.push({ name: "CoursePortal Spec", ...s10 });
+
+// Szenario 11: FleetManager Vibe-Code
+const fmFiles = [
+  { path: "drizzle/schema.ts", content: readFileSync("/tmp/scenario-11-fleetmanager/schema.ts", "utf8") },
+  { path: "server/routers.ts", content: readFileSync("/tmp/scenario-11-fleetmanager/routers.ts", "utf8") },
+  { path: "server/db.ts", content: readFileSync("/tmp/scenario-11-fleetmanager/db.ts", "utf8") },
+  { path: "server/trpc.ts", content: readFileSync("/tmp/scenario-11-fleetmanager/trpc.ts", "utf8") },
+  { path: "package.json", content: readFileSync("/tmp/scenario-11-fleetmanager/package.json", "utf8") },
+];
+const s11 = await runCodeScenario("FleetManager", fmFiles, `${OUTPUT_DIR}/s11-fleetmanager.zip`);
+scenarios.push({ name: "FleetManager Vibe", ...s11 });
+
+// Szenario 12: RecipeBox Spec
+const rbSpec = readFileSync("/tmp/scenario-12-recipebox/recipebox-spec.md", "utf8");
+const s12 = await runSpecScenario("RecipeBox", rbSpec, `${OUTPUT_DIR}/s12-recipebox.zip`);
+scenarios.push({ name: "RecipeBox Spec", ...s12 });
+
 // ── Quality Gate for all scenarios ───────────────────────────────────────────
 console.log("\n" + "=".repeat(60));
 console.log("QUALITY GATE RESULTS");

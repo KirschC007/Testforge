@@ -10,6 +10,7 @@ import { generateReport } from "./report";
 import { generateExtendedTestSuite } from "./extended-suite";
 import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 import { parseCodeToIR, type CodeFile } from "./code-parser";
+import { discoverAPI } from "./api-discovery";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ export async function runAnalysisJob(
   industryPack?: IndustryPack,
   options?: {
     codeFiles?: CodeFile[];
+    baseUrl?: string;
+    authToken?: string;
   }
 ): Promise<AnalysisJobResult> {
   const jobStart = Date.now();
@@ -102,6 +105,38 @@ export async function runAnalysisJob(
         console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
         await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
       }
+    }
+  }
+
+  // API Discovery: if baseUrl provided, merge real endpoint paths into IR
+  if (options?.baseUrl) {
+    try {
+      console.log(`[TestForge] API Discovery: probing ${options.baseUrl}...`);
+      const discovery = await discoverAPI(options.baseUrl, options.authToken);
+      console.log(`[TestForge] API Discovery: found ${discovery.endpoints.length} endpoints (framework: ${discovery.framework})`);
+      // Merge: discovery endpoints override LLM-guessed endpoints (by name match)
+      for (const disc of discovery.endpoints) {
+        const existing = analysisResult.ir.apiEndpoints.find(e => e.name === disc.name);
+        if (existing) {
+          // Override method/path with real discovered values
+          existing.method = `${disc.method} ${disc.path}`;
+        } else {
+          // Add newly discovered endpoint not in IR
+          analysisResult.ir.apiEndpoints.push({
+            name: disc.name,
+            method: `${disc.method} ${disc.path}`,
+            auth: disc.auth === "required" ? "authenticated" : "public",
+            relatedBehaviors: [],
+            inputFields: [],
+          });
+        }
+      }
+      // Override CSRF endpoint if discovered
+      if (discovery.csrfEndpoint && analysisResult.ir.authModel) {
+        analysisResult.ir.authModel.csrfEndpoint = discovery.csrfEndpoint;
+      }
+    } catch (e) {
+      console.warn(`[TestForge] API Discovery failed (non-fatal):`, e);
     }
   }
 

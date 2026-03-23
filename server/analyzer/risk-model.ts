@@ -1226,6 +1226,28 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
       errorCodes,
     };
   }
+  if (pt === "rate_limit") {
+    const loginEp = analysis.ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
+    return {
+      ...base,
+      id: `PROOF-${b.id}-RATELIMIT`,
+      description: `Rate limit: ${b.title}`,
+      preconditions: ["Login endpoint accessible", "Rate limit counter at 0"],
+      assertions: [
+        { type: "http_status" as const, target: "response_after_5_attempts", operator: "eq" as const, value: 429, rationale: "Must be rate-limited after repeated failed logins" },
+        { type: "http_status" as const, target: "response_after_3_attempts", operator: "not_contains" as const, value: 429, rationale: "Must not be rate-limited prematurely" },
+      ],
+      mutationTargets: [
+        { description: "Remove rate limiting middleware from login endpoint", expectedKill: true },
+        { description: "Set rate limit threshold too high (> 100 attempts)", expectedKill: true },
+        { description: "Never reset rate limit counter after successful login", expectedKill: true },
+      ],
+      endpoint: loginEp,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
   if (pt === "feature_gate") {
     return {
       ...base,

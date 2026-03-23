@@ -570,6 +570,14 @@ function buildIRFromCode(
       riskHints.push("Idempotency: duplicate requests must return same result");
     }
 
+    // Rate limiting: login/signin endpoints are brute-force targets
+    if (proc.name.toLowerCase().includes("login") || proc.name.toLowerCase().includes("signin") ||
+        proc.name.toLowerCase().includes("authenticate") ||
+        (proc.name.toLowerCase().includes("token") && !proc.isProtected)) {
+      tags.push("rate-limit");
+      riskHints.push("brute-force: rate-limit login attempts (5 per 10 min) \u2192 429");
+    }
+
     if (proc.method === "DELETE" || proc.name.startsWith("delete") || proc.name.startsWith("remove")) {
       postconditions.push("Resource is removed or soft-deleted");
       errorCases.push("Resource not found → 404");

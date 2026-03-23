@@ -29,7 +29,7 @@ import { storagePut, storageGet } from "./storage";
 const runningJobs = new Set<number>();
 const cancelledJobs = new Set<number>(); // Jobs that should stop at next checkpoint
 
-async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string, industryPack?: IndustryPack) {
+async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string, industryPack?: IndustryPack, baseUrl?: string, authToken?: string) {
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
 
@@ -73,7 +73,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         if (data?.analysisResult) update.layer1Json = data.analysisResult as any;
         if (data?.riskModel) update.layer2Json = data.riskModel as any;
         await updateAnalysis(analysisId, update as any);
-      }, industryPack);
+      }, industryPack, { baseUrl, authToken });
 
       // Store report and test files in S3
       const reportKey = `analyses/${analysisId}/testforge-report.md`;
@@ -240,6 +240,8 @@ export const appRouter = router({
         specFileName: z.string().optional(),
         githubUrl: z.string().url().optional(),
         industryPack: z.enum(["fintech", "healthtech", "ecommerce", "saas"]).optional(),
+        baseUrl: z.string().url().optional(),    // Optional: Live endpoint discovery
+        authToken: z.string().optional(),         // Optional: Auth token for discovery
       }))
       .mutation(async ({ ctx, input }) => {
         // ─── Plan-Based Rate Limit ────────────────────────────────────────────────────
@@ -270,7 +272,7 @@ export const appRouter = router({
         });
 
         // Start async job — fetch spec text from S3 inside the job
-        startAnalysisJobFromKey(analysisId, input.specKey, input.projectName, input.industryPack as IndustryPack | undefined);
+        startAnalysisJobFromKey(analysisId, input.specKey, input.projectName, input.industryPack as IndustryPack | undefined, input.baseUrl, input.authToken);
 
         return { id: analysisId };
       }),

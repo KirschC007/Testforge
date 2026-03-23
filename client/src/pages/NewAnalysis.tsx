@@ -132,7 +132,9 @@ export default function NewAnalysis() {
   const [specKey, setSpecKey] = useState("");
   const [specFileName, setSpecFileName] = useState("");
   const [specGithubUrl, setSpecGithubUrl] = useState("");
-  const [industryPack, setIndustryPack] = useState<"" | "fintech" | "healthtech" | "ecommerce" | "saas">("");
+  const [industryPack, setIndustryPack] = useState<"" | "fintech" | "healthtech" | "ecommerce" | "saas">("")
+  const [discoveryBaseUrl, setDiscoveryBaseUrl] = useState("")
+  const [discoveryAuthToken, setDiscoveryAuthToken] = useState("");
   const [fileError, setFileError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -207,7 +209,7 @@ export default function NewAnalysis() {
     if (!projectName.trim()) { toast.error("Project name is required"); return; }
     if (!specText.trim() || specText.length < 100) { toast.error("Spec content is too short (minimum 100 characters)"); return; }
     if (specKey) {
-      createMutation.mutate({ projectName: projectName.trim(), specKey, specFileName: specFileName || undefined, githubUrl: specGithubUrl.trim() || undefined, industryPack: industryPack || undefined });
+      createMutation.mutate({ projectName: projectName.trim(), specKey, specFileName: specFileName || undefined, githubUrl: specGithubUrl.trim() || undefined, industryPack: industryPack || undefined, baseUrl: discoveryBaseUrl.trim() || undefined, authToken: discoveryAuthToken.trim() || undefined });
       return;
     }
     setFileLoading(true);
@@ -223,7 +225,7 @@ export default function NewAnalysis() {
         return;
       }
       const data = await resp.json();
-      createMutation.mutate({ projectName: projectName.trim(), specKey: data.specKey, specFileName: specFileName || undefined, githubUrl: specGithubUrl.trim() || undefined, industryPack: industryPack || undefined });
+      createMutation.mutate({ projectName: projectName.trim(), specKey: data.specKey, specFileName: specFileName || undefined, githubUrl: specGithubUrl.trim() || undefined, industryPack: industryPack || undefined, baseUrl: discoveryBaseUrl.trim() || undefined, authToken: discoveryAuthToken.trim() || undefined });
     } catch (err: any) {
       toast.error("Upload failed: " + (err.message || "Unknown error"));
     } finally {
@@ -542,6 +544,30 @@ export default function NewAnalysis() {
                           <span className="text-[10px] leading-tight opacity-70">{pack.desc}</span>
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* API Discovery */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      🔍 Live-Endpoint-Erkennung <span className="font-normal normal-case text-muted-foreground/60">(optional)</span>
+                    </Label>
+                    <p className="text-xs text-muted-foreground">TestForge erkennt automatisch alle API-Endpoints aus deinem laufenden System.</p>
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Base URL: https://staging.myapp.com"
+                        value={discoveryBaseUrl}
+                        onChange={e => setDiscoveryBaseUrl(e.target.value)}
+                        className="text-sm"
+                        type="url"
+                      />
+                      <Input
+                        placeholder="Auth Token (optional)"
+                        value={discoveryAuthToken}
+                        onChange={e => setDiscoveryAuthToken(e.target.value)}
+                        className="text-sm"
+                        type="password"
+                      />
                     </div>
                   </div>
 

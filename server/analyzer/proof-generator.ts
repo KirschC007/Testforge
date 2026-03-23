@@ -1939,6 +1939,19 @@ ${sideEffectSetup}
 ${assertionLines || "  expect((data as Record<string, unknown>)?.id).toBeDefined(); // Kills: Return undefined id"}
 ${sideEffectAssert}
 ${killComments}
+
+  // DB-State-Verification: Read back the resource and verify persistence
+  const { data: readBack } = await trpcQuery(request, "${getEp}",
+    { id: (data as Record<string, unknown>)?.id, ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(readBack).toBeDefined();
+  // Kills: API returns 200 but doesn't persist to DB
+  expect((readBack as Record<string, unknown>)?.id).toBe((data as Record<string, unknown>)?.id);
+  // Kills: GET returns different resource than created
+${hasBalanceEffect ? `
+  // Verify balance actually changed (not just 200 response)
+  const balanceAfter = (readBack as Record<string, unknown>)?.balance as number;
+  expect(balanceAfter).not.toBe(balanceBefore);
+  // Kills: Return 200 without updating balance` : ""}
 });
 test("${target.id}b — ${target.description.slice(0, 60)} requires auth", async ({ request }) => {
   const created = await createTestResource(request, adminCookie) as Record<string, unknown>;
@@ -2070,6 +2083,199 @@ test("${target.id}g — duplicate state change must return 409", async ({ reques
   expect(second).toBe(409);
   // Kills: Allow duplicate state change (no idempotency check)
 });`);
+  }
+
+  // Pattern: COURSE_NOT_PUBLISHED / RECIPE_NOT_PUBLISHED — action on unpublished resource
+  if (allErrorText.includes("not_published") || allErrorText.includes("course_not_published") || allErrorText.includes("recipe_not_published")) {
+    constraintTests.push(`
+test("${target.id}h — NOT_PUBLISHED: action on unpublished resource must fail", async ({ request }) => {
+  // Arrange: Create a resource that is NOT published (default state = draft)
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  // Resource is in draft state by default — do NOT publish it
+  
+  // Act: Try to perform action on unpublished resource
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("course") || fl.includes("recipe") || fl.includes("resource")) return `${f.name}: resource.id as number,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(422);
+  // Kills: Allow enrollment/action on unpublished resource
+});`);
+  }
+
+  // Pattern: COURSE_FULL / MAX_CAPACITY — action when resource is at capacity
+  if (allErrorText.includes("course_full") || allErrorText.includes("full") || allErrorText.includes("capacity") || allErrorText.includes("maxstudents")) {
+    constraintTests.push(`
+test("${target.id}i — COURSE_FULL: enrollment when course is full must fail", async ({ request }) => {
+  // This test requires a course with maxStudents=1 already filled
+  // Arrange: Create course with maxStudents=1
+  const course = await createTestResource(request, adminCookie, { maxStudents: 1 }) as Record<string, unknown>;
+  
+  // Act: Attempt to enroll when full
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("course")) return `${f.name}: course.id as number,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  
+  expect([422, 409]).toContain(status);
+  // Kills: Allow enrollment past maxStudents limit
+});`);
+  }
+
+  // Pattern: ALREADY_ENROLLED / ALREADY_SUBMITTED — duplicate action
+  if (allErrorText.includes("already_enrolled") || allErrorText.includes("already_submitted") || allErrorText.includes("already_completed")) {
+    constraintTests.push(`
+test("${target.id}j — ALREADY_ENROLLED: duplicate action must return 409", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  
+  // First action (should succeed)
+  const { status: first } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("course") || fl.includes("lesson") || fl.includes("assignment")) return `${f.name}: resource.id as number,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  expect([200, 201]).toContain(first);
+  
+  // Second identical action (should be rejected)
+  const { status: second } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("course") || fl.includes("lesson") || fl.includes("assignment")) return `${f.name}: resource.id as number,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  expect(second).toBe(409);
+  // Kills: Allow duplicate enrollment/submission
+});`);
+  }
+
+  // Pattern: DEADLINE_PASSED — submission after deadline
+  if (allErrorText.includes("deadline") || allErrorText.includes("deadline_passed")) {
+    constraintTests.push(`
+test("${target.id}k — DEADLINE_PASSED: submission after deadline must fail", async ({ request }) => {
+  // Arrange: Create assignment with past deadline
+  const assignment = await createTestResource(request, adminCookie, { deadline: "2020-01-01" }) as Record<string, unknown>;
+  
+  // Act: Try to submit after deadline
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("assignment")) return `${f.name}: assignment.id as number,`;
+      if (fl.includes("content")) return `${f.name}: "Late submission content",`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(422);
+  // Kills: Allow submission after deadline
+});`);
+  }
+
+  // Pattern: SLOT_TAKEN / BOOKING_CONFLICT — double booking
+  if (allErrorText.includes("slot_taken") || allErrorText.includes("booking_conflict") || allErrorText.includes("double-booking") || allErrorText.includes("overlap")) {
+    constraintTests.push(`
+test("${target.id}l — SLOT_TAKEN: double booking same slot must fail", async ({ request }) => {
+  // Arrange: Create first booking for a specific slot
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  const sharedPayload = {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("vet") || fl.includes("vehicle") || fl.includes("resource")) return `${f.name}: resource.id as number,`;
+      if (fl.includes("date")) return `${f.name}: "2030-06-15", // Fixed future date`;
+      if (fl.includes("time")) return `${f.name}: "10:00",`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  };
+  
+  // First booking (should succeed)
+  const { status: first } = await trpcMutation(request, "${ep}", sharedPayload, adminCookie);
+  expect([200, 201]).toContain(first);
+  
+  // Second booking for same slot (should fail)
+  const { status: second } = await trpcMutation(request, "${ep}", sharedPayload, adminCookie);
+  expect(second).toBe(409);
+  // Kills: Allow double-booking same slot (no conflict check)
+});`);
+  }
+
+  // Pattern: VEHICLE_NOT_AVAILABLE / DRIVER_NOT_ACTIVE — resource state check
+  if (allErrorText.includes("vehicle_not_available") || allErrorText.includes("driver_not_active") || allErrorText.includes("not_available") || allErrorText.includes("not_active")) {
+    constraintTests.push(`
+test("${target.id}m — NOT_AVAILABLE: booking unavailable resource must fail", async ({ request }) => {
+  // Arrange: Create a resource in non-available state
+  const resource = await createTestResource(request, adminCookie, { status: "maintenance" }) as Record<string, unknown>;
+  
+  // Act: Try to book unavailable resource
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("vehicle") || fl.includes("resource")) return `${f.name}: resource.id as number,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(422);
+  // Kills: Allow booking of unavailable resource
+});`);
+  }
+
+  // Pattern: CANNOT_RATE_OWN — self-rating prevention
+  if (allErrorText.includes("cannot_rate_own") || allErrorText.includes("own recipe") || allErrorText.includes("own course") || allErrorText.includes("rate own")) {
+    constraintTests.push(`
+test("${target.id}n — CANNOT_RATE_OWN: rating own resource must fail", async ({ request }) => {
+  // Arrange: Create resource as the same user who will try to rate it
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  
+  // Act: Same user tries to rate their own resource
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${epFields.filter(f => !f.isTenantKey && f.required).map(f => {
+      const fl = f.name.toLowerCase();
+      if (fl.includes("recipe") || fl.includes("course") || fl.includes("resource")) return `${f.name}: resource.id as number,`;
+      if (fl.includes("rating")) return `${f.name}: 5,`;
+      return `${f.name}: ${getValidDefault(f, tenantConst)},`;
+    }).join("\\n    ")}
+  }, adminCookie); // Same adminCookie = same user who created it
+  
+  expect(status).toBe(403);
+  // Kills: Allow user to rate their own resource
+});`);
+  }
+
+  // Pattern: INVALID_DATE_RANGE — endDate before startDate
+  if (allErrorText.includes("invalid_date_range") || allErrorText.includes("end.*before.*start") || allErrorText.includes("startdate") && allErrorText.includes("enddate")) {
+    const startField = epFields.find(f => f.name.toLowerCase().includes("start") && f.name.toLowerCase().includes("date"));
+    const endField = epFields.find(f => f.name.toLowerCase().includes("end") && f.name.toLowerCase().includes("date"));
+    if (startField && endField) {
+      constraintTests.push(`
+test("${target.id}o — INVALID_DATE_RANGE: endDate before startDate must fail", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${startField.name}: "2030-06-15",
+    ${endField.name}: "2030-06-01", // BEFORE startDate!
+    ${epFields.filter(f => f.name !== startField.name && f.name !== endField.name && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join("\\n    ")}
+  }, adminCookie);
+  
+  expect(status).toBe(400);
+  // Kills: Allow endDate before startDate (no date range validation)
+});`);
+    }
   }
 
   return constraintTests.join("\\n");
