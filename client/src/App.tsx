@@ -8,7 +8,8 @@ import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import AnalysisDetail from "./pages/AnalysisDetail";
 import NewAnalysis from "./pages/NewAnalysis";
-import Pricing from "./pages/Pricing";
+import Pricing from "@/pages/Pricing";
+import Demo from "@/pages/Demo";
 import SpecDiff from "./pages/SpecDiff";
 
 function Router() {
@@ -17,7 +18,8 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/analysis/new" component={NewAnalysis} />
-      <Route path="/pricing" component={Pricing} />
+          <Route path="/pricing" component={Pricing} />
+          <Route path="/demo" component={Demo} />
       <Route path="/analysis/:id/diff" component={SpecDiff} />
       <Route path="/analysis/:id" component={AnalysisDetail} />
       <Route path="/404" component={NotFound} />

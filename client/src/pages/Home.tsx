@@ -129,9 +129,9 @@ export default function Home() {
                     <FileCode2 className="w-4 h-4" /> Start Analysis
                   </Button>
                 </Link>
-                <Link href="/analysis/new?demo=1">
+                <Link href="/demo">
                   <Button size="lg" variant="outline" className="gap-2">
-                    <Terminal className="w-4 h-4" /> Try Demo Spec
+                    <Terminal className="w-4 h-4" /> See Live Demo
                   </Button>
                 </Link>
               </>
@@ -142,11 +142,11 @@ export default function Home() {
                     <Shield className="w-4 h-4" /> Get Started Free
                   </Button>
                 </a>
-                <a href={getLoginUrl()}>
+                <Link href="/demo">
                   <Button size="lg" variant="outline" className="gap-2">
-                    <Terminal className="w-4 h-4" /> Try Demo Spec
+                    <Terminal className="w-4 h-4" /> See Live Demo
                   </Button>
-                </a>
+                </Link>
               </>
             )}
           </div>

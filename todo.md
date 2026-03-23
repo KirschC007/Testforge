@@ -541,3 +541,8 @@
 ## Features (23.03.2026)
 - [x] Spec-Diff UI: Vergleichsseite /analysis/:id/diff mit grün/rot/gelb Darstellung
 - [x] Industry Pack Auswahl im NewAnalysis-Wizard (FinTech/HealthTech/eCommerce/SaaS)
+
+## Demo ohne Login (23.03.2026)
+- [x] Backend: Demo-Analyse publicProcedure mit vorberechneten Daten
+- [x] Frontend: /demo Seite mit vollständiger Analyse-Ansicht + CTA
+- [x] Landing Page: Demo-CTA Button einbauen

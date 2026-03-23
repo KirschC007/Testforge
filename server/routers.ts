@@ -17,6 +17,7 @@ import { buildPRComment, postGitHubPRComment } from "./github-pr";
 import { scanGitHubRepo, parseGitHubUrl } from "./analyzer/repo-scanner";
 import { listProofPacks, getProofPack, type IndustryPack } from "./analyzer/industry-proof-packs";
 import { generatePlaywrightConfig, generateCIWorkflow } from "./analyzer/playwright-mcp";
+import { DEMO_ANALYSIS } from "./demo-data";
 import { storagePut, storageGet } from "./storage";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
