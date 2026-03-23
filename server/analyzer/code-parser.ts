@@ -490,33 +490,172 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
 
 // ─── Express Route Parser ─────────────────────────────────────────────────────
 
+function httpVerbToAction(verb: string, hasId: boolean): string {
+  const map: Record<string, string> = {
+    GET: hasId ? "getById" : "list",
+    POST: "create",
+    PUT: "update",
+    PATCH: hasId ? "update" : "updateStatus",
+    DELETE: "delete",
+  };
+  return map[verb] || "call";
+}
+
+/**
+ * Extract the handler body starting from a given position in the file content.
+ * Returns up to 2000 chars of the handler function body.
+ */
+function extractHandlerBlock(content: string, fromIndex: number): string {
+  // Find the opening brace of the handler
+  const slice = content.slice(fromIndex, fromIndex + 3000);
+  const braceIdx = slice.indexOf("{");
+  if (braceIdx === -1) return "";
+  let depth = 0;
+  let i = braceIdx;
+  for (; i < slice.length; i++) {
+    if (slice[i] === "{") depth++;
+    else if (slice[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  return slice.slice(braceIdx, i + 1);
+}
+
+/**
+ * Extract Zod/Joi validation fields from a handler body string.
+ */
+function extractValidationFields(handlerBody: string): import("./types").EndpointField[] {
+  // Try to find z.object({...}) in the handler
+  const zodMatch = handlerBody.match(/z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)/);
+  if (zodMatch) return parseZodObject(zodMatch[1]);
+  // Try req.body destructuring: const { name, email } = req.body
+  const bodyMatch = handlerBody.match(/const\s*\{([^}]+)\}\s*=\s*req\.body/);
+  if (bodyMatch) {
+    return bodyMatch[1].split(",").map(s => s.trim()).filter(Boolean).map(name => ({
+      name, type: "string" as const, required: false,
+    }));
+  }
+  return [];
+}
+
+/**
+ * Derive resource.action name from an Express/REST path.
+ * "/api/v1/bookings/:id/status" → "bookings.updateStatus"
+ */
+function pathToResourceAction(path: string, httpVerb: string): string {
+  // Remove /api/ or /api/v1/ prefix
+  const stripped = path.replace(/^\/api\/(?:v\d+\/)?/, "");
+  const segments = stripped.split("/").filter(s => s && !s.startsWith(":"));
+  const resource = segments[0] || "resource";
+  const hasId = path.includes(":");
+  if (segments.length > 1) {
+    const subAction = segments[segments.length - 1];
+    return `${resource}.${subAction}`;
+  }
+  return `${resource}.${httpVerbToAction(httpVerb, hasId)}`;
+}
+
+/**
+ * Enhanced Express route parser.
+ * Handles: router.get/post/put/patch/delete('/path', handler)
+ *          app.get/post/put/patch/delete('/path', handler)
+ * Extracts: Zod/Joi input fields from handler body, auth middleware detection.
+ */
 function parseExpressRoutes(files: CodeFile[]): ParsedProcedure[] {
   const procedures: ParsedProcedure[] = [];
-
   for (const file of files) {
     if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx") && !file.path.endsWith(".js")) continue;
     const content = file.content;
+    if (!content.includes("router.") && !content.includes("app.")) continue;
 
-    // Match: router.get/post/put/patch/delete('/path', middleware?, handler)
-    const routeRegex = /router\.(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]/g;
+    // Pattern: router.get/post/put/patch/delete('/path', ...handlers)
+    //          app.get/post/put/patch/delete('/path', ...handlers)
+    const routeRegex = /(?:router|app)\.(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]/g;
     let match;
     while ((match = routeRegex.exec(content)) !== null) {
-      const httpVerb = match[1].toUpperCase() as ParsedProcedure["method"];
+      const httpVerb = match[1].toUpperCase();
       const path = match[2];
-      const procName = path.replace(/[/:]/g, "_").replace(/^_/, "").replace(/_+$/, "") || "handler";
+
+      // Derive resource.action name
+      const procName = pathToResourceAction(path, httpVerb);
+
+      // Extract handler body for field/auth detection
+      const handlerBlock = extractHandlerBlock(content, match.index);
+      const inputFields = extractValidationFields(handlerBlock);
+
+      // Auth detection: check for common middleware names
+      const isProtected = handlerBlock.includes("requireAuth") ||
+                          handlerBlock.includes("authenticate") ||
+                          handlerBlock.includes("passport") ||
+                          content.slice(0, match.index).includes("requireAuth") ||
+                          content.includes("authMiddleware");
+
+      const authMiddleware = handlerBlock.includes("requireAdmin") ? "requireAdmin" : "requireAuth";
 
       procedures.push({
         name: procName,
-        fullName: path,
-        method: httpVerb,
-        isProtected: content.slice(0, match.index).includes("authenticate") ||
-                     content.includes("requireAuth") || content.includes("authMiddleware"),
-        inputFields: [],
+        fullName: `${httpVerb} ${path}`,
+        method: httpVerb as ParsedProcedure["method"],
+        isProtected,
+        inputFields,
+        authMiddleware,
+      });
+    }
+  }
+  return procedures;
+}
+
+/**
+ * Next.js App Router route parser.
+ * Handles: app/api/bookings/route.ts → bookings.list, bookings.create
+ *          app/api/bookings/[id]/route.ts → bookings.getById, bookings.update, bookings.delete
+ *          app/api/bookings/[id]/status/route.ts → bookings.status
+ */
+function extractNextAppRoutes(files: CodeFile[]): ParsedProcedure[] {
+  const procedures: ParsedProcedure[] = [];
+
+  // Filter: Next.js App Router route files
+  const routeFiles = files.filter(f =>
+    f.path.includes("/api/") && f.path.endsWith("route.ts")
+  );
+
+  for (const file of routeFiles) {
+    // Derive path from file path: "app/api/bookings/[id]/status/route.ts" → "bookings/[id]/status"
+    const apiPath = file.path.split("/api/")[1]?.replace("/route.ts", "") || "";
+    const segments = apiPath.split("/").filter(s => !s.startsWith("["));
+    const resource = segments[0] || "resource";
+    const hasId = file.path.includes("[");
+
+    // Check which HTTP methods are exported
+    for (const verb of ["GET", "POST", "PUT", "PATCH", "DELETE"] as const) {
+      const hasExport =
+        file.content.includes(`export async function ${verb}`) ||
+        file.content.includes(`export function ${verb}`) ||
+        file.content.includes(`export const ${verb}`);
+      if (!hasExport) continue;
+
+      const action = segments.length > 1
+        ? segments[segments.length - 1]
+        : httpVerbToAction(verb, hasId);
+
+      // Extract Zod validation if present
+      const zodMatch = file.content.match(/z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)/);
+      const inputFields = zodMatch ? parseZodObject(zodMatch[1]) : [];
+
+      const isProtected =
+        file.content.includes("getServerSession") ||
+        file.content.includes("auth(") ||
+        file.content.includes("requireAuth") ||
+        file.content.includes("withAuth");
+
+      procedures.push({
+        name: `${resource}.${action}`,
+        fullName: `${verb} /api/${apiPath}`,
+        method: verb,
+        isProtected,
+        inputFields,
         authMiddleware: "requireAuth",
       });
     }
   }
-
   return procedures;
 }
 
@@ -846,7 +985,8 @@ export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult
   // 3. Parse routes/procedures
   const trpcProcedures = parseTRPCRouters(files);
   const expressProcedures = parseExpressRoutes(files);
-  const allProcedures = [...trpcProcedures, ...expressProcedures];
+  const nextProcedures = extractNextAppRoutes(files);
+  const allProcedures = [...trpcProcedures, ...expressProcedures, ...nextProcedures];
 
   // 4. Build IR
   const ir = buildIRFromCode(allTables, allProcedures, framework);

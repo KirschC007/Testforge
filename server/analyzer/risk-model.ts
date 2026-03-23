@@ -2,6 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { getValidDefault } from "./proof-generator";
 import type { Behavior, EndpointField, AnalysisIR, SpecHealthDimension, SpecHealth, AnalysisResult, CheckResult, RiskLevel, ProofType, ScoredBehavior, FieldConstraint, ProofTarget, RiskModel } from "./types";
+import { evaluateRiskRules } from "./risk-rules";
 
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
 
@@ -428,190 +429,8 @@ function assessRiskLevel(b: Behavior): RiskLevel {
 }
 
 export function determineProofTypes(b: Behavior): ProofType[] {
-  const types = new Set<ProofType>();
-  const combined = [...b.tags, ...b.riskHints].join(" ").toLowerCase();
-  if (combined.includes("idor") || combined.includes("cross-tenant") || combined.includes("multi-tenant")) types.add("idor");
-  // csrf: triggered by csrf tag, NOT by state-change (state-change belongs to status_transition)
-  if (combined.includes("csrf")) types.add("csrf");
-  if (combined.includes("brute-force") || combined.includes("rate-limit")) types.add("rate_limit");
-  if (combined.includes("dsgvo") || combined.includes("privacy") || combined.includes("gdpr") || combined.includes("pii")) types.add("dsgvo");
-  // state-machine behaviors: ONLY detect by explicit state-machine tag (NOT state-change riskHint)
-  // state-change in riskHints means "writes to DB" (not a status-transition behavior)
-  const behaviorTitle = b.title.toLowerCase();
-  const tagsOnly = b.tags.join(" ").toLowerCase();
-  const hasArrowInTitle = behaviorTitle.includes("→") || behaviorTitle.includes("->");
-  if (tagsOnly.includes("state-machine") || hasArrowInTitle ||
-      (tagsOnly.includes("transition") && !tagsOnly.includes("validation"))) {
-    types.add("status_transition");
-  }
-  if (combined.includes("no-show") || combined.includes("risk-scoring") || combined.includes("cron")) types.add("risk_scoring");
-  // Only add boundary if NOT a rate-limit or state-machine behavior (those have their own test types)
-  const isRateLimit = combined.includes("rate-limit") || combined.includes("brute-force");
-  const isStateMachine = tagsOnly.includes("state-machine") || hasArrowInTitle;
-  if (!isRateLimit && !isStateMachine && (combined.includes("validation") || combined.includes("boundary") || combined.includes("limit"))) types.add("boundary");
-  // Explicit business-logic tag: always add business_logic when tagged
-  if (combined.includes("business-logic") || combined.includes("business_logic") ||
-      combined.includes("side-effect") || combined.includes("side_effect")) {
-    types.add("business_logic");
-  }
-  if (types.size === 0) types.add("business_logic");
-  // spec_drift: add for behaviors tagged with api-response or that have an associated endpoint with outputFields
-  // This generates tests that validate response shapes against Zod schemas
-  if (combined.includes("api-response") || combined.includes("response-schema") || combined.includes("spec-drift")) {
-    types.add("spec_drift");
-  }
-  // concurrency: race conditions, concurrent access, parallel requests, reservation/booking conflicts
-  if (
-    combined.includes("concurren") ||
-    combined.includes("race-condition") ||
-    combined.includes("race_condition") ||
-    combined.includes("parallel") ||
-    combined.includes("double-booking") ||
-    combined.includes("double_booking") ||
-    combined.includes("overbooking") ||
-    combined.includes("atomic")
-  ) {
-    types.add("concurrency");
-  }
-  // idempotency: duplicate submissions, retry safety, exactly-once semantics
-  if (
-    combined.includes("idempoten") ||
-    combined.includes("duplicate") ||
-    combined.includes("retry") ||
-    combined.includes("exactly-once") ||
-    combined.includes("exactly_once") ||
-    combined.includes("deduplication") ||
-    combined.includes("dedup")
-  ) {
-    types.add("idempotency");
-  }
-  // auth_matrix: role-based access, permission checks, authorization rules
-  if (
-    combined.includes("auth-matrix") ||
-    combined.includes("auth_matrix") ||
-    combined.includes("role-based") ||
-    combined.includes("rbac") ||
-    combined.includes("permission") ||
-    combined.includes("access-control") ||
-    combined.includes("access_control") ||
-    combined.includes("authorization")
-  ) {
-    types.add("auth_matrix");
-  }
-  // flow: multi-step flows defined in IR, or behaviors tagged with "flow" or "multi-step"
-  if (
-    combined.includes("flow") ||
-    combined.includes("multi-step") ||
-    combined.includes("multi_step") ||
-    combined.includes("workflow") ||
-    combined.includes("end-to-end") ||
-    combined.includes("orchestration") ||
-    combined.includes("saga") ||
-    combined.includes("rollback")
-  ) {
-    types.add("flow");
-  }
-  // cron_job: scheduled jobs, cron triggers, background tasks
-  if (
-    combined.includes("cron") ||
-    combined.includes("scheduled") ||
-    combined.includes("background-job") ||
-    combined.includes("background_job") ||
-    combined.includes("no-show-release") ||
-    combined.includes("noshowrelease") ||
-    combined.includes("periodic") ||
-    combined.includes("batch") ||
-    combined.includes("recurring")
-  ) {
-    types.add("cron_job");
-  }
-  // webhook: webhook delivery, signature verification, retry logic
-  if (
-    combined.includes("webhook") ||
-    combined.includes("callback-url") ||
-    combined.includes("callback_url") ||
-    combined.includes("callback") ||
-    combined.includes("event-delivery") ||
-    combined.includes("event_delivery") ||
-    combined.includes("async-notification") ||
-    combined.includes("hmac") ||
-    combined.includes("signature")
-  ) {
-    types.add("webhook");
-  }
-  // feature_gate: plan-based feature gating, upgrade prompts
-  if (
-    combined.includes("feature-gate") ||
-    combined.includes("feature_gate") ||
-    combined.includes("plan-upgrade") ||
-    combined.includes("plan_upgrade") ||
-    combined.includes("professional-plan") ||
-    combined.includes("enterprise-plan") ||
-    combined.includes("gated") ||
-    combined.includes("plan-gated") ||
-    combined.includes("plan_gated") ||
-    combined.includes("premium") ||
-    combined.includes("tier") ||
-    combined.includes("toggle") ||
-    combined.includes("rollout") ||
-    combined.includes("canary") ||
-    combined.includes("a/b-test")
-  ) {
-    types.add("feature_gate");
-  }
-    // SEMANTIC HEURISTICS PASS 2: detect concurrency and idempotency from behavior content
-  const semanticText = [
-    b.title,
-    ...(b.preconditions || []),
-    ...(b.postconditions || []),
-    ...(b.errorCases || []),
-    b.specAnchor || "",
-    b.subject || "",
-    b.action || "",
-    b.object || "",
-  ].join(" ").toLowerCase();
-  if (!types.has("concurrency")) {
-    const isMoneyMutation =
-      (semanticText.includes("transfer") || semanticText.includes("debit") ||
-       semanticText.includes("credit") || semanticText.includes("payment") ||
-       semanticText.includes("charge") || semanticText.includes("refund") ||
-       semanticText.includes("withdraw") || semanticText.includes("deposit")) &&
-      (semanticText.includes("amount") || semanticText.includes("balance") ||
-       semanticText.includes("fund") || semanticText.includes("account"));
-    const isInventoryMutation =
-      (semanticText.includes("reserve") || semanticText.includes("book") ||
-       semanticText.includes("allocate") || semanticText.includes("stock") ||
-       semanticText.includes("seat") || semanticText.includes("slot") ||
-       semanticText.includes("capacity") || semanticText.includes("inventory")) &&
-      (semanticText.includes("create") || semanticText.includes("update") ||
-       semanticText.includes("reduce") || semanticText.includes("decrement") ||
-       semanticText.includes("consume") || semanticText.includes("use"));
-    const hasAtomicKeyword =
-      semanticText.includes("atomic") || semanticText.includes("must not") ||
-      semanticText.includes("partial") || semanticText.includes("rollback") ||
-      semanticText.includes("consistent") || semanticText.includes("integrity");
-    if (isMoneyMutation || isInventoryMutation || hasAtomicKeyword) types.add("concurrency");
-  }
-  if (!types.has("idempotency")) {
-    const hasIdempotencyKey =
-      semanticText.includes("idempotencykey") || semanticText.includes("idempotency_key") ||
-      semanticText.includes("requestid") || semanticText.includes("request_id") ||
-      semanticText.includes("correlation") || semanticText.includes("x-request-id") ||
-      semanticText.includes("x-idempotency");
-    const hasRetrySemantics =
-      semanticText.includes("retry") || semanticText.includes("duplicate") ||
-      semanticText.includes("twice") || semanticText.includes("again") ||
-      semanticText.includes("resubmit") || semanticText.includes("resend") ||
-      semanticText.includes("already") || semanticText.includes("existing");
-    const isPaymentOrTransfer =
-      (semanticText.includes("payment") || semanticText.includes("transfer") ||
-       semanticText.includes("charge") || semanticText.includes("order") ||
-       semanticText.includes("submit")) &&
-      (semanticText.includes("create") || semanticText.includes("initiate") ||
-       semanticText.includes("process") || semanticText.includes("execute"));
-    if (hasIdempotencyKey || hasRetrySemantics || isPaymentOrTransfer) types.add("idempotency");
-  }
-  return Array.from(types);
+  // Delegated to risk-rules.ts — declarative rule engine (replaces 200-line if-chain)
+  return Array.from(evaluateRiskRules(b));
 }
 
 function buildRationale(b: Behavior, level: RiskLevel): string {
@@ -668,13 +487,51 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
  */
 export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldConstraint[] {
   const constraints: FieldConstraint[] = [];
+
+  // ── Stage 1: Structured constraints from endpoint inputFields (deterministic, no regex) ──
+  // For Code-Scan scenarios: 100% reliable. For Spec scenarios: complements regex fallback.
+  const endpoint = ir.apiEndpoints.find(ep => ep.relatedBehaviors.includes(behavior.id));
+  if (endpoint) {
+    for (const field of endpoint.inputFields || []) {
+      if (field.min !== undefined) {
+        const existing = constraints.find(c => c.field === field.name);
+        if (existing) existing.min = field.min;
+        else constraints.push({ field: field.name, type: field.type === "number" ? "number" : "string", min: field.min });
+      }
+      if (field.max !== undefined) {
+        const existing = constraints.find(c => c.field === field.name);
+        if (existing) existing.max = field.max;
+        else constraints.push({ field: field.name, type: field.type === "number" ? "number" : "string", max: field.max });
+      }
+      if (field.type === "enum" && field.enumValues?.length) {
+        if (!constraints.find(c => c.field === field.name)) {
+          constraints.push({ field: field.name, type: "enum", enumValues: field.enumValues });
+        }
+      }
+      if (field.required && !constraints.find(c => c.field === field.name)) {
+        constraints.push({ field: field.name, type: field.type === "number" ? "number" : "string" });
+      }
+    }
+  }
+
+  // ── Stage 2: Regex fallback — only if Stage 1 found nothing ──
+  // For Spec scenarios where the LLM didn't produce structured inputFields.
+  if (constraints.length > 0) {
+    // Stage 1 succeeded — merge enums from IR and return early
+    for (const [field, vals] of Object.entries(ir.enums || {})) {
+      if (!constraints.find(c => c.field === field)) {
+        constraints.push({ field, type: "enum", enumValues: vals });
+      }
+    }
+    return constraints;
+  }
+
   const allText = [
     behavior.title,
     ...behavior.preconditions,
     ...behavior.postconditions,
     ...behavior.errorCases,
   ].join(" ");
-
   // Pattern: "<field> max <N> characters" or "<field> maximum <N> chars"
   const maxCharPattern = /(\w+)\s+(?:max|maximum)\s+(\d+)\s+(?:characters?|chars?|length)/gi;
   for (const m of Array.from(allText.matchAll(maxCharPattern))) {

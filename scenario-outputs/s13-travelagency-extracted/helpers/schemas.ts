@@ -43,15 +43,6 @@ export const CustomerSchema = z.object({
 }).passthrough();
 export type Customer = z.infer<typeof CustomerSchema>;
 
-// Input schema for auth.login
-export const auth_loginSchema = z.object({
-  email: z.string(),
-  password: z.string()
-});
-export const auth_loginResponseSchema = z.object({
-  session_cookie: z.unknown()
-}).passthrough();
-
 // Input schema for bookings.create
 export const bookings_createSchema = z.object({
   customerId: z.number(),
@@ -73,20 +64,20 @@ export const bookings_listResponseSchema = z.object({
   Booking[]: z.unknown()
 }).passthrough();
 
-// Input schema for ings.getById
-export const ings_getByIdSchema = z.object({
+// Input schema for bookings.getById
+export const bookings_getByIdSchema = z.object({
   bookingId: z.number()
 });
-export const ings_getByIdResponseSchema = z.object({
-  Booking: z.unknown()
+export const bookings_getByIdResponseSchema = z.object({
+  id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for ings.updateStatus
-export const ings_updateStatusSchema = z.object({
+// Input schema for bookings.updateStatus
+export const bookings_updateStatusSchema = z.object({
   bookingId: z.number(),
   status: z.enum(["pending", "confirmed", "paid", "cancelled", "completed", "refunded"])
 });
-export const ings_updateStatusResponseSchema = z.object({
+export const bookings_updateStatusResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
@@ -115,7 +106,7 @@ export const packages_listSchema = z.object({
 
 });
 export const packages_listResponseSchema = z.object({
-  Package[]: z.unknown()
+  id: z.number().or(z.string())
 }).passthrough();
 
 // Input schema for packages.update
@@ -144,7 +135,7 @@ export const customers_listSchema = z.object({
 
 });
 export const customers_listResponseSchema = z.object({
-  Customer[]: z.unknown()
+  id: z.number().or(z.string())
 }).passthrough();
 
 // Input schema for customers.getById
@@ -152,7 +143,7 @@ export const customers_getByIdSchema = z.object({
   customerId: z.number()
 });
 export const customers_getByIdResponseSchema = z.object({
-  Customer: z.unknown()
+  id: z.number().or(z.string())
 }).passthrough();
 
 // Input schema for customers.update

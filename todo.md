@@ -621,3 +621,13 @@
   - [x] playwright.config.ts mit 2 Projekten
 - [x] extended-suite.test.ts: Failing Test gefixt (core-flows → auth.spec.ts)
 - [x] 546/546 Vitest-Tests grün, 0 TypeScript-Fehler
+
+## v5.1: Finales Briefing — Alle Fixes + Erweiterungen (23.03.2026)
+- [x] Teil 1: normalize.ts — normalizeEndpointName() aus llm-parser.ts extrahieren (1 Funktion, 2 Imports)
+- [x] Teil 2: risk-rules.ts — deklarative RiskRule-Engine (16 Regeln), determineProofTypes() auf 3 Zeilen reduziert
+- [x] Teil 3: code-parser.ts — Express (resource.action Namen, Zod-Felder, Auth) + Next.js App Router Support
+- [x] Teil 5: extractConstraints zweistufig — Stage 1 (inputFields deterministisch) → Stage 2 (Regex-Fallback)
+- [x] Teil 7: DB-State-Verification bereits korrekt implementiert (readBack nach jeder Mutation in test a)
+- [x] Teil 9: Packaging-Bug bereits behoben (helpers/ + configs/ korrekt in ZIP)
+- [x] Teil 8: TravelAgency 18/18 Checks bestanden (29 Behaviors, 26 Test-Dateien, 11 E2E-Dateien)
+- [x] Vitest 546/546 Tests grün, 0 TS-Fehler

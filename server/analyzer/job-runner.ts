@@ -11,6 +11,7 @@ import { generateExtendedTestSuite } from "./extended-suite";
 import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 import { parseCodeToIR, type CodeFile } from "./code-parser";
 import { discoverAPI } from "./api-discovery";
+import { normalizeEndpointName } from "./normalize";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -140,96 +141,11 @@ export async function runAnalysisJob(
     }
   }
 
-  // Universal endpoint normalization — applied after ALL parser paths
-  // Ensures no "createAccount.create", "routers.list", or "auth.list" fallbacks reach the generators
-  analysisResult.ir.apiEndpoints = analysisResult.ir.apiEndpoints.map(ep => {
-    const raw = ep.name;
-    // Already correct simple dot-notation: resource.action (all lowercase, simple words)
-    if (/^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/.test(raw)) return ep;
-    // FIRST: REST path normalization (starts with /)
-    if (raw.startsWith("/")) {
-      const segments = raw
-        .replace(/^\/api\/(?:v\d+\/)?/, "")
-        .split("/")
-        .filter(s => !s.startsWith(":") && s.length > 0);
-      if (segments.length >= 1) {
-        const resource = segments[0].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-        if (segments.length === 1) return { ...ep, name: `${resource}.list` };
-        const action = segments[segments.length - 1].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-        const actionMap: Record<string, string> = {
-          gdpr: "gdprDelete", export: "export", import: "import",
-          freeze: "freeze", unfreeze: "unfreeze", cancel: "cancel",
-          approve: "approve", reject: "reject", complete: "complete", archive: "archive",
-        };
-        return { ...ep, name: `${resource}.${actionMap[action] ?? action}` };
-      }
-    }    // Delegate to the same logic as in llm-parser normalizeEndpointName
-    // Inline here to avoid circular imports — keep in sync with llm-parser.ts
-    let normalized = raw;
-    // Cleanup: "ownerDatas.export" → "owners.export"
-    if (raw.includes(".")) {
-      const [left, right] = raw.split(".");
-      if (/Datas?$/i.test(left)) {
-        let cleanLeft = left.replace(/Datas?$/i, "s").replace(/^([A-Z])/, c => c.toLowerCase());
-        if (!cleanLeft.endsWith("s") && cleanLeft.length > 2) cleanLeft += "s";
-        return { ...ep, name: `${cleanLeft}.${right}` };
-      }
-    }
-    // Compound verbs: gdprDeleteOwner → owners.gdprDelete
-    const compoundMatch = raw.match(/^(gdprDelete|gdprExport|gdprAnonymize|bulkDelete|bulkUpdate|bulkCreate|softDelete|hardDelete|forceDelete)([A-Z]\w*)$/);
-    if (compoundMatch) {
-      let res = compoundMatch[2].replace(/^[A-Z]/, c => c.toLowerCase());
-      res = res.endsWith("s") ? res : res + "s";
-      return { ...ep, name: `${res}.${compoundMatch[1]}` };
-    }
-    // Duplicate-verb: "createAccount.create" → "accounts.create"
-    const dupMatch = raw.match(/^(create|list|get|update|delete|find|add|remove)([A-Z]\w*)\.(\1)$/i);
-    if (dupMatch) {
-      const res = dupMatch[2].toLowerCase();
-      normalized = `${res.endsWith("s") ? res : res + "s"}.${dupMatch[1].toLowerCase()}`;
-    } else if (/^[a-z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(raw)) {
-      // camelCase left side: "listAccounts.list" → "accounts.list"
-      const [left, right] = raw.split(".");
-      const verbs = ["create","list","get","update","delete","add","remove","find","fetch","patch",
-        "set","freeze","unfreeze","cancel","approve","reject","complete","archive","send",
-        "export","import","anonymize","void","mark","close","open","start","stop","pause","resume","skip","scan",
-        "register","book","record","submit","assign","enroll","invite","verify","confirm","activate",
-        "suspend","ban","block","unblock","refund","grade","rate","publish","unpublish","schedule","reschedule","check"];
-      const mv = verbs.find(v => left.toLowerCase().startsWith(v) && left.length > v.length);
-      if (mv) {
-        const resourceRaw = left.slice(mv.length);
-        const resourceBase = resourceRaw.replace(/([A-Z][a-z]+)/g, m => m.toLowerCase() + "-").replace(/-+$/, "").split("-")[0];
-        const resource = resourceBase.endsWith("s") ? resourceBase : resourceBase + "s";
-        let action = right;
-        const extra = resourceRaw.includes("-") ? resourceRaw.split("-").slice(1).join("") : "";
-        if (extra && extra.toLowerCase() !== "s") action = right + extra.charAt(0).toUpperCase() + extra.slice(1).toLowerCase();
-        if (resourceRaw.toUpperCase().includes("GDPR")) action = "gdpr" + right.charAt(0).toUpperCase() + right.slice(1);
-        normalized = `${resource}.${action}`;
-      }
-    } else {
-      // Pure camelCase without dot: "registerOwner" → "owners.register"
-      const verbFirst = raw.match(/^(create|list|get|find|update|patch|delete|remove|close|freeze|unfreeze|cancel|approve|reject|complete|archive|anonymize|export|send|mark|register|book|record|submit|assign|enroll|invite|verify|confirm|activate|suspend|ban|block|unblock|void|refund|grade|rate|publish|unpublish|schedule|reschedule|check)([A-Z]\w*)$/);
-      if (verbFirst) {
-        const verb = verbFirst[1].toLowerCase();
-        let resource = verbFirst[2]
-          .replace(/GDPR|Gdpr|ById|ByPhone|ByEmail|Status$/g, "")
-          .replace(/^[A-Z]/, c => c.toLowerCase());
-        resource = resource.endsWith("s") ? resource : resource + "s";
-        const verbMap: Record<string, string> = {
-          create: "create", add: "create",
-          list: "list", find: "list",
-          get: "getById", fetch: "getById",
-          update: "update", patch: "update",
-          delete: "delete", remove: "delete", close: "delete",
-        };
-        const action = verbMap[verb] || verb;
-        if (verbFirst[2].includes("Status")) normalized = `${resource}.updateStatus`;
-        else if (verbFirst[2].toUpperCase().includes("GDPR")) normalized = `${resource}.gdprDelete`;
-        else normalized = `${resource}.${action}`;
-      }
-    }
-    return { ...ep, name: normalized };
-  });
+  // Universal endpoint normalization — delegated to normalize.ts (single source of truth)
+  analysisResult.ir.apiEndpoints = analysisResult.ir.apiEndpoints.map(ep => ({
+    ...ep,
+    name: normalizeEndpointName(ep.name, ep.method),
+  }));
 
   // Assess spec health (all paths)
   analysisResult.specHealth = assessSpecHealth(analysisResult.ir);
