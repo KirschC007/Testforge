@@ -385,58 +385,103 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
     if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx")) continue;
     const content = file.content;
 
-    // ISSUE 2 FIX: Detect router name from export const <name> = createTRPCRouter(...)
-    // Pattern: export const accountsRouter = createTRPCRouter({...}) → "accounts"
-    // Pattern: export const shopRouter = router({...}) → "shop"
+    // Bug 3 Fix: Detect ALL router exports in the file using matchAll (not just the first)
+    // Pattern: export const vehiclesRouter = createTRPCRouter({...}) → "vehicles"
+    // Pattern: export const bookingsRouter = router({...}) → "bookings"
     // Fallback: use filename (e.g. accounts.ts → "accounts")
-    let fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
-    const routerExportMatch = content.match(
-      /export\s+const\s+(\w+)\s*=\s*(?:createTRPCRouter|router|createRouter|t\.router)\s*\(/
-    );
-    if (routerExportMatch) {
-      const exportName = routerExportMatch[1]; // e.g. "accountsRouter", "shopRouter", "appRouter"
-      // Strip common suffixes: Router, router, Route, route, Handler
-      const stripped = exportName.replace(/(?:Router|router|Route|route|Handler|handler)$/, "");
-      // Only use if non-empty and not generic names
-      if (stripped && stripped !== "app" && stripped !== "api" && stripped !== "trpc" && stripped !== "main") {
-        fileBase = stripped; // "accounts", "shop", "tasks"
+    const fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
+    const GENERIC_NAMES = new Set(["app", "api", "trpc", "main", "index", "router", "routes"]);
+
+    // Find ALL router exports in the file
+    const routerExportRegex = /export\s+const\s+(\w+)\s*=\s*(?:createTRPCRouter|router|createRouter|t\.router)\s*\(\s*\{/g;
+    const routerExports = Array.from(content.matchAll(routerExportRegex));
+
+    if (routerExports.length > 1) {
+      // Multiple routers in one file → parse each block separately
+      for (let i = 0; i < routerExports.length; i++) {
+        const exportMatch = routerExports[i];
+        const exportName = exportMatch[1];
+        const stripped = exportName.replace(/(?:Router|router|Route|route|Handler|handler)$/i, "");
+        const routerName = (stripped && !GENERIC_NAMES.has(stripped.toLowerCase()))
+          ? stripped.toLowerCase()
+          : fileBase;
+
+        // Slice the content block for this router
+        const startIdx = exportMatch.index! + exportMatch[0].length;
+        const endIdx = i + 1 < routerExports.length
+          ? routerExports[i + 1].index!
+          : content.length;
+        const routerBlock = content.slice(startIdx, endIdx);
+
+        // Extract procedures from this router block
+        const blockProcRegex = /(\w+):\s*(protectedProcedure|publicProcedure|require\w+|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
+        let blockMatch;
+        while ((blockMatch = blockProcRegex.exec(routerBlock)) !== null) {
+          const procName = blockMatch[1];
+          const authMiddleware = blockMatch[2];
+          const inputBody = blockMatch[3] || "";
+          const queryOrMutation = blockMatch[4];
+
+          const isProtected = authMiddleware !== "publicProcedure";
+          let httpMethod: ParsedProcedure["method"] = queryOrMutation === "query" ? "GET" : "POST";
+          if (queryOrMutation === "mutation") {
+            if (procName.startsWith("delete") || procName.startsWith("remove")) httpMethod = "DELETE";
+            else if (procName.startsWith("update") || procName.startsWith("patch") || procName.startsWith("edit")) httpMethod = "PATCH";
+            else if (procName.startsWith("create") || procName.startsWith("add") || procName.startsWith("bulk")) httpMethod = "POST";
+            else httpMethod = "POST";
+          }
+
+          const prefix = routerPrefix || routerName;
+          const fullName = `${prefix}.${procName}`;
+          const inputFields = parseZodObject(inputBody);
+
+          procedures.push({ name: procName, fullName, method: httpMethod, isProtected, inputFields, authMiddleware });
+        }
       }
-    }
-
-    // Match procedure definitions: name: (protectedProcedure|publicProcedure|requireXxx|xxxProcedure).input(...).query/mutation
-    // Covers all middleware patterns: requireShopAuth, requireShopAdmin, requireWorkspaceAuth, etc.
-    const procRegex = /(\w+):\s*(protectedProcedure|publicProcedure|require\w+|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
-    let match;
-    while ((match = procRegex.exec(content)) !== null) {
-      const procName = match[1];
-      const authMiddleware = match[2];
-      const inputBody = match[3] || "";
-      const queryOrMutation = match[4];
-
-      const isProtected = authMiddleware !== "publicProcedure";
-      const method: "GET" | "POST" = queryOrMutation === "query" ? "GET" : "POST";
-
-      // Determine HTTP method more precisely for mutations
-      let httpMethod: ParsedProcedure["method"] = method;
-      if (queryOrMutation === "mutation") {
-        if (procName.startsWith("delete") || procName.startsWith("remove")) httpMethod = "DELETE";
-        else if (procName.startsWith("update") || procName.startsWith("patch") || procName.startsWith("edit")) httpMethod = "PATCH";
-        else if (procName.startsWith("create") || procName.startsWith("add") || procName.startsWith("bulk")) httpMethod = "POST";
-        else httpMethod = "POST";
+    } else {
+      // Single router or no named export → existing logic (use fileBase)
+      let singleBase = fileBase;
+      if (routerExports.length === 1) {
+        const exportName = routerExports[0][1];
+        const stripped = exportName.replace(/(?:Router|router|Route|route|Handler|handler)$/i, "");
+        if (stripped && !GENERIC_NAMES.has(stripped.toLowerCase())) singleBase = stripped.toLowerCase();
       }
 
-      const prefix = routerPrefix || fileBase;
-      const fullName = `${prefix}.${procName}`;
-      const inputFields = parseZodObject(inputBody);
+      // Match procedure definitions: name: (protectedProcedure|publicProcedure|requireXxx|xxxProcedure).input(...).query/mutation
+      // Covers all middleware patterns: requireShopAuth, requireShopAdmin, requireWorkspaceAuth, etc.
+      const procRegex = /(\w+):\s*(protectedProcedure|publicProcedure|require\w+|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
+      let match;
+      while ((match = procRegex.exec(content)) !== null) {
+        const procName = match[1];
+        const authMiddleware = match[2];
+        const inputBody = match[3] || "";
+        const queryOrMutation = match[4];
 
-      procedures.push({
-        name: procName,
-        fullName,
-        method: httpMethod,
-        isProtected,
-        inputFields,
-        authMiddleware,
-      });
+        const isProtected = authMiddleware !== "publicProcedure";
+        const method: "GET" | "POST" = queryOrMutation === "query" ? "GET" : "POST";
+
+        // Determine HTTP method more precisely for mutations
+        let httpMethod: ParsedProcedure["method"] = method;
+        if (queryOrMutation === "mutation") {
+          if (procName.startsWith("delete") || procName.startsWith("remove")) httpMethod = "DELETE";
+          else if (procName.startsWith("update") || procName.startsWith("patch") || procName.startsWith("edit")) httpMethod = "PATCH";
+          else if (procName.startsWith("create") || procName.startsWith("add") || procName.startsWith("bulk")) httpMethod = "POST";
+          else httpMethod = "POST";
+        }
+
+        const prefix = routerPrefix || singleBase;
+        const fullName = `${prefix}.${procName}`;
+        const inputFields = parseZodObject(inputBody);
+
+        procedures.push({
+          name: procName,
+          fullName,
+          method: httpMethod,
+          isProtected,
+          inputFields,
+          authMiddleware,
+        });
+      }
     }
   }
 

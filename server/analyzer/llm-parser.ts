@@ -260,6 +260,36 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
   // Normalize endpoint names: exact implementation from v4.0 briefing
   // Handles: camelCase verb-resource patterns, duplicate-verb patterns, REST paths
   const normalizeEndpointName = (raw: string, method?: string): string => {
+    // FIRST: If raw IS a REST path (starts with /), convert to dot-notation
+    if (raw.startsWith("/")) {
+      // "/api/owners/:id/gdpr" → "owners.gdprDelete"
+      // "/api/auth/csrf-token" → "auth.csrfToken"
+      // "/api/accounts/:id/freeze" → "accounts.freeze"
+      // "/api/students/:id/export" → "students.export"
+      const segments = raw
+        .replace(/^\/api\/(?:v\d+\/)?/, "")  // Strip /api/ or /api/v1/
+        .split("/")
+        .filter(s => !s.startsWith(":") && s.length > 0);  // Remove :id params and empty
+
+      if (segments.length >= 1) {
+        const resource = segments[0].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        if (segments.length === 1) return `${resource}.list`;
+        const action = segments[segments.length - 1].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        // Map common actions
+        if (action === "gdpr") return `${resource}.gdprDelete`;
+        if (action === "export") return `${resource}.export`;
+        if (action === "import") return `${resource}.import`;
+        if (action === "freeze") return `${resource}.freeze`;
+        if (action === "unfreeze") return `${resource}.unfreeze`;
+        if (action === "cancel") return `${resource}.cancel`;
+        if (action === "approve") return `${resource}.approve`;
+        if (action === "reject") return `${resource}.reject`;
+        if (action === "complete") return `${resource}.complete`;
+        if (action === "archive") return `${resource}.archive`;
+        return `${resource}.${action}`;
+      }
+    }
+
     // Already correct: simple resource.action dot-notation
     const simpleResource = /^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/;
     if (simpleResource.test(raw)) return raw;

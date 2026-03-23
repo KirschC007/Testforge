@@ -146,6 +146,24 @@ export async function runAnalysisJob(
     const raw = ep.name;
     // Already correct simple dot-notation: resource.action (all lowercase, simple words)
     if (/^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/.test(raw)) return ep;
+    // FIRST: REST path normalization (starts with /)
+    if (raw.startsWith("/")) {
+      const segments = raw
+        .replace(/^\/api\/(?:v\d+\/)?/, "")
+        .split("/")
+        .filter(s => !s.startsWith(":") && s.length > 0);
+      if (segments.length >= 1) {
+        const resource = segments[0].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        if (segments.length === 1) return { ...ep, name: `${resource}.list` };
+        const action = segments[segments.length - 1].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        const actionMap: Record<string, string> = {
+          gdpr: "gdprDelete", export: "export", import: "import",
+          freeze: "freeze", unfreeze: "unfreeze", cancel: "cancel",
+          approve: "approve", reject: "reject", complete: "complete", archive: "archive",
+        };
+        return { ...ep, name: `${resource}.${actionMap[action] ?? action}` };
+      }
+    }
     // Delegate to the same logic as in llm-parser normalizeEndpointName
     // Inline here to avoid circular imports — keep in sync with llm-parser.ts
     let normalized = raw;

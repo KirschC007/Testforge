@@ -471,7 +471,7 @@ function generateIntegrationTests(
     const createPayload: Record<string, string> = {};
     for (const f of (createEp?.inputFields || []) as EndpointField[]) {
       if (f.isTenantKey) {
-        createPayload[f.name] = `parseInt(process.env.TEST_TENANT_ID || "99001")`;
+        createPayload[f.name] = `parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001")`;
       } else {
         const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
           f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
@@ -495,8 +495,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
-const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_TENANT_B_ID || "99002");
+const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
+const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_B_ID || process.env.TEST_TENANT_B_ID || "99002");
 
 // ─── Auth Helpers ─────────────────────────────────────────────────────────────
 let authCookie: string;
@@ -765,7 +765,7 @@ ${flow.errorScenarios.slice(0, 2).map((scenario, i) => `  test("${flow.name} —
 import { test, expect } from "@playwright/test";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
+const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
 
 // ─── Auth Flow ────────────────────────────────────────────────────────────────
 
@@ -985,7 +985,7 @@ When("I create a resource with valid data", async function() {
   const resp = await fetch(\`\${BASE_URL}/api/trpc/${ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"))?.name || "resource.create"}\`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Cookie": authCookie },
-    body: JSON.stringify({ json: { ${tenantField}: parseInt(process.env.TEST_TENANT_ID || "99001") } }),
+    body: JSON.stringify({ json: { ${tenantField}: parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001") } }),
   });
   const body = await resp.json().catch(() => null);
   lastResponse = { status: resp.status, body };
@@ -1127,7 +1127,7 @@ export function setup() {
 // ─── Main Test ────────────────────────────────────────────────────────────────
 export default function(data: { cookie: string }) {
   const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
-  const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(__ENV.TEST_TENANT_ID || "99001");
+  const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(__ENV.TEST_${tenantEntity.toUpperCase()}_ID || __ENV.TEST_TENANT_ID || "99001");
   const headers = {
     "Content-Type": "application/json",
     "Cookie": data.cookie,
@@ -1318,7 +1318,7 @@ export default function(data: { cookie: string }) {
   const headers = { "Content-Type": "application/json", "Cookie": data.cookie };
 
 ${listEp ? `  const resp = http.get(
-    \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: parseInt(__ENV.TEST_TENANT_ID || "99001") } }))}\`,
+    \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: parseInt(__ENV.TEST_${tenantEntity.toUpperCase()}_ID || __ENV.TEST_TENANT_ID || "99001") } }))}\`,
     { headers }
   );
   const ok = check(resp, {

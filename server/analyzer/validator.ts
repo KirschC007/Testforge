@@ -347,13 +347,8 @@ export function mergeProofsToFile(proofs: ValidatedProof[]): string {
     importsByModule.set(authMod, existingAuthSyms);
   }
 
-  const mergedImports = Array.from(importsByModule.entries()).map(([mod, syms]) => {
-    const firstVal = Array.from(syms)[0];
-    // If the only entry is a full import line (default import), use it directly
-    if (firstVal && firstVal.startsWith("import ")) return firstVal;
-    const sorted = Array.from(syms).sort();
-    return `import { ${sorted.join(", ")} } from ${mod};`;
-  });
+  // NOTE: mergedImports is built AFTER beforeAll so that primaryCookieFn is included in auth import
+  // (see below — importsByModule.set(authMod, authSyms) must happen before building mergedImports)
 
   // Detect which cookie variables are actually used across all proofs
   const allCode = proofs.map(p => p.code).join("\n");
@@ -420,6 +415,15 @@ ${needsStaffCookie ? "  staffCookie = await getStaffCookie(request);\n" : ""}});
     if (needsStaffCookie) authSyms.add("getStaffCookie");
     importsByModule.set(authMod, authSyms);
   }
+
+  // Build mergedImports HERE (after beforeAll) so that primaryCookieFn is in importsByModule
+  const mergedImports = Array.from(importsByModule.entries()).map(([mod, syms]) => {
+    const firstVal = Array.from(syms)[0];
+    // If the only entry is a full import line (default import), use it directly
+    if (firstVal && firstVal.startsWith("import ")) return firstVal;
+    const sorted = Array.from(syms).sort();
+    return `import { ${sorted.join(", ")} } from ${mod};`;
+  });
 
   // Test bodies without repeated imports/declarations
   // Note: basePayload functions now have unique names (basePayload_PROOF_B_007_BOUND, etc.)

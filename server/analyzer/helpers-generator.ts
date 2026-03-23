@@ -259,7 +259,7 @@ export async function getResourceByIdentifier(
 
 import { BASE_URL } from "./api";
 
-export const TEST_TENANT_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
+export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
 
 export async function resetTestTenant(request: any): Promise<void> {
   const token = process.env.DEBUG_API_TOKEN;
@@ -272,7 +272,7 @@ export async function resetTestTenant(request: any): Promise<void> {
       "Content-Type": "application/json",
       "X-Debug-Token": token,
     },
-    data: { ${tenantField}: TEST_TENANT_ID },
+    data: { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID },
   });
   if (!response.ok()) {
     throw new Error(\`resetTestTenant failed: HTTP \${response.status()}\`);
