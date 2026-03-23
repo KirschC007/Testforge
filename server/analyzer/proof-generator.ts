@@ -883,20 +883,9 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
     const directlyReachable = new Set(sm.transitions.filter(t => t[0] === fromStatus).map(t => t[1]));
     skipStatus = sm.states.find(s => s !== fromStatus && s !== toStatus && !directlyReachable.has(s));
   }
-  if (!skipStatus) {
-    // Fallback: extract from behavior text
-    const allStatusText = [
-      ...(behavior?.preconditions || []),
-      ...(behavior?.postconditions || []),
-      ...(behavior?.errorCases || []),
-      behavior?.title || "",
-    ].join(" ");
-    const statusMatchAll = allStatusText.match(/["']([a-z][a-z_0-9]*)["']/g) || [];
-    const statusValuesRaw = statusMatchAll
-      .map(m => m.replace(/["']/g, ""))
-      .filter(s => s !== fromStatus && s !== toStatus && s.length > 2 && s !== "null" && s !== "the");
-    skipStatus = statusValuesRaw.filter((s, i) => statusValuesRaw.indexOf(s) === i)[0];
-  }
+  // Bug 4 Fix: Do NOT fall back to text extraction for skipStatus — unreliable regex matches
+  // normal words as status values. Only use statusMachine.states (already done above).
+  // If no skipStatus found from statusMachine, leave it undefined (no skip-transition test generated).
 
   // Detect side-effects from sideEffects array
   const hasCounter = target.sideEffects?.some(se => se.toLowerCase().includes("count"));
@@ -1273,7 +1262,11 @@ function generateBoundaryTestLegacy(target: ProofTarget, analysis: AnalysisResul
   const fieldFromAssertion = target.assertions.find(a => a.type === "field_value")?.target.split(".").pop();
   const NOISE_FIELD_NAMES = new Set(["empty", "not", "length", "size", "array", "list", "count", "value", "request", "returns", "return", "if", "system", "api"]);
   const rawFieldName = fieldFromConstraint || fieldFromTitle || fieldFromError || fieldFromAssertion;
-  const fieldName = (rawFieldName && !NOISE_FIELD_NAMES.has(rawFieldName.toLowerCase())) ? rawFieldName : "value";
+  // Bug 7 Fix: if no good field name found, use first real endpoint field instead of 'value'
+  const fieldNameRaw = (rawFieldName && !NOISE_FIELD_NAMES.has(rawFieldName.toLowerCase())) ? rawFieldName : undefined;
+  // We'll resolve the actual fieldName after we know knownFields (see below).
+  // Placeholder: keep 'value' for now, override after knownFields is computed.
+  const fieldName = fieldNameRaw || "value";
 
   const allText = [...(behavior?.errorCases || []), ...(behavior?.postconditions || []), target.description].join(" ");
   const minMatch = allText.match(/(\d+)\s*(?:minimum|min|\(min|≥|>=|mindestens)/i);
@@ -1293,8 +1286,19 @@ function generateBoundaryTestLegacy(target: ProofTarget, analysis: AnalysisResul
     e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
   const knownFieldNames = knownFields.map(f => f.name);
-  let resolvedFieldName = fieldName;
-  if (!knownFieldNames.includes(fieldName) && knownFields.length > 0) {
+  // Bug 7 Fix: if fieldName is still 'value' (no good name found), use first real non-tenant, non-id field
+  let effectiveFieldName = fieldName;
+  if (!fieldNameRaw && knownFields.length > 0) {
+    const firstRealField = knownFields.find(f =>
+      !f.isTenantKey &&
+      !f.name.toLowerCase().endsWith("id") &&
+      f.type !== "enum" &&
+      !NOISE_FIELD_NAMES.has(f.name.toLowerCase())
+    ) || knownFields.find(f => !f.isTenantKey) || knownFields[0];
+    if (firstRealField) effectiveFieldName = firstRealField.name;
+  }
+  let resolvedFieldName = effectiveFieldName;
+  if (!knownFieldNames.includes(effectiveFieldName) && knownFields.length > 0) {
     const betterConstraint = target.constraints?.find(c =>
       c.type !== "enum" && !RATE_LIMIT_NOISE_FIELDS.has(c.field.toLowerCase()) && knownFieldNames.includes(c.field));
     if (betterConstraint) resolvedFieldName = betterConstraint.field;
@@ -2208,7 +2212,9 @@ export function generateConcurrencyTest(target: ProofTarget, analysis: AnalysisR
   const resolved = target.resolvedPayload || {};
   for (const f of inputFields) {
     const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
-    payloadLines.push(`    ${f.name}: ${JSON.stringify(val)},`);
+    // Bug 3 Fix: if val is the tenantConst variable name, emit it as a variable reference, not a string literal
+    const valStr = (val === tenantConst) ? tenantConst : JSON.stringify(val);
+    payloadLines.push(`    ${f.name}: ${valStr},`);
   }
   if (payloadLines.length === 0) {
     payloadLines.push(`    ${tenantEntity}Id: ${tenantConst},`);
@@ -2321,7 +2327,9 @@ export function generateIdempotencyTest(target: ProofTarget, analysis: AnalysisR
   const resolved = target.resolvedPayload || {};
   for (const f of inputFields) {
     const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
-    payloadLines.push(`    ${f.name}: ${JSON.stringify(val)},`);
+    // Bug 3 Fix: if val is the tenantConst variable name, emit it as a variable reference, not a string literal
+    const valStr = (val === tenantConst) ? tenantConst : JSON.stringify(val);
+    payloadLines.push(`    ${f.name}: ${valStr},`);
   }
   if (payloadLines.length === 0) {
     payloadLines.push(`    ${tenantEntity}Id: ${tenantConst},`);
@@ -2437,7 +2445,9 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const resolved = target.resolvedPayload || {};
   for (const f of inputFields) {
     const val = resolved[f.name] !== undefined ? resolved[f.name] : getValidDefault(f, tenantConst);
-    payloadLines.push(`    ${f.name}: ${JSON.stringify(val)},`);
+    // Bug 3 Fix: if val is the tenantConst variable name, emit it as a variable reference, not a string literal
+    const valStr = (val === tenantConst) ? tenantConst : JSON.stringify(val);
+    payloadLines.push(`    ${f.name}: ${valStr},`);
   }
   if (payloadLines.length === 0) {
     payloadLines.push(`    ${tenantEntity}Id: ${tenantConst},`);
@@ -2546,7 +2556,7 @@ ${nonAdminTests}
     const cookie = await ${adminFnName}(request);
     const crossTenantPayload = {
       ...basePayload_${fnSuffix}(),
-      ${tenantEntity}Id: "DIFFERENT_TENANT_ID_THAT_DOES_NOT_BELONG_TO_CALLER",
+      ${tenantEntity}Id: ${tenantConst} + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await ${trpcFn}(request, "${endpoint}", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);

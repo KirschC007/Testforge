@@ -257,8 +257,34 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     }
     return String(f);
   });
+  // Normalize endpoint names: LLM may return "POST /api/accounts" — convert to "accounts.create"
+  const normalizeEndpointName = (name: string, method?: string): string => {
+    // Already dot-notation (e.g. "accounts.create", "tasks.list") — keep as-is
+    if (/^[a-z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(name)) return name;
+    // REST pattern: "POST /api/accounts" or "GET /api/accounts/:id"
+    const restMatch = name.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(.+)$/i);
+    const httpMethod = restMatch ? restMatch[1].toUpperCase() : (method || "").toUpperCase();
+    const path = restMatch ? restMatch[2] : name;
+    // Strip /api/ prefix, split segments, ignore path params
+    const segments = path.replace(/^\/api\//, "").split("/").filter(s => s && !s.startsWith(":") && !s.startsWith("{"));
+    if (segments.length === 0) return name;
+    const resource = segments[0];
+    const subAction = segments.length > 1 ? segments[segments.length - 1] : null;
+    const hasIdParam = path.includes(":") || path.includes("{");
+    const methodMap: Record<string, string> = {
+      GET: hasIdParam ? "getById" : "list",
+      POST: subAction || "create",
+      PUT: subAction || "update",
+      PATCH: subAction || "update",
+      DELETE: subAction || "delete",
+    };
+    const verb = methodMap[httpMethod] || (subAction || "call");
+    return `${resource}.${verb}`;
+  };
+
   merged.apiEndpoints = merged.apiEndpoints.map(e => ({
     ...e,
+    name: normalizeEndpointName(e.name, e.method),
     inputFields: normalizeEndpointFields((e.inputFields as unknown as unknown[]) || []),
     outputFields: normalizeStringFields((e as unknown as Record<string, unknown[]>).outputFields || []),
   }));

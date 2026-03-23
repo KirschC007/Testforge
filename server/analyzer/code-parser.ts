@@ -159,14 +159,28 @@ function inferFieldType(fieldName: string, body: string, startIdx: number): {
 } {
   const snippet = body.slice(startIdx, startIdx + 300);
 
-  // Check for enum
-  const enumMatch = snippet.match(/mysqlEnum|pgEnum.*?\[([^\]]+)\]/);
+  // Check for enum — Bug 8 Fix: handle both mysqlEnum("name", [...]) and pgEnum("name", [...])
+  // Also handle: mysqlEnum([...]) without a name argument
+  const enumMatch = snippet.match(/(?:mysqlEnum|pgEnum|sqliteEnum)\s*\([^)]*?\[([^\]]+)\]/);
   if (enumMatch) {
     const enumValues = enumMatch[1]
       .split(",")
       .map(v => v.trim().replace(/['"]/g, ""))
       .filter(Boolean);
-    return { type: "enum", enumValues };
+    if (enumValues.length > 0) return { type: "enum", enumValues };
+  }
+  // Also check for standalone enum reference: status: statusEnum (variable reference)
+  // In this case the snippet will just be the field name + type, no inline values
+  if (snippet.match(/^\s*\w+:\s*\w*[Ee]num/)) {
+    // Try to find the enum definition in the full body
+    const enumVarMatch = body.match(/(?:mysqlEnum|pgEnum|sqliteEnum)\s*\([^)]*?\[([^\]]+)\]/);
+    if (enumVarMatch) {
+      const enumValues = enumVarMatch[1]
+        .split(",")
+        .map(v => v.trim().replace(/['"]/g, ""))
+        .filter(Boolean);
+      if (enumValues.length > 0) return { type: "enum", enumValues };
+    }
   }
 
   // Check for varchar with length

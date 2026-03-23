@@ -318,6 +318,27 @@ export function mergeProofsToFile(proofs: ValidatedProof[]): string {
     }
   }
   // Rebuild merged import lines
+  // Bug 2 Fix: scan all proof code for get*Cookie functions and fix auth import
+  const allProofCode = proofs.map(p => p.code).join("\n");
+  const cookieFnPattern = /get\w+Cookie/g;
+  const usedCookieFns = new Set<string>();
+  let cookieMatch: RegExpExecArray | null;
+  while ((cookieMatch = cookieFnPattern.exec(allProofCode)) !== null) {
+    usedCookieFns.add(cookieMatch[0]);
+  }
+  // If we found actual cookie functions used, override the auth import
+  if (usedCookieFns.size > 0) {
+    const authMod = '"../../helpers/auth"';
+    const existingAuthSyms = importsByModule.get(authMod) || new Set<string>();
+    // Remove any get*Cookie symbols that were imported but may not match what's used
+    for (const sym of Array.from(existingAuthSyms)) {
+      if (sym.match(/^get\w+Cookie$/)) existingAuthSyms.delete(sym);
+    }
+    // Add all actually-used cookie functions
+    for (const fn of Array.from(usedCookieFns)) existingAuthSyms.add(fn);
+    importsByModule.set(authMod, existingAuthSyms);
+  }
+
   const mergedImports = Array.from(importsByModule.entries()).map(([mod, syms]) => {
     const firstVal = Array.from(syms)[0];
     // If the only entry is a full import line (default import), use it directly

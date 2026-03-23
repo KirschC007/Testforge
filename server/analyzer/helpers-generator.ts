@@ -55,13 +55,15 @@ export async function trpcMutation(
 ): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...extraHeaders };
   if (cookieHeader) headers["Cookie"] = cookieHeader;
-  const response = await request.post(\`\${BASE_URL}/api/trpc/\${procedure}\`, {
-    headers,
-    data: { json: input },
-  });
+  // REST-path detection: if procedure contains "/", treat as REST endpoint
+  const isRestPath = procedure.includes("/");
+  const url = isRestPath ? \`\${BASE_URL}\${procedure.startsWith("/") ? "" : "/"}\${procedure}\` : \`\${BASE_URL}/api/trpc/\${procedure}\`;
+  const response = isRestPath
+    ? await request.post(url, { headers, data: input })
+    : await request.post(url, { headers, data: { json: input } });
   const body = await response.json().catch(() => null);
-  const data = body?.result?.data?.json ?? body?.result?.data ?? null;
-  const error = body?.error ?? body?.[0]?.error ?? null;
+  const data = isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null);
+  const error = isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? body?.[0]?.error ?? null);
   return { response, data, error, status: response.status() };
 }
 
@@ -73,13 +75,22 @@ export async function trpcQuery(
 ): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers["Cookie"] = cookieHeader;
-  const response = await request.get(
-    \`\${BASE_URL}/api/trpc/\${procedure}?input=\${encodeURIComponent(JSON.stringify({ json: input }))}\`,
-    { headers }
-  );
+  // REST-path detection: if procedure contains "/", treat as REST endpoint
+  const isRestPath = procedure.includes("/");
+  let response: any;
+  if (isRestPath) {
+    const base = procedure.startsWith("/") ? procedure : \`/\${procedure}\`;
+    const qs = Object.keys(input).length > 0 ? \`?\${new URLSearchParams(Object.entries(input).map(([k, v]) => [k, String(v)])).toString()}\` : "";
+    response = await request.get(\`\${BASE_URL}\${base}\${qs}\`, { headers });
+  } else {
+    response = await request.get(
+      \`\${BASE_URL}/api/trpc/\${procedure}?input=\${encodeURIComponent(JSON.stringify({ json: input }))}\`,
+      { headers }
+    );
+  }
   const body = await response.json().catch(() => null);
-  const data = body?.result?.data?.json ?? body?.result?.data ?? null;
-  const error = body?.error ?? null;
+  const data = isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null);
+  const error = isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? null);
   return { response, data, error, status: response.status() };
 }
 

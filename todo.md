@@ -572,3 +572,13 @@
 - [x] Test: BankingCore Spec-Analyse durchführen → output-spec-test.zip
 - [x] Test: Vibecoding Code-Scan durchführen → output-vibecoding-test.zip
 - [x] Unit-Tests für Code-Scan-Pfad (546 Tests grün)
+
+## Bug-Fix Briefing (23.03.2026 — 0% → 80%)
+- [x] Bug 1: REST-Endpoints als tRPC-Procedure-Names (openapi-parser.ts + helpers-generator.ts)
+- [x] Bug 2: Import-Mismatch getCustomerCookie/getAdminCookie (mergeProofsToFile)
+- [x] Bug 3: Auth-Matrix String-Literale statt Variablen (generateAuthMatrixTest)
+- [x] Bug 4: Status-Transition skipStatus nur aus statusMachine (kein Text-Fallback)
+- [x] Bug 5: Duplizierte Boundary-Tests deduplizieren (generateProofs)
+- [x] Bug 6: Dateinamen mit Leerzeichen/Slashes sanitisieren (extended-suite.ts)
+- [x] Bug 7: Boundary-Fallback auf echtes Feld statt "value" (findBoundaryFieldForBehavior)
+- [x] Bug 8: Drizzle Enum-Werte extrahieren (code-parser.ts)

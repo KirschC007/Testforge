@@ -641,7 +641,8 @@ describe("generateAuthMatrixTest", () => {
     const target = makeAuthMatrixTarget(ir);
     const code = generateAuthMatrixTest(target, analysis);
     expect(code).toContain("cross-tenant");
-    expect(code).toContain("DIFFERENT_TENANT");
+    // Bug 3 Fix: cross-tenant payload now uses tenantConst + 99999 offset instead of a string literal
+    expect(code).toMatch(/DIFFERENT_TENANT|\+ 99999/);
   });
 
   it("imports role-specific cookie functions from helpers/auth", () => {

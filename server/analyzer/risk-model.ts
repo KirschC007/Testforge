@@ -383,12 +383,24 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
     }
   }
 
+  // Bug 5 Fix: deduplicate boundary ProofTargets by (endpoint, fieldName) to avoid
+  // identical test functions in the same file when multiple behaviors share the same endpoint+field
+  const seenBoundaryKeys = new Set<string>();
+  const deduplicatedProofTargets = proofTargets.filter(pt => {
+    if (pt.proofType !== "boundary") return true;
+    const fieldKey = pt.constraints?.[0]?.field || "value";
+    const key = `${pt.endpoint || "unknown"}::${fieldKey}`;
+    if (seenBoundaryKeys.has(key)) return false;
+    seenBoundaryKeys.add(key);
+    return true;
+  });
+
   const idorVectors = analysis.ir.resources.reduce(
     (acc, r) => acc + r.operations.filter(o => o === "read" || o === "create").length, 0
   );
   const csrfEndpoints = behaviors.filter(b => b.proofTypes.includes("csrf")).length;
 
-  return { behaviors, proofTargets, idorVectors, csrfEndpoints };
+  return { behaviors, proofTargets: deduplicatedProofTargets, idorVectors, csrfEndpoints };
 }
 
 function assessRiskLevel(b: Behavior): RiskLevel {
