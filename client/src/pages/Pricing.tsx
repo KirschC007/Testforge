@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import {
   Shield, CheckCircle2, ArrowLeft, Zap, Users, Building2, Star,
   Lock, Activity, RefreshCw, Database, Package, Layers, ChevronRight,
+  Globe, GitBranch,
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
@@ -16,12 +17,12 @@ const PLANS = [
     color: "var(--tf-blue)",
     icon: <Shield className="w-5 h-5" />,
     description: "For individual developers evaluating TestForge.",
-    analyses: 3,
     features: [
       "3 analyses / day",
       "All 16 proof types",
       "ZIP download",
       "OpenAPI / Swagger support",
+      "tRPC + Express + Next.js code scan",
       "Community support",
     ],
     cta: "Start Free",
@@ -36,13 +37,13 @@ const PLANS = [
     color: "var(--tf-orange)",
     icon: <Zap className="w-5 h-5" />,
     description: "For solo engineers and small teams shipping fast.",
-    analyses: 50,
     features: [
       "50 analyses / day",
       "All 16 proof types",
-      "Smart Parser (3-pass, large specs)",
+      "Smart Parser (3-pass, 4 parallel LLM calls)",
+      "5 browser flow types (A–E) + helpers/browser.ts",
       "Spec Diff tracking",
-      "GitHub PR integration",
+      "GitHub PR — Branch + Commit + PR via API",
       "Priority email support",
     ],
     cta: "Start Pro",
@@ -57,7 +58,6 @@ const PLANS = [
     color: "var(--tf-purple)",
     icon: <Users className="w-5 h-5" />,
     description: "For engineering teams with multiple services.",
-    analyses: 200,
     features: [
       "200 analyses / day",
       "All Pro features",
@@ -79,7 +79,6 @@ const PLANS = [
     color: "var(--tf-green)",
     icon: <Building2 className="w-5 h-5" />,
     description: "For large organizations with compliance requirements.",
-    analyses: Infinity,
     features: [
       "Unlimited analyses",
       "All Team features",
@@ -96,22 +95,22 @@ const PLANS = [
 ];
 
 const PROOF_TYPES = [
-  { icon: <Lock className="w-3.5 h-3.5" />, label: "IDOR", color: "var(--tf-red)" },
-  { icon: <Shield className="w-3.5 h-3.5" />, label: "CSRF", color: "var(--tf-orange)" },
-  { icon: <Activity className="w-3.5 h-3.5" />, label: "SQL Injection", color: "var(--tf-red)" },
-  { icon: <Layers className="w-3.5 h-3.5" />, label: "XSS", color: "var(--tf-orange)" },
-  { icon: <RefreshCw className="w-3.5 h-3.5" />, label: "Status Machine", color: "var(--tf-purple)" },
-  { icon: <Database className="w-3.5 h-3.5" />, label: "DSGVO/GDPR", color: "var(--tf-yellow)" },
-  { icon: <Activity className="w-3.5 h-3.5" />, label: "Boundary", color: "var(--tf-yellow)" },
-  { icon: <Zap className="w-3.5 h-3.5" />, label: "Rate Limit", color: "var(--tf-orange)" },
-  { icon: <Layers className="w-3.5 h-3.5" />, label: "Concurrency", color: "var(--tf-red)" },
-  { icon: <RefreshCw className="w-3.5 h-3.5" />, label: "Idempotency", color: "var(--tf-blue)" },
-  { icon: <Shield className="w-3.5 h-3.5" />, label: "Auth Matrix", color: "var(--tf-purple)" },
-  { icon: <ChevronRight className="w-3.5 h-3.5" />, label: "Flow", color: "var(--tf-blue)" },
-  { icon: <Star className="w-3.5 h-3.5" />, label: "Cron Job", color: "var(--tf-green)" },
-  { icon: <Package className="w-3.5 h-3.5" />, label: "Webhook", color: "var(--tf-orange)" },
-  { icon: <Database className="w-3.5 h-3.5" />, label: "Feature Gate", color: "var(--tf-purple)" },
-  { icon: <Activity className="w-3.5 h-3.5" />, label: "Business Logic", color: "var(--tf-blue)" },
+  { icon: <Lock className="w-3.5 h-3.5" />,        label: "IDOR",           color: "var(--tf-red)" },
+  { icon: <Shield className="w-3.5 h-3.5" />,       label: "CSRF",           color: "var(--tf-orange)" },
+  { icon: <Activity className="w-3.5 h-3.5" />,     label: "SQL Injection",  color: "var(--tf-red)" },
+  { icon: <Layers className="w-3.5 h-3.5" />,       label: "Business Logic", color: "var(--tf-blue)" },
+  { icon: <RefreshCw className="w-3.5 h-3.5" />,    label: "Status Machine", color: "var(--tf-purple)" },
+  { icon: <Database className="w-3.5 h-3.5" />,     label: "DSGVO/GDPR",    color: "var(--tf-yellow)" },
+  { icon: <Activity className="w-3.5 h-3.5" />,     label: "Boundary",       color: "var(--tf-yellow)" },
+  { icon: <Zap className="w-3.5 h-3.5" />,          label: "Rate Limit",     color: "var(--tf-orange)" },
+  { icon: <Layers className="w-3.5 h-3.5" />,       label: "Concurrency",    color: "var(--tf-red)" },
+  { icon: <RefreshCw className="w-3.5 h-3.5" />,    label: "Idempotency",    color: "var(--tf-blue)" },
+  { icon: <Shield className="w-3.5 h-3.5" />,       label: "Auth Matrix",    color: "var(--tf-purple)" },
+  { icon: <ChevronRight className="w-3.5 h-3.5" />, label: "Flow",           color: "var(--tf-blue)" },
+  { icon: <Star className="w-3.5 h-3.5" />,         label: "Cron Job",       color: "var(--tf-green)" },
+  { icon: <Package className="w-3.5 h-3.5" />,      label: "Webhook",        color: "var(--tf-orange)" },
+  { icon: <Database className="w-3.5 h-3.5" />,     label: "Feature Gate",   color: "var(--tf-purple)" },
+  { icon: <Activity className="w-3.5 h-3.5" />,     label: "Spec Drift",     color: "var(--tf-green)" },
 ];
 
 export default function Pricing() {
@@ -156,8 +155,8 @@ export default function Pricing() {
             From spec to proof-grade tests
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            All plans include all 16 proof types, ZIP download, and OpenAPI support.
-            Upgrade for higher volume, advanced features, and team collaboration.
+            All plans include all 16 proof types, ZIP download, and OpenAPI + code-scan support.
+            Upgrade for higher volume, browser flow tests, GitHub PR integration, and team collaboration.
           </p>
         </div>
 
@@ -250,6 +249,40 @@ export default function Pricing() {
           </div>
         </div>
 
+        {/* What's in the ZIP */}
+        <div className="bg-card border border-border rounded-xl p-8 mb-12">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-bold mb-2">What's in the ZIP</h2>
+            <p className="text-sm text-muted-foreground">
+              Every analysis produces a ready-to-run test suite. No manual setup required.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[
+              { icon: <Layers className="w-4 h-4" />,    color: "var(--tf-blue)",   label: "tests/unit/",                       desc: "Vitest unit tests" },
+              { icon: <Database className="w-4 h-4" />,  color: "var(--tf-purple)", label: "tests/integration/",                desc: "Vitest integration tests" },
+              { icon: <Globe className="w-4 h-4" />,     color: "var(--tf-green)",  label: "tests/e2e/",                        desc: "Playwright browser flows (5 types A–E)" },
+              { icon: <Shield className="w-4 h-4" />,    color: "var(--tf-red)",    label: "tests/security/",                   desc: "Playwright IDOR, CSRF, Rate-Limit" },
+              { icon: <Activity className="w-4 h-4" />,  color: "var(--tf-orange)", label: "tests/performance/",                desc: "k6 load + spike tests" },
+              { icon: <Package className="w-4 h-4" />,   color: "var(--tf-yellow)", label: "helpers/browser.ts",                desc: "loginViaUI + loginAsRole" },
+              { icon: <RefreshCw className="w-4 h-4" />, color: "var(--tf-blue)",   label: "playwright.config.ts",              desc: "2 projects: api-security + browser-e2e" },
+              { icon: <GitBranch className="w-4 h-4" />, color: "var(--tf-purple)", label: ".github/workflows/testforge.yml",   desc: "CI/CD pipeline with 2 jobs" },
+              { icon: <Zap className="w-4 h-4" />,       color: "var(--tf-green)",  label: "validate-payloads.mjs",             desc: "Payload schema validation" },
+            ].map(item => (
+              <div key={item.label} className="flex items-start gap-3 p-3 rounded-lg bg-muted/20">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ color: item.color, background: `${item.color}18` }}>
+                  {item.icon}
+                </div>
+                <div>
+                  <div className="text-xs font-mono font-semibold">{item.label}</div>
+                  <div className="text-xs text-muted-foreground">{item.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* FAQ */}
         <div className="max-w-2xl mx-auto">
           <h2 className="text-xl font-bold mb-6 text-center">Frequently Asked Questions</h2>
@@ -257,7 +290,7 @@ export default function Pricing() {
             {[
               {
                 q: "What counts as one analysis?",
-                a: "One analysis = one spec file processed through the full 5-layer pipeline. The daily limit resets at UTC midnight.",
+                a: "One analysis = one spec file or codebase processed through the full 5-layer pipeline. The daily limit resets at UTC midnight.",
               },
               {
                 q: "Can I use OpenAPI / Swagger specs?",
@@ -265,11 +298,19 @@ export default function Pricing() {
               },
               {
                 q: "What is the Smart Parser?",
-                a: "For specs larger than 50KB, TestForge uses a 3-pass architecture: structural map → targeted extraction → dedup + enrich. This handles large real-world specs without hitting LLM context limits.",
+                a: "For specs larger than 50KB, TestForge uses a 3-pass architecture. Pass 1 runs 4 parallel LLM calls simultaneously — one for endpoints, one for status machines, one for auth model, one for chapters and PII tables. This reduces hallucinations and improves recall compared to a single monolith call.",
               },
               {
-                q: "What is Spec Diff tracking?",
-                a: "When you re-analyze a spec, TestForge compares the new version against the previous one and highlights which behaviors changed, were added, or removed — so you know exactly which tests to update.",
+                q: "What are the 5 browser flow types?",
+                a: "Type A: Auth login/logout. Type B: CRUD flows (create → verify → edit → delete). Type C: Status machine button clicks. Type D: DSGVO export and delete. Type E: User flows from your spec's ## User Flows section, or derived from endpoints if no section exists.",
+              },
+              {
+                q: "How does GitHub PR integration work?",
+                a: "createPR() creates a new branch in your repo, commits all generated test files, and opens a pull request via the GitHub API. You provide a GitHub token; TestForge handles the branch, commit, and PR creation.",
+              },
+              {
+                q: "What code frameworks does code-scan support?",
+                a: "tRPC (procedures + Drizzle schemas), Express (resource.action route names, Zod/Joi field extraction, auth middleware detection), and Next.js App Router (route.ts files). NestJS support is planned for a future release.",
               },
               {
                 q: "Is self-hosted available?",

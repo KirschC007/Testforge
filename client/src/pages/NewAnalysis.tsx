@@ -663,7 +663,7 @@ export default function NewAnalysis() {
                           <p className="text-[10px] text-muted-foreground/70">Personal Access Token with <code>repo:read</code> scope. Never stored.</p>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          TestForge scans your tRPC routers, Drizzle schemas, and auth middleware.
+                          TestForge scans tRPC routers, Express routes, Next.js App Router files, Drizzle schemas, and auth middleware.
                           Works with public repositories. Max 100 files, 5MB total.
                         </p>
                         <div className="flex flex-wrap gap-1.5">
@@ -753,7 +753,7 @@ export default function NewAnalysis() {
                     )}
                   </Button>
                   <p className="text-xs text-center text-muted-foreground">
-                    Typical: &lt;10s (static analysis) · tRPC, Drizzle, Prisma, Express, Next.js
+                    Typical: &lt;10s (static analysis) · tRPC, Drizzle, Express, Next.js App Router, Prisma
                   </p>
                 </form>
               </div>

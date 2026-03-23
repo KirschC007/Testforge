@@ -196,9 +196,13 @@ function ZipContentsPreview() {
       layer: "e2e",
       label: "Layer 3 — E2E Tests (Playwright)",
       files: [
-        { path: "tests/e2e/core-flows.spec.ts", desc: "Auth flow, create→list→verify user journeys" },
+        { path: "tests/e2e/auth.spec.ts", desc: "Type A: Login/Logout via UI (page.goto → fill → click)" },
+        { path: "tests/e2e/<entity>-crud.spec.ts", desc: "Type B: CRUD flows — create → verify in list → edit → delete" },
+        { path: "tests/e2e/<entity>-status.spec.ts", desc: "Type C: Status machine button clicks, forbidden transitions" },
+        { path: "tests/e2e/dsgvo-export.spec.ts", desc: "Type D: DSGVO data export and delete via UI" },
+        { path: "tests/e2e/<flow-name>.spec.ts", desc: "Type E: User flows from ## User Flows section (or derived)" },
       ],
-      cmd: "npx playwright test tests/e2e/",
+      cmd: "npx playwright test tests/e2e/ --project=browser-e2e",
     },
     {
       layer: "uat",
@@ -234,13 +238,14 @@ function ZipContentsPreview() {
   const helpers = [
     { path: "helpers/api.ts", desc: "trpcMutation, trpcQuery, BASE_URL helpers" },
     { path: "helpers/auth.ts", desc: "loginAndGetCookie, session management" },
+    { path: "helpers/browser.ts", desc: "loginViaUI + loginAsRole — shared by all 5 browser flow types" },
     { path: "helpers/factories.ts", desc: "createTestResource, spec-aware factories" },
     { path: "helpers/schemas.ts", desc: "Zod response & input schemas" },
     { path: "vitest.config.ts", desc: "Vitest config for unit + integration tests" },
-    { path: "playwright.config.ts", desc: "Playwright config (ESM, JSON reporter)" },
+    { path: "playwright.config.ts", desc: "2 projects: api-security + browser-e2e" },
     { path: "cucumber.config.ts", desc: "Cucumber config for UAT tests" },
     { path: "package.json", desc: "All test runners + npm scripts for all 6 layers" },
-    { path: ".github/workflows/testforge-full.yml", desc: "Full 6-layer CI/CD pipeline" },
+    { path: ".github/workflows/testforge.yml", desc: "CI: api-security job + browser-e2e job" },
     { path: "README.md", desc: "Setup guide for all 6 test runners" },
     { path: ".env.example", desc: "Environment variable template" },
   ];

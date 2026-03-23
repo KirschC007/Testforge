@@ -636,3 +636,11 @@
 
 - [ ] Teil 4: NestJS Support — @Controller/@Get/@Post/@Roles Decorator-Parser, DTO-Feld-Extraktion aus class-validator, extractDtoFields(), Integration in parseCodeToIR() [v2]
 - [x] Teil 6: LLM-Prompt aufteilen — Pass 1 jetzt 4 parallele fokussierte Calls (A: Endpoints+Tenant, B: Status+Enums, C: Auth+Roles, D: Chapters+PII), deterministisches Merge, 0 TS-Fehler, 546/546 Tests grün
+
+## v5.3: UI & Webseiteninhalte auf v5.2-Funktionsumfang anpassen
+
+- [x] Home.tsx: Hero, 5 Browser-Test-Typen A-E, 4-parallele Pass-1, Express/Next.js App Router, GitHub PR createPR()
+- [x] Pricing.tsx: Smart Parser Beschreibung, 5 Browser-Test-Typen, Express/Next.js in Features, GitHub PR
+- [x] AnalysisDetail.tsx: E2E Layer 3 auf 5 Typen A-E, helpers/browser.ts, playwright.config.ts 2 Projekte, testforge.yml
+- [x] NewAnalysis.tsx: Express + Next.js App Router in Code-Scan Beschreibung
+- [x] 546/546 Vitest-Tests grün, 0 TS-Fehler
