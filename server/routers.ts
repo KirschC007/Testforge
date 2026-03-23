@@ -11,7 +11,7 @@ import {
   updateAnalysis,
   countAnalysesToday,
 } from "./db";
-import { runAnalysisJob, assessSpecHealth, type AnalysisIR } from "./analyzer";
+import { runAnalysisJob, assessSpecHealth, parseCodeToIR, fetchRepoCodeFiles, type AnalysisIR, type CodeFile } from "./analyzer";
 import { diffAnalysisIR } from "./analyzer/spec-diff";
 import { buildPRComment, postGitHubPRComment } from "./github-pr";
 import { scanGitHubRepo, parseGitHubUrl } from "./analyzer/repo-scanner";
@@ -350,6 +350,159 @@ export const appRouter = router({
         // Return cached specHealth if available, otherwise compute on the fly
         if (analysisResult.specHealth) return analysisResult.specHealth;
         return assessSpecHealth(analysisResult.ir as AnalysisIR);
+      }),
+
+    // Create a new analysis from code files (Code-Scan path)
+    createFromCode: protectedProcedure
+      .input(z.object({
+        projectName: z.string().min(1).max(255),
+        githubUrl: z.string().url().optional(),
+        codeFiles: z.array(z.object({
+          path: z.string(),
+          content: z.string(),
+        })).optional(),
+        industryPack: z.enum(["fintech", "healthtech", "ecommerce", "saas"]).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!input.githubUrl && (!input.codeFiles || input.codeFiles.length === 0)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Either githubUrl or codeFiles is required" });
+        }
+        // Rate-limit (same as analyses.create)
+        const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 50, team: 200, enterprise: Infinity };
+        const userPlan = (ctx.user as any).plan || "free";
+        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+        if (DAILY_LIMIT !== Infinity) {
+          const todayCount = await countAnalysesToday(ctx.user.id);
+          if (todayCount >= DAILY_LIMIT) {
+            throw new TRPCError({
+              code: "TOO_MANY_REQUESTS",
+              message: `Daily limit reached: ${DAILY_LIMIT} analyses/day on ${userPlan} plan. Upgrade for more.`,
+            });
+          }
+        }
+
+        let codeFiles: CodeFile[] = input.codeFiles || [];
+        let githubUrl = input.githubUrl;
+
+        // If GitHub URL provided, fetch code files from repo
+        if (githubUrl) {
+          const parsed = parseGitHubUrl(githubUrl);
+          if (!parsed) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid GitHub URL" });
+          try {
+            codeFiles = await fetchRepoCodeFiles(parsed.owner, parsed.repo, parsed.branch);
+          } catch (err: any) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Failed to fetch repo: ${err.message}` });
+          }
+        }
+
+        if (codeFiles.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No code files found" });
+        }
+
+        // Quick parse to get framework info for display
+        const { parseResult } = parseCodeToIR(codeFiles);
+
+        const analysisId = await createAnalysis({
+          userId: ctx.user.id,
+          projectName: input.projectName,
+          status: "pending",
+          specFileName: githubUrl ? `github:${githubUrl}` : `code:${codeFiles.length} files`,
+          githubUrl: githubUrl,
+        });
+
+        // Start async job with codeFiles option
+        const jobOptions = { codeFiles };
+        const pack = input.industryPack as IndustryPack | undefined;
+
+        setImmediate(async () => {
+          if (runningJobs.has(analysisId)) return;
+          runningJobs.add(analysisId);
+          try {
+            await updateAnalysis(analysisId, { status: "running" });
+            const result = await runAnalysisJob(
+              "", // specText not used for code scan
+              input.projectName,
+              async (layer, message, data) => {
+                if (cancelledJobs.has(analysisId)) {
+                  cancelledJobs.delete(analysisId);
+                  throw new Error("Job cancelled by user");
+                }
+                const update: Record<string, unknown> = { progressLayer: layer, progressMessage: message };
+                if (data?.analysisResult) update.layer1Json = data.analysisResult as any;
+                if (data?.riskModel) update.layer2Json = data.riskModel as any;
+                await updateAnalysis(analysisId, update as any);
+              },
+              pack,
+              jobOptions
+            );
+            // Build ZIP (same as spec path)
+            const archiver = await import("archiver");
+            const { PassThrough } = await import("stream");
+            const chunks: Buffer[] = [];
+            const archive = archiver.default("zip", { zlib: { level: 9 } });
+            const passThrough = new PassThrough();
+            archive.pipe(passThrough);
+            passThrough.on("data", (chunk: Buffer) => chunks.push(chunk));
+            for (const tf of result.testFiles) archive.append(tf.content, { name: tf.filename });
+            archive.append(result.report, { name: "testforge-report.md" });
+            for (const [filename, content] of Object.entries(result.helpers)) archive.append(content, { name: filename });
+            for (const extFile of result.extendedSuite.files) {
+              if (!result.testFiles.some(tf => tf.filename === extFile.filename)) {
+                archive.append(extFile.content, { name: extFile.filename });
+              }
+            }
+            archive.append(result.extendedSuite.readme, { name: "README.md" });
+            await Promise.all([
+              archive.finalize(),
+              new Promise<void>((resolve, reject) => {
+                passThrough.on("finish", resolve);
+                passThrough.on("error", reject);
+                archive.on("error", reject);
+              }),
+            ]);
+            const zipBuffer = Buffer.concat(chunks);
+            const zipKey = `analyses/${analysisId}/testforge-output.zip`;
+            const { url: zipUrl } = await storagePut(zipKey, zipBuffer, "application/zip");
+            const suite = result.validatedSuite;
+            await updateAnalysis(analysisId, {
+              status: "completed",
+              resultJson: {
+                analysisResult: result.analysisResult,
+                riskModel: result.riskModel,
+                validatedSuite: suite,
+                report: result.report,
+                testFileCount: result.testFiles.length,
+                sourceType: "code",
+                framework: parseResult.framework,
+                endpointCount: parseResult.endpointCount,
+                tableCount: parseResult.tableCount,
+              } as any,
+              outputZipUrl: zipUrl,
+              outputZipKey: zipKey,
+              verdictScore: Math.round(suite.verdict.score * 10),
+              coveragePercent: suite.coverage.coveragePercent,
+              validatedProofCount: suite.verdict.passed,
+              discardedProofCount: suite.verdict.failed,
+              behaviorCount: result.analysisResult.ir.behaviors.length,
+              completedAt: new Date(),
+            });
+          } catch (err: any) {
+            await updateAnalysis(analysisId, {
+              status: err?.message === "Job cancelled by user" ? "cancelled" : "failed",
+              errorMessage: err?.message || "Unknown error",
+            });
+          } finally {
+            runningJobs.delete(analysisId);
+            cancelledJobs.delete(analysisId);
+          }
+        });
+
+        return {
+          id: analysisId,
+          framework: parseResult.framework,
+          endpointCount: parseResult.endpointCount,
+          tableCount: parseResult.tableCount,
+        };
       }),
 
     // Cancel a running or pending analysis

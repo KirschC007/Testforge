@@ -559,3 +559,16 @@
 - [x] SSE Live-Stream: Test Runner zeigt Ergebnisse erst nach Abschluss (Polling), kein Echtzeit-Stream
 - [x] Navbar: "Demo" Link fehlt in der Navbar (nur "Pricing" und "Sign In")
 - [x] Test-Runner Unit-Tests fehlen (test-runner.ts hat keine Vitest-Coverage)
+
+## Dual-Input Architektur (23.03.2026)
+- [x] Backend: /api/upload-code Endpoint (ZIP entpacken, Dateien extrahieren, Framework erkennen)
+- [x] Backend: fetchRepoCodeFiles() in repo-scanner.ts (Dateien aus GitHub laden)
+- [x] Backend: analyses.createFromCode tRPC-Procedure (Rate-Limit, GitHub oder codeFiles)
+- [x] Backend: job-runner.ts — codeFiles-Option + Routing-Logik (Code → parseCodeToIR)
+- [x] Frontend: NewAnalysis.tsx — Dual-Input UI (Spec vs Code Karten)
+- [x] Frontend: Home.tsx — Vibecoding-Section + Dual-Input Hero
+- [x] Frontend: Dashboard.tsx — Analyse-Typ Badge (Spec / Code Scan)
+- [x] Frontend: AnalysisDetail.tsx — Source-Info Header
+- [x] Test: BankingCore Spec-Analyse durchführen → output-spec-test.zip
+- [x] Test: Vibecoding Code-Scan durchführen → output-vibecoding-test.zip
+- [x] Unit-Tests für Code-Scan-Pfad (546 Tests grün)

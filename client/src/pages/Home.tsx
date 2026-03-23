@@ -123,12 +123,12 @@ export default function Home() {
 
           <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4 leading-tight">
             Proof-Grade Tests<br />
-            <span style={{ color: "var(--tf-blue)" }}>from your API Spec</span>
+            <span style={{ color: "var(--tf-blue)" }}>from Spec or Code</span>
           </h1>
 
           <p className="text-muted-foreground text-lg max-w-xl mx-auto mb-8">
-            Upload any API specification. TestForge extracts behaviors, builds a risk model,
-            and generates a ready-to-run Playwright test suite — with CI/CD config included.
+            Upload your API spec <em>or</em> drop your codebase. TestForge extracts behaviors,
+            builds a risk model, and generates a ready-to-run Playwright test suite — in under 3 minutes.
           </p>
 
           <div className="flex items-center justify-center gap-3 flex-wrap">
@@ -136,12 +136,17 @@ export default function Home() {
               <>
                 <Link href="/analysis/new">
                   <Button size="lg" className="gap-2">
-                    <FileCode2 className="w-4 h-4" /> Start Analysis
+                    <FileCode2 className="w-4 h-4" /> From Spec
+                  </Button>
+                </Link>
+                <Link href="/analysis/new?mode=code">
+                  <Button size="lg" className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
+                    <Code2 className="w-4 h-4" /> From Code
                   </Button>
                 </Link>
                 <Link href="/demo">
                   <Button size="lg" variant="outline" className="gap-2">
-                    <Terminal className="w-4 h-4" /> See Live Demo
+                    <Terminal className="w-4 h-4" /> Demo
                   </Button>
                 </Link>
               </>
@@ -446,6 +451,82 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Vibecoding Section ──────────────────────────────────────── */}
+      <section className="py-20 border-t border-border/50">
+        <div className="container">
+          <div className="max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full border mb-4"
+                  style={{ color: "var(--tf-purple)", borderColor: "var(--tf-purple)40", background: "var(--tf-purple)10" }}>
+                  <Sparkles className="w-3.5 h-3.5" /> New: Code-Scan Mode
+                </div>
+                <h2 className="text-3xl font-black mb-4">
+                  Built with AI?<br />
+                  <span style={{ color: "var(--tf-purple)" }}>Verify it with TestForge.</span>
+                </h2>
+                <p className="text-muted-foreground mb-6">
+                  Vibecoded your backend in an afternoon? TestForge scans your tRPC routers,
+                  Drizzle schemas, and auth middleware — and generates security tests in under 10 seconds.
+                  No spec required.
+                </p>
+                <ul className="space-y-2 mb-6">
+                  {[
+                    "Detects IDOR vectors in tRPC procedures",
+                    "Finds missing auth middleware automatically",
+                    "Generates auth matrix tests from role patterns",
+                    "100% deterministic — no LLM, no hallucinations",
+                  ].map(item => (
+                    <li key={item} className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: "var(--tf-purple)" }} />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                {isAuthenticated ? (
+                  <Link href="/analysis/new?mode=code">
+                    <Button className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
+                      <Code2 className="w-4 h-4" /> Scan My Code
+                    </Button>
+                  </Link>
+                ) : (
+                  <a href={getLoginUrl()}>
+                    <Button className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
+                      <Code2 className="w-4 h-4" /> Try Code Scan Free
+                    </Button>
+                  </a>
+                )}
+              </div>
+
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
+                  <span className="text-xs font-mono text-muted-foreground ml-2">testforge code-scan</span>
+                </div>
+                <div className="p-4 font-mono text-xs space-y-1.5">
+                  {[
+                    { t: "$", v: "testforge scan ./my-trpc-app", c: "text-muted-foreground" },
+                    { t: "✓", v: "Detected: tRPC + Drizzle ORM", c: "text-[var(--tf-green)]" },
+                    { t: "✓", v: "Found 12 procedures, 8 tables", c: "text-[var(--tf-green)]" },
+                    { t: "⚠", v: "IDOR risk: getOrder — no tenantId check", c: "text-[var(--tf-orange)]" },
+                    { t: "⚠", v: "Missing auth: updateProfile (publicProcedure)", c: "text-[var(--tf-orange)]" },
+                    { t: "✓", v: "Generating 47 security tests...", c: "text-[var(--tf-blue)]" },
+                    { t: "✓", v: "ZIP ready: testforge-output.zip (47 tests)", c: "text-[var(--tf-green)]" },
+                  ].map((line, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className={`shrink-0 ${line.c}`}>{line.t}</span>
+                      <span className={line.c}>{line.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

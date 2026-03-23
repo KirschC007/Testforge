@@ -95,5 +95,12 @@ export { generateReport } from "./report";
 export type { ProgressCallback } from "./job-runner";
 export { runAnalysisJob } from "./job-runner";
 
-// ─── Extended Test Suite ─────────────────────────────────────────────────────
+// // ─── Extended Test Suite ──────────────────────────────────────────────────
 export { generateExtendedTestSuite } from "./extended-suite";
+
+// ─── Code Parser ────────────────────────────────────────────────────────────────────
+export type { CodeFile, CodeParseResult } from "./code-parser";
+export { parseCodeToIR, detectFramework } from "./code-parser";
+
+// ─── Repo Scanner ─────────────────────────────────────────────────────────────────
+export { fetchRepoCodeFiles } from "./repo-scanner";

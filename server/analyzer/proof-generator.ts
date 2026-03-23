@@ -330,7 +330,8 @@ function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall") || e.name.toLowerCase().includes("search"))?.name
     || analysis.ir.apiEndpoints.find(e => !e.name.toLowerCase().includes("create") && !e.name.toLowerCase().includes("update") && !e.name.toLowerCase().includes("delete"))?.name
     || target.endpoint
-    || "TODO_REPLACE_WITH_LIST_ENDPOINT";
+    || analysis.ir.apiEndpoints[0]?.name
+    || "list_endpoint_not_found";
   // The actual endpoint being tested for IDOR (e.g. tasks.delete, tasks.updateStatus)
   const attackEndpoint = target.endpoint || listEndpoint;
   const attackEpDef = analysis.ir.apiEndpoints.find(e => e.name === attackEndpoint);
@@ -342,7 +343,10 @@ function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string
     attackEndpoint.toLowerCase().includes("bulk");
   const hasEndpoint = !!attackEpDef;
   const getEndpoint = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes(".get"))?.name || "TODO_REPLACE_WITH_GETBYID_ENDPOINT";
+    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes(".get"))?.name
+    || analysis.ir.apiEndpoints.find(e => e.method === "GET")?.name
+    || analysis.ir.apiEndpoints[0]?.name
+    || "getbyid_endpoint_not_found";
   // Build attack payload for mutation endpoints
   const attackPayloadLines = attackFields.map(f => {
     const fname = f.name;
@@ -469,7 +473,9 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
   const endpoint = target.endpoint || "TODO_REPLACE_WITH_MUTATION_ENDPOINT";
   const hasEndpoint = !!target.endpoint;
   const listEndpoint = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
+    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name
+    || analysis.ir.apiEndpoints[0]?.name
+    || "list_endpoint_not_found";
   const csrfEndpoint = analysis.ir.authModel?.csrfEndpoint;
   const primaryRole = analysis.ir.authModel?.roles[0];
   const roleFnName = primaryRole
@@ -483,7 +489,9 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
   // Side-effect check: use a unique title field to verify no DB write after 403
   const uniqueField = knownFields.find(f => f.name.toLowerCase().includes("title") || f.name.toLowerCase().includes("name"))?.name || knownFields[0]?.name || "title";
   const listEndpointForDbCheck = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name || "TODO_REPLACE_WITH_LIST_ENDPOINT";
+    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("getall"))?.name
+    || analysis.ir.apiEndpoints[0]?.name
+    || "list_endpoint_not_found";
 
   // Pre-compute payload lines (avoids nested backtick issues in template literals)
   // Track if any date field is used so we can import tomorrowStr
@@ -827,7 +835,20 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   )?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
 
   // Goldstandard: Use statusMachine from IR if available, otherwise fall back to text extraction
-  const sm = analysis.ir.statusMachine;
+  // Defensive normalization: LLM may return states as object or transitions as non-array
+  const rawSm = analysis.ir.statusMachine;
+  const sm = rawSm ? {
+    ...rawSm,
+    states: Array.isArray(rawSm.states)
+      ? rawSm.states
+      : (rawSm.states && typeof rawSm.states === 'object' ? Object.keys(rawSm.states as Record<string,unknown>) : []),
+    transitions: Array.isArray(rawSm.transitions)
+      ? rawSm.transitions.filter((t): t is [string, string] => Array.isArray(t) && t.length >= 2)
+      : [],
+    forbidden: Array.isArray(rawSm.forbidden)
+      ? rawSm.forbidden.filter((t): t is [string, string] => Array.isArray(t) && t.length >= 2)
+      : [],
+  } : null;
   const arrowPattern = /([a-z][a-z_0-9]*)\s*(?:→|->|to\s+)\s*([a-z][a-z_0-9]*)/i;
   const titleMatch = behavior?.title.match(arrowPattern);
   // precondMatch: extract status value from preconditions, but skip meta-words like 'transition', 'valid', 'is'

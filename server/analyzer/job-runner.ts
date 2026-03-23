@@ -9,6 +9,7 @@ import { validateProofs, runIndependentChecker, mergeProofsToFile } from "./vali
 import { generateReport } from "./report";
 import { generateExtendedTestSuite } from "./extended-suite";
 import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
+import { parseCodeToIR, type CodeFile } from "./code-parser";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -22,10 +23,14 @@ export async function runAnalysisJob(
   specText: string,
   projectName: string,
   onProgress?: ProgressCallback,
-  industryPack?: IndustryPack
+  industryPack?: IndustryPack,
+  options?: {
+    codeFiles?: CodeFile[];
+  }
 ): Promise<AnalysisJobResult> {
   const jobStart = Date.now();
-  console.log(`[TestForge] Job START v3.0 — ${specText.length} chars, project: ${projectName}`);
+  const isCodeScan = !!(options?.codeFiles && options.codeFiles.length > 0);
+  console.log(`[TestForge] Job START v3.1 — ${isCodeScan ? `Code-Scan (${options!.codeFiles!.length} files)` : `${specText.length} chars`}, project: ${projectName}`);
 
   const progress = async (layer: number, message: string, data?: Parameters<ProgressCallback>[2]) => {
     console.log(`[TestForge] Progress Layer ${layer}: ${message}`);
@@ -34,57 +39,73 @@ export async function runAnalysisJob(
     }
   };
 
-  await progress(1, "Layer 1: Analysiere Spec...");
-  // Schicht 1: Spec parsing — OpenAPI fast-path or LLM-based
+  await progress(1, "Layer 1: Analysiere...");
+  // Schicht 1: Routing — Code-Scan fast-path, OpenAPI fast-path, or LLM-based
   const t1 = Date.now();
   let analysisResult: AnalysisResult;
   let llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
-  const { isOpenAPIDocument, parseOpenAPI } = await import("../openapi-parser");
-  if (isOpenAPIDocument(specText)) {
-    // Fast path: parse OpenAPI/Swagger directly — no LLM call, deterministic
-    console.log(`[TestForge] OpenAPI detected — using deterministic parser (no LLM)`);
-    await progress(1, "OpenAPI erkannt — deterministischer Parser (kein LLM-Call)...");
-    analysisResult = parseOpenAPI(specText);
-    // LLM Checker is skipped for OpenAPI — all behaviors are structurally derived
+
+  if (isCodeScan) {
+    // Code-Scan path: deterministic static analysis, no LLM call
+    console.log(`[TestForge] Code-Scan detected — using deterministic code parser (no LLM)`);
+    await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien werden analysiert (deterministisch, kein LLM-Call)...`);
+    const codeResult = parseCodeToIR(options!.codeFiles!);
+    analysisResult = {
+      ir: codeResult.ir,
+      qualityScore: codeResult.qualityScore,
+      specType: codeResult.specType,
+    };
     llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
-    console.log(`[TestForge] Schicht 1 (OpenAPI) done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+    console.log(`[TestForge] Code-Scan done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
   } else {
-    // LLM path — choose parser based on spec size
-    const SMART_PARSER_THRESHOLD = 50000; // 50KB+: use 3-pass smart parser
-    if (specText.length >= SMART_PARSER_THRESHOLD) {
-      // Smart Parser: 3-pass architecture for large specs
-      console.log(`[TestForge] Large spec (${specText.length} chars) — using Smart Parser v2.0 (3-pass)`);
-      await progress(1, `Große Spec erkannt (${Math.round(specText.length / 1024)}KB) — Smart Parser v2.0 (3-Pass-Architektur)...`);
-      analysisResult = await parseSpecSmart(specText);
-      // Smart Parser already does structural validation — LLM Checker adds value for anchor verification
-      await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
-      const t_checker = Date.now();
-      const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
-        analysisResult.ir.behaviors,
-        specText
-      );
-      analysisResult.ir.behaviors = checkedBehaviors;
-      llmCheckerStats = checkerStats;
-      console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
-      await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+    const { isOpenAPIDocument, parseOpenAPI } = await import("../openapi-parser");
+    if (isOpenAPIDocument(specText)) {
+      // Fast path: parse OpenAPI/Swagger directly — no LLM call, deterministic
+      console.log(`[TestForge] OpenAPI detected — using deterministic parser (no LLM)`);
+      await progress(1, "OpenAPI erkannt — deterministischer Parser (kein LLM-Call)...");
+      analysisResult = parseOpenAPI(specText);
+      // LLM Checker is skipped for OpenAPI — all behaviors are structurally derived
+      llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
+      console.log(`[TestForge] Schicht 1 (OpenAPI) done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
     } else {
-      // Standard 1-pass chunked parser for small specs
-      analysisResult = await parseSpec(specText);
-      console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
-      // LLM Checker: verify all behaviors (parallel)
-      await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
-      const t_checker = Date.now();
-      const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
-        analysisResult.ir.behaviors,
-        specText
-      );
-      analysisResult.ir.behaviors = checkedBehaviors;
-      llmCheckerStats = checkerStats;
-      console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
-      await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+      // LLM path — choose parser based on spec size
+      const SMART_PARSER_THRESHOLD = 50000; // 50KB+: use 3-pass smart parser
+      if (specText.length >= SMART_PARSER_THRESHOLD) {
+        // Smart Parser: 3-pass architecture for large specs
+        console.log(`[TestForge] Large spec (${specText.length} chars) — using Smart Parser v2.0 (3-pass)`);
+        await progress(1, `Große Spec erkannt (${Math.round(specText.length / 1024)}KB) — Smart Parser v2.0 (3-Pass-Architektur)...`);
+        analysisResult = await parseSpecSmart(specText);
+        // Smart Parser already does structural validation — LLM Checker adds value for anchor verification
+        await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+        const t_checker = Date.now();
+        const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+          analysisResult.ir.behaviors,
+          specText
+        );
+        analysisResult.ir.behaviors = checkedBehaviors;
+        llmCheckerStats = checkerStats;
+        console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+        await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+      } else {
+        // Standard 1-pass chunked parser for small specs
+        analysisResult = await parseSpec(specText);
+        console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+        // LLM Checker: verify all behaviors (parallel)
+        await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+        const t_checker = Date.now();
+        const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+          analysisResult.ir.behaviors,
+          specText
+        );
+        analysisResult.ir.behaviors = checkedBehaviors;
+        llmCheckerStats = checkerStats;
+        console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+        await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+      }
     }
   }
-  // Assess spec health (both paths)
+
+  // Assess spec health (all paths)
   analysisResult.specHealth = assessSpecHealth(analysisResult.ir);
   console.log(`[TestForge] Spec Health: ${analysisResult.specHealth.score}/100 (${analysisResult.specHealth.grade}) — ${analysisResult.specHealth.summary}`);
   await progress(1, `Layer 1 fertig: ${analysisResult.ir.behaviors.length} Behaviors, ${analysisResult.ir.apiEndpoints.length} Endpoints gefunden`, { analysisResult });
@@ -170,5 +191,3 @@ export async function runAnalysisJob(
 
   return { analysisResult, riskModel, validatedSuite, report, testFiles, helpers, llmCheckerStats, extendedSuite };
 }
-
-

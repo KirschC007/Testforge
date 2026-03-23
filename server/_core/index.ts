@@ -128,6 +128,72 @@ async function startServer() {
     }
   });
 
+  // ─── Code Upload Endpoint ───────────────────────────────────────────────────
+  // POST /api/upload-code
+  // Accepts a ZIP file (max 50MB), extracts code files in memory,
+  // detects framework, and returns files + framework for code-scan analysis.
+  const codeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+  app.post("/api/upload-code", codeUpload.single("file"), async (req: any, res: any) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file provided" });
+      const originalname: string = req.file.originalname;
+      if (!originalname.endsWith(".zip")) {
+        return res.status(400).json({ error: "Only ZIP files are supported" });
+      }
+
+      const { default: AdmZip } = await import("adm-zip");
+      const zip = new AdmZip(req.file.buffer);
+      const entries = zip.getEntries();
+
+      const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".prisma", ".json", ".env.example"];
+      const IGNORE_DIRS = ["node_modules/", ".git/", "dist/", "build/", ".next/", "coverage/", ".turbo/"];
+      const IGNORE_PATTERNS = [".test.", ".spec.", ".stories."];
+
+      const files: Array<{ path: string; content: string }> = [];
+      let totalBytes = 0;
+      const MAX_TOTAL_BYTES = 5 * 1024 * 1024; // 5MB content limit
+
+      for (const entry of entries) {
+        if (entry.isDirectory) continue;
+        const entryPath = entry.entryName;
+
+        // Skip ignored paths
+        if (IGNORE_DIRS.some(d => entryPath.includes(d))) continue;
+        if (IGNORE_PATTERNS.some(p => entryPath.includes(p))) continue;
+
+        // Only include code files
+        const hasCodeExt = CODE_EXTENSIONS.some(ext =>
+          entryPath.endsWith(ext) || (ext === ".json" && entryPath.endsWith("package.json"))
+        );
+        if (!hasCodeExt) continue;
+        if (totalBytes >= MAX_TOTAL_BYTES) break;
+
+        try {
+          const content = entry.getData().toString("utf-8");
+          totalBytes += content.length;
+          // Normalize path: strip leading zip folder name if present
+          const normalizedPath = entryPath.replace(/^[^/]+\//, "");
+          files.push({ path: normalizedPath, content });
+        } catch {
+          // Skip unreadable files
+        }
+      }
+
+      if (files.length === 0) {
+        return res.status(422).json({ error: "No code files found in ZIP (expected .ts, .tsx, .js, .prisma, package.json)" });
+      }
+
+      // Detect framework
+      const { detectFramework } = await import("../analyzer/code-parser");
+      const framework = detectFramework(files);
+
+      res.json({ files, framework, fileCount: files.length });
+    } catch (err: any) {
+      console.error("[upload-code]", err);
+      res.status(500).json({ error: err.message || "ZIP extraction failed" });
+    }
+  });
+
   // ─── SSE: Test Run Live Stream ─────────────────────────────────────────────
   // GET /api/test-runs/:runId/stream
   // Opens a Server-Sent Events connection. Emits:

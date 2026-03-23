@@ -392,12 +392,23 @@ export default function AnalysisDetail() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-xl font-bold">{analysis.projectName}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold">{analysis.projectName}</h1>
+              {result?.sourceType === "code" && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border"
+                  style={{ color: "var(--tf-purple)", borderColor: "var(--tf-purple)40", background: "var(--tf-purple)10" }}>
+                  Code-Scan
+                </span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground mt-0.5">
               {new Date(analysis.createdAt).toLocaleDateString("de-DE", {
                 day: "2-digit", month: "long", year: "numeric",
                 hour: "2-digit", minute: "2-digit"
               })}
+              {result?.framework && (
+                <span className="ml-2 text-xs font-mono text-muted-foreground/70">{result.framework}</span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
