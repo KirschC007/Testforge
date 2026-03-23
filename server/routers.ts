@@ -18,6 +18,10 @@ import { scanGitHubRepo, parseGitHubUrl } from "./analyzer/repo-scanner";
 import { listProofPacks, getProofPack, type IndustryPack } from "./analyzer/industry-proof-packs";
 import { generatePlaywrightConfig, generateCIWorkflow } from "./analyzer/playwright-mcp";
 import { DEMO_ANALYSIS } from "./demo-data";
+import { runTests } from "./test-runner";
+import { testRuns } from "../drizzle/schema";
+import { getDb } from "./db";
+import { eq } from "drizzle-orm";
 import { storagePut, storageGet } from "./storage";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
@@ -549,6 +553,107 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Test Runner ─────────────────────────────────────────────────────────
+  testRuns: router({
+    start: protectedProcedure
+      .input(z.object({
+        analysisId: z.number(),
+        baseUrl: z.string().url(),
+        authToken: z.string().min(1),
+        roleTokens: z.record(z.string(), z.string()).optional(),
+        timeout: z.number().min(1000).max(30000).optional(),
+        concurrency: z.number().min(1).max(20).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Verify the analysis belongs to this user
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis || analysis.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
+        }
+        if (analysis.status !== "completed") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Analysis must be completed before running tests" });
+        }
+        // Extract test files from the analysis result
+        const resultJson = analysis.resultJson as any;
+        const testFiles = resultJson?.extendedSuite?.files || [];
+        if (testFiles.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No test files found in analysis" });
+        }
+        // Create a pending test run record
+        const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const dbConn = await getDb();
+        if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        await dbConn.insert(testRuns).values({
+          analysisId: input.analysisId,
+          userId: ctx.user.id,
+          runId,
+          baseUrl: input.baseUrl,
+          status: "running",
+        });
+        const [inserted] = await dbConn.select().from(testRuns).where(eq(testRuns.runId, runId)).limit(1);
+        const testRunId = inserted.id;
+        // Run tests asynchronously (fire and forget, results stored in DB)
+        const config = {
+          baseUrl: input.baseUrl,
+          authToken: input.authToken,
+          roleTokens: input.roleTokens as Record<string, string> | undefined,
+          timeout: input.timeout || 10000,
+          concurrency: input.concurrency || 5,
+        };
+        // Run in background
+        runTests(testFiles, config).then(async (result) => {
+          const db2 = await getDb();
+          if (!db2) return;
+          await db2.update(testRuns)
+            .set({
+              status: "completed",
+              totalTests: result.totalTests,
+              passed: result.passed,
+              failed: result.failed,
+              errors: result.errors,
+              passRate: result.passRate,
+              mutationScore: result.mutationScore,
+              resultsJson: result.results as any,
+              summary: result.summary,
+              completedAt: new Date(),
+            })
+            .where(eq(testRuns.id, testRunId));
+        }).catch(async (err) => {
+          const db2 = await getDb();
+          if (!db2) return;
+          await db2.update(testRuns)
+            .set({ status: "failed", summary: String(err) })
+            .where(eq(testRuns.id, testRunId));
+        });
+        return { testRunId, runId, message: "Test run started. Poll getResults for status." };
+      }),
+    getResults: protectedProcedure
+      .input(z.object({ testRunId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const dbConn = await getDb();
+        if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        const [run] = await dbConn.select().from(testRuns)
+          .where(eq(testRuns.id, input.testRunId))
+          .limit(1);
+        if (!run || run.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Test run not found" });
+        }
+        return run;
+      }),
+    listByAnalysis: protectedProcedure
+      .input(z.object({ analysisId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const analysis = await getAnalysisById(input.analysisId);
+        if (!analysis || analysis.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
+        }
+        const dbConn = await getDb();
+        if (!dbConn) return [];
+        return dbConn.select().from(testRuns)
+          .where(eq(testRuns.analysisId, input.analysisId))
+          .orderBy(testRuns.startedAt);
+      }),
+  }),
   // ─── Analytics / Usage Stats ──────────────────────────────────────────────
   analytics: router({
     getUsage: protectedProcedure.query(async ({ ctx }) => {

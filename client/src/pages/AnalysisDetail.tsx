@@ -415,6 +415,11 @@ export default function AnalysisDetail() {
             )}
             {analysis.status === "completed" && analysis.outputZipUrl && (
               <div className="flex items-center gap-2 flex-wrap">
+                <Link href={`/analysis/${id}/run`}>
+                  <Button size="sm" className="gap-1.5 bg-violet-600 hover:bg-violet-500 text-white">
+                    <Zap className="w-3.5 h-3.5" /> Run Tests Live
+                  </Button>
+                </Link>
                 <Link href={`/analysis/${id}/diff`}>
                   <Button variant="outline" size="sm" className="gap-1.5">
                     <GitCompare className="w-3.5 h-3.5" /> Compare Versions

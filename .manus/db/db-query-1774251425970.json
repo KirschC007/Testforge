@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `testRuns` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`analysisId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`runId` varchar(64) NOT NULL,\n\t`baseUrl` varchar(512) NOT NULL,\n\t`status` enum('pending','running','completed','failed') NOT NULL DEFAULT 'pending',\n\t`totalTests` int DEFAULT 0,\n\t`passed` int DEFAULT 0,\n\t`failed` int DEFAULT 0,\n\t`errors` int DEFAULT 0,\n\t`passRate` int DEFAULT 0,\n\t`mutationScore` int DEFAULT 0,\n\t`resultsJson` json,\n\t`summary` text,\n\t`startedAt` timestamp NOT NULL DEFAULT (now()),\n\t`completedAt` timestamp,\n\tCONSTRAINT `testRuns_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute CREATE TABLE `testRuns` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`analysisId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`runId` varchar(64) NOT NULL,\n\t`baseUrl` varchar(512) NOT NULL,\n\t`status` enum('pending','running','completed','failed') NOT NULL DEFAULT 'pending',\n\t`totalTests` int DEFAULT 0,\n\t`passed` int DEFAULT 0,\n\t`failed` int DEFAULT 0,\n\t`errors` int DEFAULT 0,\n\t`passRate` int DEFAULT 0,\n\t`mutationScore` int DEFAULT 0,\n\t`resultsJson` json,\n\t`summary` text,\n\t`startedAt` timestamp NOT NULL DEFAULT (now()),\n\t`completedAt` timestamp,\n\tCONSTRAINT `testRuns_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 157248
+}

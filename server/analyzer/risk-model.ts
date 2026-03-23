@@ -547,6 +547,58 @@ export function determineProofTypes(b: Behavior): ProofType[] {
   ) {
     types.add("feature_gate");
   }
+    // SEMANTIC HEURISTICS PASS 2: detect concurrency and idempotency from behavior content
+  const semanticText = [
+    b.title,
+    ...(b.preconditions || []),
+    ...(b.postconditions || []),
+    ...(b.errorCases || []),
+    b.specAnchor || "",
+    b.subject || "",
+    b.action || "",
+    b.object || "",
+  ].join(" ").toLowerCase();
+  if (!types.has("concurrency")) {
+    const isMoneyMutation =
+      (semanticText.includes("transfer") || semanticText.includes("debit") ||
+       semanticText.includes("credit") || semanticText.includes("payment") ||
+       semanticText.includes("charge") || semanticText.includes("refund") ||
+       semanticText.includes("withdraw") || semanticText.includes("deposit")) &&
+      (semanticText.includes("amount") || semanticText.includes("balance") ||
+       semanticText.includes("fund") || semanticText.includes("account"));
+    const isInventoryMutation =
+      (semanticText.includes("reserve") || semanticText.includes("book") ||
+       semanticText.includes("allocate") || semanticText.includes("stock") ||
+       semanticText.includes("seat") || semanticText.includes("slot") ||
+       semanticText.includes("capacity") || semanticText.includes("inventory")) &&
+      (semanticText.includes("create") || semanticText.includes("update") ||
+       semanticText.includes("reduce") || semanticText.includes("decrement") ||
+       semanticText.includes("consume") || semanticText.includes("use"));
+    const hasAtomicKeyword =
+      semanticText.includes("atomic") || semanticText.includes("must not") ||
+      semanticText.includes("partial") || semanticText.includes("rollback") ||
+      semanticText.includes("consistent") || semanticText.includes("integrity");
+    if (isMoneyMutation || isInventoryMutation || hasAtomicKeyword) types.add("concurrency");
+  }
+  if (!types.has("idempotency")) {
+    const hasIdempotencyKey =
+      semanticText.includes("idempotencykey") || semanticText.includes("idempotency_key") ||
+      semanticText.includes("requestid") || semanticText.includes("request_id") ||
+      semanticText.includes("correlation") || semanticText.includes("x-request-id") ||
+      semanticText.includes("x-idempotency");
+    const hasRetrySemantics =
+      semanticText.includes("retry") || semanticText.includes("duplicate") ||
+      semanticText.includes("twice") || semanticText.includes("again") ||
+      semanticText.includes("resubmit") || semanticText.includes("resend") ||
+      semanticText.includes("already") || semanticText.includes("existing");
+    const isPaymentOrTransfer =
+      (semanticText.includes("payment") || semanticText.includes("transfer") ||
+       semanticText.includes("charge") || semanticText.includes("order") ||
+       semanticText.includes("submit")) &&
+      (semanticText.includes("create") || semanticText.includes("initiate") ||
+       semanticText.includes("process") || semanticText.includes("execute"));
+    if (hasIdempotencyKey || hasRetrySemantics || isPaymentOrTransfer) types.add("idempotency");
+  }
   return Array.from(types);
 }
 

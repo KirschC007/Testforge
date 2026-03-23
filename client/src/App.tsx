@@ -11,6 +11,7 @@ import NewAnalysis from "./pages/NewAnalysis";
 import Pricing from "@/pages/Pricing";
 import Demo from "@/pages/Demo";
 import SpecDiff from "./pages/SpecDiff";
+import TestRunner from "./pages/TestRunner";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
           <Route path="/pricing" component={Pricing} />
           <Route path="/demo" component={Demo} />
       <Route path="/analysis/:id/diff" component={SpecDiff} />
+      <Route path="/analysis/:id/run" component={TestRunner} />
       <Route path="/analysis/:id" component={AnalysisDetail} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

@@ -36,6 +36,13 @@
       "when": 1774220060374,
       "tag": "0004_powerful_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1774251255726,
+      "tag": "0005_modern_major_mapleleaf",
+      "breakpoints": true
     }
   ]
 }

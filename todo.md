@@ -546,3 +546,11 @@
 - [x] Backend: Demo-Analyse publicProcedure mit vorberechneten Daten
 - [x] Frontend: /demo Seite mit vollständiger Analyse-Ansicht + CTA
 - [x] Landing Page: Demo-CTA Button einbauen
+
+## Perfektionierung (23.03.2026)
+- [x] P4: DSGVO TODO-Platzhalter fixen — Fallback auf ersten GET-Endpoint
+- [x] P2: Concurrency Detection — semantische Heuristiken (amount/transfer/debit/credit)
+- [ ] P2: Idempotency Detection — semantische Heuristiken (idempotencyKey/requestId)
+- [x] P3: Auth-Matrix Mutation Score 100% — Response-Body + Fehlermeldung + Datenleck
+- [x] P1: Server-Side Test Runner — Base URL + Token, Live-Ausführung, Pass/Fail Stream
+- [ ] P1: Test Runner UI — Live-Stream, Pass/Fail Dashboard, Feedback Loop

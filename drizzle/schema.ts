@@ -73,4 +73,28 @@ export const analyses = mysqlTable("analyses", {
 });
 
 export type Analysis = typeof analyses.$inferSelect;
+
+// ─── Test Runs ────────────────────────────────────────────────────────────────
+export const testRuns = mysqlTable("testRuns", {
+  id: int("id").autoincrement().primaryKey(),
+  analysisId: int("analysisId").notNull(),
+  userId: int("userId").notNull(),
+  runId: varchar("runId", { length: 64 }).notNull(),
+  baseUrl: varchar("baseUrl", { length: 512 }).notNull(),
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed"])
+    .default("pending")
+    .notNull(),
+  totalTests: int("totalTests").default(0),
+  passed: int("passed").default(0),
+  failed: int("failed").default(0),
+  errors: int("errors").default(0),
+  passRate: int("passRate").default(0),
+  mutationScore: int("mutationScore").default(0),
+  resultsJson: json("resultsJson"),
+  summary: text("summary"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+export type TestRun = typeof testRuns.$inferSelect;
+export type InsertTestRun = typeof testRuns.$inferInsert;
 export type InsertAnalysis = typeof analyses.$inferInsert;

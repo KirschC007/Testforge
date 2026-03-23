@@ -1,0 +1,125 @@
+# BankingCore API Specification v2.1
+
+## Overview
+BankingCore is a multi-tenant banking backend. Each bank (tenant) is isolated by `bankId`. 
+Customers belong to exactly one bank. Accounts belong to exactly one customer.
+All monetary values are in EUR cents (integer). No floating point.
+
+## Authentication
+- All endpoints require `Authorization: Bearer <jwt>` header
+- JWT contains: `userId`, `bankId`, `role` (enum: customer | advisor | admin)
+- Expired or invalid JWT → 401
+- Missing JWT → 401
+- Rate limit: max 5 failed auth attempts per minute per IP → 429
+
+## Roles & Permissions
+- `customer`: can only access own accounts and own transactions
+- `advisor`: can access all accounts within their `bankId`
+- `admin`: can access everything within their `bankId`; cannot access other banks
+
+## Endpoints
+
+### POST /api/accounts
+Create a new bank account.
+Input: `bankId` (number), `customerId` (number), `accountType` (enum: checking|savings|loan), `initialDeposit` (number, min: 0, max: 1000000)
+Output: `id`, `bankId`, `customerId`, `accountType`, `balance`, `status` (enum: active|frozen|closed), `iban`, `createdAt`
+Authorization: advisor or admin only
+Behavior:
+- `bankId` in body must match JWT `bankId` — cross-tenant account creation must return 403
+- `initialDeposit` is added to balance atomically
+- IBAN is auto-generated and globally unique
+- If `customerId` does not belong to `bankId` → 404
+
+### GET /api/accounts/:accountId
+Get account details.
+Output: `id`, `bankId`, `customerId`, `balance`, `status`, `iban`, `transactions` (last 10)
+Authorization: customer (own account only), advisor, admin
+Behavior:
+- Customer requesting another customer's account → 403
+- Account from different `bankId` → 403
+
+### POST /api/transfers
+Initiate a bank transfer.
+Input: `fromAccountId` (number), `toAccountId` (number), `amount` (number, min: 1, max: 500000), `reference` (string, 1-140 chars), `idempotencyKey` (string, UUID)
+Output: `transferId`, `status` (enum: pending|processing|completed|failed|reversed), `fromBalance`, `toBalance`, `createdAt`
+Authorization: customer (own fromAccount only), advisor, admin
+Behavior:
+- `fromAccount.bankId` must match JWT `bankId` → 403 otherwise
+- `fromAccount.balance` must be >= `amount` → 400 with code INSUFFICIENT_FUNDS
+- `fromAccount.status` must be `active` → 400 with code ACCOUNT_FROZEN or ACCOUNT_CLOSED
+- `toAccount.status` must be `active` → 400 with code TARGET_ACCOUNT_INACTIVE
+- Debit and credit must happen atomically — no partial transfers
+- Same `idempotencyKey` submitted twice → return original transfer (do not double-debit)
+- Cross-bank transfers (toAccount.bankId ≠ fromAccount.bankId): allowed, goes through SEPA queue
+- Loan accounts cannot be the `fromAccount` → 400 with code LOAN_DEBIT_NOT_ALLOWED
+
+### POST /api/transfers/:transferId/reverse
+Reverse a completed transfer.
+Input: `reason` (string, 1-500 chars)
+Output: `reversalId`, `status`, `reversedAt`
+Authorization: advisor, admin only
+Behavior:
+- Only `completed` transfers can be reversed → 400 with code INVALID_STATUS for others
+- Reversal must restore both balances atomically
+- A transfer can only be reversed once → 409 with code ALREADY_REVERSED
+- If `toAccount` has insufficient funds for reversal → 400 with code REVERSAL_INSUFFICIENT_FUNDS
+
+### POST /api/accounts/:accountId/freeze
+Freeze an account.
+Input: `reason` (string, 1-500 chars)
+Output: `accountId`, `status`, `frozenAt`
+Authorization: advisor, admin only
+Behavior:
+- Already frozen accounts → 409
+- Closed accounts cannot be frozen → 400
+- Pending transfers involving this account are NOT automatically cancelled (they fail at processing time)
+
+### POST /api/accounts/:accountId/close
+Close an account permanently.
+Input: `reason` (string)
+Output: `accountId`, `status`, `closedAt`
+Authorization: admin only
+Behavior:
+- Account must have balance = 0 → 400 with code NON_ZERO_BALANCE
+- Active or pending transfers must be completed or cancelled first → 400 with code PENDING_TRANSFERS
+- Closed status is terminal — cannot be reopened
+- Frozen accounts can be closed (freeze is overridden)
+
+### GET /api/customers/:customerId/statement
+Generate account statement (GDPR data export).
+Input: `from` (ISO date), `to` (ISO date, max range: 365 days)
+Output: `customerId`, `bankId`, `accounts[]`, `transactions[]`, `generatedAt`
+Authorization: customer (own data only), advisor, admin
+Behavior:
+- Customer requesting another customer's statement → 403
+- Statement must only contain data from requesting JWT's `bankId`
+- Date range > 365 days → 400 with code RANGE_TOO_LARGE
+
+### POST /api/admin/bulk-freeze
+Freeze multiple accounts at once (AML compliance).
+Input: `accountIds` (array, max 100), `reason` (string), `amlCaseId` (string)
+Output: `frozen` (array of accountIds), `failed` (array of {accountId, reason})
+Authorization: admin only
+Behavior:
+- Non-admin → 403
+- Each account must belong to JWT `bankId` — cross-tenant freeze must silently skip (not error)
+- Already-frozen accounts are skipped (not counted as failed)
+- Closed accounts are counted as failed
+
+## Invariants
+- Account balance can never go below 0 (except loan accounts which can go negative to -creditLimit)
+- Transfer amount must be a positive integer (no zero, no negative)
+- IBAN is immutable after creation
+- Closed status is terminal for accounts
+- A reversed transfer cannot be reversed again
+
+## Status Machines
+
+### Account Status
+States: active → frozen → active (unfreeze), active → closed, frozen → closed
+Terminal state: closed
+
+### Transfer Status  
+States: pending → processing → completed, pending → processing → failed, completed → reversed
+Terminal states: failed, reversed
+No direct: pending → completed (must go through processing)
