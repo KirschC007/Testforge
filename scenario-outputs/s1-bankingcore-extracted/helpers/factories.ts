@@ -21,7 +21,7 @@ export async function createTestResource(
   cookieHeader: string,
   opts: CreateTestResourceOpts = {}
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcMutation(request, "createAccount.create", {
+  const { data, error } = await trpcMutation(request, "accounts.create", {
     bankId: opts.bankId ?? TEST_BANK_ID,
     customerId: opts.customerId ?? 1,
     accountType: opts.accountType ?? "checking",
@@ -39,7 +39,7 @@ export async function getResource(
   id: number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcQuery(request, "getAccount.list",
+  const { data, error } = await trpcQuery(request, "accounts.getById",
     { id, bankId: TEST_BANK_ID }, cookieHeader);
   if (error) throw new Error(`getResource failed: ${JSON.stringify(error)}`);
   return data as Record<string, unknown>;
@@ -52,7 +52,7 @@ export async function listResources(
   cookieHeader: string,
   extra: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>[]> {
-  const { data } = await trpcQuery(request, "listAccounts.list",
+  const { data } = await trpcQuery(request, "accounts.list",
     { bankId: TEST_BANK_ID, ...extra }, cookieHeader);
   return (data as Record<string, unknown>[]) ?? [];
 }
@@ -64,7 +64,7 @@ export async function getResourceByIdentifier(
   identifier: string | number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcQuery(request, "listAccounts.list",
+  const { data, error } = await trpcQuery(request, "accounts.getById",
     { bankId: TEST_BANK_ID, id: identifier }, cookieHeader);
   if (error) throw new Error(`getResourceByIdentifier failed: ${JSON.stringify(error)}`);
   return data as Record<string, unknown>;

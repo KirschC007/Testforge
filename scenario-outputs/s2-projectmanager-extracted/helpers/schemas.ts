@@ -32,25 +32,14 @@ export const TaskSchema = z.object({
 }).passthrough();
 export type Task = z.infer<typeof TaskSchema>;
 
-// Response schema for comment
-export const CommentSchema = z.object({
-  id: z.number(),
-  taskId: z.number(),
-  workspaceId: z.number(),
-  content: z.string().min(1).max(5000),
-  parentId: z.number().optional(),
-  createdAt: z.number().optional(),
-  updatedAt: z.number().optional(),
-}).passthrough();
-export type Comment = z.infer<typeof CommentSchema>;
-
-// Input schema for auth.login
-export const auth_loginSchema = z.object({
+// Input schema for login
+export const loginSchema = z.object({
   email: z.string(),
-  password: z.string().min(8)
+  password: z.string()
 });
-export const auth_loginResponseSchema = z.object({
-  jwt: z.unknown()
+export const loginResponseSchema = z.object({
+  jwt: z.unknown(),
+  session_cookie: z.unknown()
 }).passthrough();
 
 // Input schema for projects.create
@@ -73,11 +62,14 @@ export const projects_createResponseSchema = z.object({
   updatedAt: z.unknown()
 }).passthrough();
 
-// Input schema for projects.getById
-export const projects_getByIdSchema = z.object({
-  id: z.number()
+// Input schema for projects.list
+export const projects_listSchema = z.object({
+  search: z.string().optional(),
+  isPublic: z.boolean().optional(),
+  page: z.number().min(1).optional(),
+  pageSize: z.number().min(1).max(50).optional()
 });
-export const projects_getByIdResponseSchema = z.object({
+export const projects_listResponseSchema = z.object({
   id: z.unknown(),
   workspaceId: z.unknown(),
   name: z.unknown(),
@@ -88,6 +80,52 @@ export const projects_getByIdResponseSchema = z.object({
   memberCount: z.unknown(),
   createdAt: z.unknown(),
   updatedAt: z.unknown()
+}).passthrough();
+
+// Input schema for projectDetails.getById
+export const projectDetails_getByIdSchema = z.object({
+  id: z.string()
+});
+export const projectDetails_getByIdResponseSchema = z.object({
+  id: z.unknown(),
+  workspaceId: z.unknown(),
+  name: z.unknown(),
+  description: z.unknown(),
+  color: z.unknown(),
+  isPublic: z.unknown(),
+  taskCount: z.unknown(),
+  memberCount: z.unknown(),
+  createdAt: z.unknown(),
+  updatedAt: z.unknown()
+}).passthrough();
+
+// Input schema for projects.update
+export const projects_updateSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(5000).optional(),
+  color: z.string().optional(),
+  isPublic: z.boolean().optional()
+});
+export const projects_updateResponseSchema = z.object({
+  id: z.unknown(),
+  workspaceId: z.unknown(),
+  name: z.unknown(),
+  description: z.unknown(),
+  color: z.unknown(),
+  isPublic: z.unknown(),
+  taskCount: z.unknown(),
+  memberCount: z.unknown(),
+  createdAt: z.unknown(),
+  updatedAt: z.unknown()
+}).passthrough();
+
+// Input schema for projects.delete
+export const projects_deleteSchema = z.object({
+  id: z.string()
+});
+export const projects_deleteResponseSchema = z.object({
+  id: z.number().or(z.string())
 }).passthrough();
 
 // Input schema for tasks.create
@@ -118,18 +156,19 @@ export const tasks_createResponseSchema = z.object({
   updatedAt: z.unknown()
 }).passthrough();
 
-// Input schema for tasks.update
-export const tasks_updateSchema = z.object({
-  id: z.number(),
-  title: z.string().min(1).max(200).optional(),
-  description: z.string().max(10000).optional(),
+// Input schema for tasks.list
+export const tasks_listSchema = z.object({
+  projectId: z.number().optional(),
+  status: z.enum(["todo", "in_progress", "review", "done", "archived"]).optional(),
   priority: z.enum(["low", "medium", "high", "critical"]).optional(),
   assigneeId: z.number().optional(),
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.string().datetime({ offset: true })).optional(),
-  estimatedHours: z.number().min(0.25).max(1000).optional(),
-  labels: z.array(z.unknown()).max(10).optional()
+  search: z.string().optional(),
+  dueBefore: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.string().datetime({ offset: true })).optional(),
+  dueAfter: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.string().datetime({ offset: true })).optional(),
+  page: z.number().min(1).optional(),
+  pageSize: z.number().min(1).max(100).optional()
 });
-export const tasks_updateResponseSchema = z.object({
+export const tasks_listResponseSchema = z.object({
   id: z.unknown(),
   workspaceId: z.unknown(),
   projectId: z.unknown(),
@@ -146,12 +185,18 @@ export const tasks_updateResponseSchema = z.object({
   updatedAt: z.unknown()
 }).passthrough();
 
-// Input schema for tasks.status
-export const tasks_statusSchema = z.object({
-  id: z.number(),
-  status: z.enum(["todo", "in_progress", "review", "done", "archived"])
+// Input schema for taskFields.update
+export const taskFields_updateSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(10000).optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  assigneeId: z.number().optional(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.string().datetime({ offset: true })).optional(),
+  estimatedHours: z.number().min(0.25).max(1000).optional(),
+  labels: z.array(z.unknown()).max(10).optional()
 });
-export const tasks_statusResponseSchema = z.object({
+export const taskFields_updateResponseSchema = z.object({
   id: z.unknown(),
   workspaceId: z.unknown(),
   projectId: z.unknown(),
@@ -165,46 +210,64 @@ export const tasks_statusResponseSchema = z.object({
   labels: z.unknown(),
   createdBy: z.unknown(),
   createdAt: z.unknown(),
-  updatedAt: z.unknown(),
+  updatedAt: z.unknown()
+}).passthrough();
+
+// Input schema for tasks.updateStatus
+export const tasks_updateStatusSchema = z.object({
+  id: z.string(),
+  status: z.enum(["todo", "in_progress", "review", "done", "archived"])
+});
+export const tasks_updateStatusResponseSchema = z.object({
+  id: z.unknown(),
+  status: z.unknown(),
   startedAt: z.unknown(),
   completedAt: z.unknown(),
   completedBy: z.unknown()
 }).passthrough();
 
-// Input schema for tasks.bulk-status
-export const tasks_bulk-statusSchema = z.object({
+// Input schema for tasks.delete
+export const tasks_deleteSchema = z.object({
+  id: z.string()
+});
+export const tasks_deleteResponseSchema = z.object({
+  id: z.number().or(z.string())
+}).passthrough();
+
+// Input schema for bulkUpdateTaskStatus
+export const bulkUpdateTaskStatusSchema = z.object({
   taskIds: z.array(z.unknown()).min(1).max(50),
   status: z.enum(["todo", "in_progress", "review", "done", "archived"])
 });
-export const tasks_bulk-statusResponseSchema = z.object({
+export const bulkUpdateTaskStatusResponseSchema = z.object({
   updated: z.unknown(),
   failed: z.unknown()
 }).passthrough();
 
-// Input schema for comments.create
-export const comments_createSchema = z.object({
+// Input schema for addComment
+export const addCommentSchema = z.object({
   taskId: z.number(),
   content: z.string().min(1).max(5000),
   parentId: z.number().optional()
 });
-export const comments_createResponseSchema = z.object({
+export const addCommentResponseSchema = z.object({
   id: z.unknown(),
   taskId: z.unknown(),
   workspaceId: z.unknown(),
   content: z.unknown(),
   parentId: z.unknown(),
-  createdBy: z.unknown(),
-  createdAt: z.unknown()
+  createdAt: z.unknown(),
+  createdBy: z.unknown()
 }).passthrough();
 
-// Input schema for time-entries.create
-export const time-entries_createSchema = z.object({
+// Input schema for logTimeEntry
+export const logTimeEntrySchema = z.object({
   taskId: z.number(),
   hours: z.number().min(0.25).max(24),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.string().datetime({ offset: true })),
   description: z.string().max(500).optional()
 });
-export const time-entries_createResponseSchema = z.object({
+export const logTimeEntryResponseSchema = z.object({
   id: z.unknown(),
   taskId: z.unknown(),
   workspaceId: z.unknown(),
@@ -215,20 +278,20 @@ export const time-entries_createResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for users.gdpr
-export const users_gdprSchema = z.object({
-  id: z.number()
+// Input schema for gdprDeleteUser
+export const gdprDeleteUserSchema = z.object({
+  id: z.string()
 });
-export const users_gdprResponseSchema = z.object({
+export const gdprDeleteUserResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for users.getById
-export const users_getByIdSchema = z.object({
-  id: z.number()
+// Input schema for gdprExportUser
+export const gdprExportUserSchema = z.object({
+  id: z.string()
 });
-export const users_getByIdResponseSchema = z.object({
-  id: z.number().or(z.string())
+export const gdprExportUserResponseSchema = z.object({
+  json_data_export: z.unknown()
 }).passthrough();
 
 // Validate helper — throws on schema mismatch

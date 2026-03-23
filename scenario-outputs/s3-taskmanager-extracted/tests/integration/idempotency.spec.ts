@@ -4,9 +4,9 @@ import { getAdminCookie } from "../../helpers/auth";
 import { TEST_WORKSPACE_ID } from "../../helpers/factories";
 
 // Proof: PROOF-B-001-IDEMPOTENCY
-// Behavior: Create routers
+// Behavior: Create tasks
 // Risk: critical
-// Kills: Remove duplicate-check before Create in routers.create | Not returning existing resource on duplicate Create | Creating second record instead of returning existing one
+// Kills: Remove duplicate-check before Create in tasks.create | Not returning existing resource on duplicate Create | Creating second record instead of returning existing one
 
 function basePayload_PROOF_B_001_IDEMPOTENCY() {
   return {
@@ -21,21 +21,21 @@ function basePayload_PROOF_B_001_IDEMPOTENCY() {
   };
 }
 
-test.describe("Idempotency: Create routers", () => {
+test.describe("Idempotency: Create tasks", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
     cookie = await getAdminCookie(request);
   });
 
-  test("duplicate Create request must not create a second routers", async ({ request }) => {
+  test("duplicate Create request must not create a second tasks", async ({ request }) => {
     const payload = basePayload_PROOF_B_001_IDEMPOTENCY();
     // First request
-    const response1 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response1 = await trpcMutation(request, "tasks.create", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201]);
     const id1 = response1.data?.result?.data?.id;
     // Second identical request
-    const response2 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response2 = await trpcMutation(request, "tasks.create", payload, cookie);
     // Must succeed or return conflict — never 500
     expect(response2.status).toBeOneOf([200, 201, 409]);
     if (response2.status === 200 || response2.status === 201) {
@@ -50,10 +50,10 @@ test.describe("Idempotency: Create routers", () => {
   test("repeated Create must not multiply side effects", async ({ request }) => {
     const payload = basePayload_PROOF_B_001_IDEMPOTENCY();
     // Perform the operation twice
-    await trpcMutation(request, "routers.create", payload, cookie);
-    await trpcMutation(request, "routers.create", payload, cookie);
+    await trpcMutation(request, "tasks.create", payload, cookie);
+    await trpcMutation(request, "tasks.create", payload, cookie);
     // Verify the list endpoint does not contain duplicates
-    const listResponse = await trpcQuery(request, "routers.list", { workspaceId: TEST_WORKSPACE_ID }, cookie);
+    const listResponse = await trpcQuery(request, "tasks.list", { workspaceId: TEST_WORKSPACE_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     if (Array.isArray(items)) {
@@ -70,10 +70,10 @@ test.describe("Idempotency: Create routers", () => {
     const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const payload = { ...basePayload_PROOF_B_001_IDEMPOTENCY(), idempotencyKey };
     // First call
-    const response1 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response1 = await trpcMutation(request, "tasks.create", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201, 422]); // 422 if idempotencyKey not supported
     // Second call with same key
-    const response2 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response2 = await trpcMutation(request, "tasks.create", payload, cookie);
     expect(response2.status).toBeOneOf([200, 201, 409, 422]);
     // If both succeed, they must return identical data
     if ((response1.status === 200 || response1.status === 201) &&
@@ -88,9 +88,9 @@ test.describe("Idempotency: Create routers", () => {
 });
 
 // Proof: PROOF-B-009-IDEMPOTENCY
-// Behavior: Create routers
+// Behavior: Create tasks
 // Risk: critical
-// Kills: Remove duplicate-check before Create in routers.create | Not returning existing resource on duplicate Create | Creating second record instead of returning existing one
+// Kills: Remove duplicate-check before Create in tasks.create | Not returning existing resource on duplicate Create | Creating second record instead of returning existing one
 
 function basePayload_PROOF_B_009_IDEMPOTENCY() {
   return {
@@ -105,21 +105,21 @@ function basePayload_PROOF_B_009_IDEMPOTENCY() {
   };
 }
 
-test.describe("Idempotency: Create routers", () => {
+test.describe("Idempotency: Create tasks", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
     cookie = await getAdminCookie(request);
   });
 
-  test("duplicate Create request must not create a second routers", async ({ request }) => {
+  test("duplicate Create request must not create a second tasks", async ({ request }) => {
     const payload = basePayload_PROOF_B_009_IDEMPOTENCY();
     // First request
-    const response1 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response1 = await trpcMutation(request, "tasks.create", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201]);
     const id1 = response1.data?.result?.data?.id;
     // Second identical request
-    const response2 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response2 = await trpcMutation(request, "tasks.create", payload, cookie);
     // Must succeed or return conflict — never 500
     expect(response2.status).toBeOneOf([200, 201, 409]);
     if (response2.status === 200 || response2.status === 201) {
@@ -134,10 +134,10 @@ test.describe("Idempotency: Create routers", () => {
   test("repeated Create must not multiply side effects", async ({ request }) => {
     const payload = basePayload_PROOF_B_009_IDEMPOTENCY();
     // Perform the operation twice
-    await trpcMutation(request, "routers.create", payload, cookie);
-    await trpcMutation(request, "routers.create", payload, cookie);
+    await trpcMutation(request, "tasks.create", payload, cookie);
+    await trpcMutation(request, "tasks.create", payload, cookie);
     // Verify the list endpoint does not contain duplicates
-    const listResponse = await trpcQuery(request, "routers.list", { workspaceId: TEST_WORKSPACE_ID }, cookie);
+    const listResponse = await trpcQuery(request, "tasks.list", { workspaceId: TEST_WORKSPACE_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     if (Array.isArray(items)) {
@@ -154,10 +154,10 @@ test.describe("Idempotency: Create routers", () => {
     const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const payload = { ...basePayload_PROOF_B_009_IDEMPOTENCY(), idempotencyKey };
     // First call
-    const response1 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response1 = await trpcMutation(request, "tasks.create", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201, 422]); // 422 if idempotencyKey not supported
     // Second call with same key
-    const response2 = await trpcMutation(request, "routers.create", payload, cookie);
+    const response2 = await trpcMutation(request, "tasks.create", payload, cookie);
     expect(response2.status).toBeOneOf([200, 201, 409, 422]);
     // If both succeed, they must return identical data
     if ((response1.status === 200 || response1.status === 201) &&

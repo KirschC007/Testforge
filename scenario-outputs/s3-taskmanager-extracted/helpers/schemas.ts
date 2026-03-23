@@ -2,117 +2,131 @@
 // Usage: const validated = validateSchema(BookingSchema, data);
 import { z } from "zod";
 
-
-
-// Input schema for routers.create
-export const routers_createSchema = z.object({
+// Response schema for tasks
+export const TasksSchema = z.object({
+  id: z.number(),
+  workspaceId: z.number(),
   title: z.string().min(1).max(200),
   description: z.string().max(10000).optional(),
-  priority: z.enum(["unknown"]),
+  priority: z.string() /* enum: values unknown */,
+  assigneeId: z.number().optional(),
+  dueDate: z.string().optional(),
+  estimatedHours: z.number().max(1000).optional(),
+  labels: z.array(z.unknown()).max(50).optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+}).passthrough();
+export type Tasks = z.infer<typeof TasksSchema>;
+
+// Input schema for tasks.create
+export const tasks_createSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(10000).optional(),
+  priority: z.string() /* enum: values unknown */,
   assigneeId: z.number().optional(),
   dueDate: z.string().optional(),
   estimatedHours: z.number().max(1000).optional(),
   labels: z.array(z.unknown()).max(50).optional()
 });
-export const routers_createResponseSchema = z.object({
+export const tasks_createResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.list
-export const routers_listSchema = z.object({
-  status: z.enum(["unknown"]),
-  priority: z.enum(["unknown"]),
+// Input schema for tasks.list
+export const tasks_listSchema = z.object({
+  status: z.string() /* enum: values unknown */,
+  priority: z.string() /* enum: values unknown */,
   assigneeId: z.number().optional(),
   search: z.string().max(200).optional(),
   page: z.number().min(1),
   pageSize: z.number().min(1).max(100)
 });
-export const routers_listResponseSchema = z.object({
+export const tasks_listResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.getById
-export const routers_getByIdSchema = z.object({
+// Input schema for tasks.getById
+export const tasks_getByIdSchema = z.object({
   id: z.number()
 });
-export const routers_getByIdResponseSchema = z.object({
+export const tasks_getByIdResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.update
-export const routers_updateSchema = z.object({
+// Input schema for tasks.update
+export const tasks_updateSchema = z.object({
   id: z.number(),
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(10000).optional(),
-  priority: z.enum(["unknown"]),
+  priority: z.string() /* enum: values unknown */,
   assigneeId: z.number().optional(),
   dueDate: z.string().optional(),
   estimatedHours: z.number().max(1000).optional(),
   labels: z.array(z.unknown()).max(50).optional()
 });
-export const routers_updateResponseSchema = z.object({
+export const tasks_updateResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.updateStatus
-export const routers_updateStatusSchema = z.object({
+// Input schema for tasks.updateStatus
+export const tasks_updateStatusSchema = z.object({
   id: z.number(),
-  status: z.enum(["unknown"])
+  status: z.string() /* enum: values unknown */
 });
-export const routers_updateStatusResponseSchema = z.object({
+export const tasks_updateStatusResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.delete
-export const routers_deleteSchema = z.object({
+// Input schema for tasks.delete
+export const tasks_deleteSchema = z.object({
   id: z.number()
 });
-export const routers_deleteResponseSchema = z.object({
+export const tasks_deleteResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.bulkDelete
-export const routers_bulkDeleteSchema = z.object({
+// Input schema for tasks.bulkDelete
+export const tasks_bulkDeleteSchema = z.object({
   taskIds: z.array(z.unknown()).min(1).max(50)
 });
-export const routers_bulkDeleteResponseSchema = z.object({
+export const tasks_bulkDeleteResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.bulkUpdateStatus
-export const routers_bulkUpdateStatusSchema = z.object({
+// Input schema for tasks.bulkUpdateStatus
+export const tasks_bulkUpdateStatusSchema = z.object({
   taskIds: z.array(z.unknown()).min(1).max(50),
-  status: z.enum(["unknown"])
+  status: z.string() /* enum: values unknown */
 });
-export const routers_bulkUpdateStatusResponseSchema = z.object({
+export const tasks_bulkUpdateStatusResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.create
-export const routers_createSchema = z.object({
+// Input schema for tasks.create
+export const tasks_createSchema = z.object({
   taskId: z.number(),
   content: z.string().min(1).max(5000),
   parentId: z.number().optional()
 });
-export const routers_createResponseSchema = z.object({
+export const tasks_createResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.list
-export const routers_listSchema = z.object({
+// Input schema for tasks.list
+export const tasks_listSchema = z.object({
   taskId: z.number(),
   page: z.number().min(1),
   pageSize: z.number().min(1).max(50)
 });
-export const routers_listResponseSchema = z.object({
+export const tasks_listResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.delete
-export const routers_deleteSchema = z.object({
+// Input schema for tasks.delete
+export const tasks_deleteSchema = z.object({
   id: z.number()
 });
-export const routers_deleteResponseSchema = z.object({
+export const tasks_deleteResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 

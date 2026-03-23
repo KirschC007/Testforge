@@ -370,6 +370,21 @@ export function mergeProofsToFile(proofs: ValidatedProof[]): string {
   const loginFnMatch = allCode.match(/tenantACookie = await (\w+)\(request\)/);
   const tenantLoginFn = loginFnMatch?.[1] || "getAdminCookie";
 
+  // Derive the primary cookie function from what the proofs actually import/use.
+  // Priority: any get*Cookie function that is NOT tenantACookie/tenantBCookie/staffCookie/proCookie/freeCookie.
+  // This handles custom roles like getOrganizerAdminCookie, getDoctorCookie, etc.
+  const primaryCookieFn = (() => {
+    // First: look for what's used in beforeAll blocks inside proofs
+    const beforeAllMatch = allCode.match(/adminCookie\s*=\s*await\s+(get\w+Cookie)\(request\)/);
+    if (beforeAllMatch) return beforeAllMatch[1];
+    // Second: find the first get*Cookie function that's imported and used (not tenant/staff/pro/free)
+    const skipFns = new Set(["getTenantACookie", "getTenantBCookie", "getStaffCookie", "getProCookie", "getFreeCookie"]);
+    for (const fn of Array.from(usedCookieFns)) {
+      if (!skipFns.has(fn) && !fn.includes("Tenant")) return fn;
+    }
+    return "getAdminCookie";
+  })();
+
   // Shared beforeAll block — skip if all proofs have their own beforeAll inside test.describe
   let beforeAll: string;
   if (allHaveOwnBeforeAll && !needsTenantCookies) {
@@ -395,13 +410,13 @@ test.beforeAll(async ({ request }) => {
 let adminCookie: string;${needsStaffCookie ? "\nlet staffCookie: string;" : ""}
 
 test.beforeAll(async ({ request }) => {
-  adminCookie = await getAdminCookie(request);
+  adminCookie = await ${primaryCookieFn}(request);
 ${needsStaffCookie ? "  staffCookie = await getStaffCookie(request);\n" : ""}});
 `;
-    // Ensure getAdminCookie is imported (it's used in the generated beforeAll above)
+    // Ensure the primary cookie function is imported (it's used in the generated beforeAll above)
     const authMod = '"../../helpers/auth"';
     const authSyms = importsByModule.get(authMod) || new Set<string>();
-    authSyms.add("getAdminCookie");
+    authSyms.add(primaryCookieFn);
     if (needsStaffCookie) authSyms.add("getStaffCookie");
     importsByModule.set(authMod, authSyms);
   }

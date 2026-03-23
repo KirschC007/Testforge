@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { tomorrowStr, trpcMutation, yesterdayStr } from "../../helpers/api";
 import { getAdminCookie } from "../../helpers/auth";
-import { TEST_WORKSPACE_ID } from "../../helpers/factories";
+import { TEST_SHOP_ID } from "../../helpers/factories";
 
 let adminCookie: string;
 
@@ -9,14 +9,14 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await getAdminCookie(request);
 });
 
-// PROOF-B-001-BOUND — Boundary: Create routers
+// PROOF-B-001-BOUND — Boundary: Create products
 // Risk: critical
 
 const basePayload_PROOF_B_001_BOUND = (boundaryValue: unknown) => ({
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     name: boundaryValue,
     description: "Test description",
-    sku: "SKU-1774266723955",
+    sku: "SKU-1774281018679",
     price: 1,
     stock: 1,
     category: "test-category",
@@ -26,40 +26,40 @@ const basePayload_PROOF_B_001_BOUND = (boundaryValue: unknown) => ({
 });
 
 test("PROOF-B-001-BOUNDa — name="A".repeat(1) (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_BOUND("A".repeat(1)), adminCookie);
+  const { status } = await trpcMutation(request, "products.create", basePayload_PROOF_B_001_BOUND("A".repeat(1)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in name validation (off-by-one)
 });
 
 test("PROOF-B-001-BOUNDb — name="A".repeat(200) (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_BOUND("A".repeat(200)), adminCookie);
+  const { status } = await trpcMutation(request, "products.create", basePayload_PROOF_B_001_BOUND("A".repeat(200)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in name validation (off-by-one)
 });
 
 test("PROOF-B-001-BOUNDc — name="" (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_BOUND(""), adminCookie);
+  const { status } = await trpcMutation(request, "products.create", basePayload_PROOF_B_001_BOUND(""), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove name boundary validation
 });
 
 test("PROOF-B-001-BOUNDd — name="A".repeat(201) (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_BOUND("A".repeat(201)), adminCookie);
+  const { status } = await trpcMutation(request, "products.create", basePayload_PROOF_B_001_BOUND("A".repeat(201)), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove name boundary validation
 });
 
 test("PROOF-B-001-BOUNDe — name=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.create", basePayload_PROOF_B_001_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove name boundary validation
 });
 
-// PROOF-B-002-BOUND — Boundary: Get routers
+// PROOF-B-002-BOUND — Boundary: Get products
 // Risk: critical
 
 const basePayload_PROOF_B_002_BOUND = (boundaryValue: unknown) => ({
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     status: "active",
     category: boundaryValue,
     search: "test-search",
@@ -71,41 +71,41 @@ const basePayload_PROOF_B_002_BOUND = (boundaryValue: unknown) => ({
 });
 
 test("PROOF-B-002-BOUNDa — category="A".repeat(1) (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.list", basePayload_PROOF_B_002_BOUND("A".repeat(1)), adminCookie);
+  const { status } = await trpcMutation(request, "products.list", basePayload_PROOF_B_002_BOUND("A".repeat(1)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in category validation (off-by-one)
 });
 
 test("PROOF-B-002-BOUNDb — category="A".repeat(200) (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.list", basePayload_PROOF_B_002_BOUND("A".repeat(200)), adminCookie);
+  const { status } = await trpcMutation(request, "products.list", basePayload_PROOF_B_002_BOUND("A".repeat(200)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in category validation (off-by-one)
 });
 
 test("PROOF-B-002-BOUNDc — category="" (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.list", basePayload_PROOF_B_002_BOUND(""), adminCookie);
+  const { status } = await trpcMutation(request, "products.list", basePayload_PROOF_B_002_BOUND(""), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove category boundary validation
 });
 
 test("PROOF-B-002-BOUNDd — category="A".repeat(201) (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.list", basePayload_PROOF_B_002_BOUND("A".repeat(201)), adminCookie);
+  const { status } = await trpcMutation(request, "products.list", basePayload_PROOF_B_002_BOUND("A".repeat(201)), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove category boundary validation
 });
 
 test("PROOF-B-002-BOUNDe — category=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.list", basePayload_PROOF_B_002_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.list", basePayload_PROOF_B_002_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove category boundary validation
 });
 
-// PROOF-B-003-BOUND — Boundary: Update routers
+// PROOF-B-003-BOUND — Boundary: Update products
 // Risk: critical
 
 const basePayload_PROOF_B_003_BOUND = (boundaryValue: unknown) => ({
     id: 1,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     name: boundaryValue,
     description: "Test description",
     price: 1,
@@ -115,226 +115,226 @@ const basePayload_PROOF_B_003_BOUND = (boundaryValue: unknown) => ({
 });
 
 test("PROOF-B-003-BOUNDa — name="A".repeat(1) (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.update", basePayload_PROOF_B_003_BOUND("A".repeat(1)), adminCookie);
+  const { status } = await trpcMutation(request, "products.update", basePayload_PROOF_B_003_BOUND("A".repeat(1)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in name validation (off-by-one)
 });
 
 test("PROOF-B-003-BOUNDb — name="A".repeat(200) (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.update", basePayload_PROOF_B_003_BOUND("A".repeat(200)), adminCookie);
+  const { status } = await trpcMutation(request, "products.update", basePayload_PROOF_B_003_BOUND("A".repeat(200)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in name validation (off-by-one)
 });
 
 test("PROOF-B-003-BOUNDc — name="" (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.update", basePayload_PROOF_B_003_BOUND(""), adminCookie);
+  const { status } = await trpcMutation(request, "products.update", basePayload_PROOF_B_003_BOUND(""), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove name boundary validation
 });
 
 test("PROOF-B-003-BOUNDd — name="A".repeat(201) (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.update", basePayload_PROOF_B_003_BOUND("A".repeat(201)), adminCookie);
+  const { status } = await trpcMutation(request, "products.update", basePayload_PROOF_B_003_BOUND("A".repeat(201)), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove name boundary validation
 });
 
 test("PROOF-B-003-BOUNDe — name=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.update", basePayload_PROOF_B_003_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.update", basePayload_PROOF_B_003_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove name boundary validation
 });
 
-// PROOF-B-004-BOUND — Boundary: Delete routers
+// PROOF-B-004-BOUND — Boundary: Delete products
 // Risk: critical
 
 const basePayload_PROOF_B_004_BOUND = (boundaryValue: unknown) => ({
     id: boundaryValue,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
 });
 
 test("PROOF-B-004-BOUNDa — id=0 (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_004_BOUND(0), adminCookie);
+  const { status } = await trpcMutation(request, "products.delete", basePayload_PROOF_B_004_BOUND(0), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in id validation (off-by-one)
 });
 
 test("PROOF-B-004-BOUNDb — id=100 (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_004_BOUND(100), adminCookie);
+  const { status } = await trpcMutation(request, "products.delete", basePayload_PROOF_B_004_BOUND(100), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in id validation (off-by-one)
 });
 
 test("PROOF-B-004-BOUNDc — id=-1 (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_004_BOUND(-1), adminCookie);
+  const { status } = await trpcMutation(request, "products.delete", basePayload_PROOF_B_004_BOUND(-1), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove id boundary validation
 });
 
 test("PROOF-B-004-BOUNDd — id=101 (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_004_BOUND(101), adminCookie);
+  const { status } = await trpcMutation(request, "products.delete", basePayload_PROOF_B_004_BOUND(101), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove id boundary validation
 });
 
 test("PROOF-B-004-BOUNDe — id=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_004_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.delete", basePayload_PROOF_B_004_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove id boundary validation
 });
 
-// PROOF-B-008-BOUND — Boundary: Update routers
+// PROOF-B-008-BOUND — Boundary: Update products
 // Risk: critical
 
 const basePayload_PROOF_B_008_BOUND = (boundaryValue: unknown) => ({
     id: 1,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     status: "active",
     trackingNumber: boundaryValue,
     cancelReason: "test-cancelReason",
 });
 
 test("PROOF-B-008-BOUNDa — trackingNumber="A".repeat(1) (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_008_BOUND("A".repeat(1)), adminCookie);
+  const { status } = await trpcMutation(request, "products.updateStatus", basePayload_PROOF_B_008_BOUND("A".repeat(1)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in trackingNumber validation (off-by-one)
 });
 
 test("PROOF-B-008-BOUNDb — trackingNumber="A".repeat(100) (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_008_BOUND("A".repeat(100)), adminCookie);
+  const { status } = await trpcMutation(request, "products.updateStatus", basePayload_PROOF_B_008_BOUND("A".repeat(100)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in trackingNumber validation (off-by-one)
 });
 
 test("PROOF-B-008-BOUNDc — trackingNumber="" (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_008_BOUND(""), adminCookie);
+  const { status } = await trpcMutation(request, "products.updateStatus", basePayload_PROOF_B_008_BOUND(""), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove trackingNumber boundary validation
 });
 
 test("PROOF-B-008-BOUNDd — trackingNumber="A".repeat(101) (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_008_BOUND("A".repeat(101)), adminCookie);
+  const { status } = await trpcMutation(request, "products.updateStatus", basePayload_PROOF_B_008_BOUND("A".repeat(101)), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove trackingNumber boundary validation
 });
 
 test("PROOF-B-008-BOUNDe — trackingNumber=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_008_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.updateStatus", basePayload_PROOF_B_008_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove trackingNumber boundary validation
 });
 
-// PROOF-B-009-BOUND — Boundary: Mutate routers
+// PROOF-B-009-BOUND — Boundary: Mutate products
 // Risk: critical
 
 const basePayload_PROOF_B_009_BOUND = (boundaryValue: unknown) => ({
     id: 1,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     reason: boundaryValue,
 });
 
 test("PROOF-B-009-BOUNDa — reason="A".repeat(1) (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.cancel", basePayload_PROOF_B_009_BOUND("A".repeat(1)), adminCookie);
+  const { status } = await trpcMutation(request, "products.cancel", basePayload_PROOF_B_009_BOUND("A".repeat(1)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in reason validation (off-by-one)
 });
 
 test("PROOF-B-009-BOUNDb — reason="A".repeat(500) (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.cancel", basePayload_PROOF_B_009_BOUND("A".repeat(500)), adminCookie);
+  const { status } = await trpcMutation(request, "products.cancel", basePayload_PROOF_B_009_BOUND("A".repeat(500)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in reason validation (off-by-one)
 });
 
 test("PROOF-B-009-BOUNDc — reason="" (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.cancel", basePayload_PROOF_B_009_BOUND(""), adminCookie);
+  const { status } = await trpcMutation(request, "products.cancel", basePayload_PROOF_B_009_BOUND(""), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove reason boundary validation
 });
 
 test("PROOF-B-009-BOUNDd — reason="A".repeat(501) (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.cancel", basePayload_PROOF_B_009_BOUND("A".repeat(501)), adminCookie);
+  const { status } = await trpcMutation(request, "products.cancel", basePayload_PROOF_B_009_BOUND("A".repeat(501)), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove reason boundary validation
 });
 
 test("PROOF-B-009-BOUNDe — reason=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.cancel", basePayload_PROOF_B_009_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.cancel", basePayload_PROOF_B_009_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove reason boundary validation
 });
 
-// PROOF-B-012-BOUND — Boundary: Mutate routers
+// PROOF-B-012-BOUND — Boundary: Mutate products
 // Risk: critical
 
 const basePayload_PROOF_B_012_BOUND = (boundaryValue: unknown) => ({
     id: 1,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     reason: boundaryValue,
 });
 
 test("PROOF-B-012-BOUNDa — reason="A".repeat(1) (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.block", basePayload_PROOF_B_012_BOUND("A".repeat(1)), adminCookie);
+  const { status } = await trpcMutation(request, "products.block", basePayload_PROOF_B_012_BOUND("A".repeat(1)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in reason validation (off-by-one)
 });
 
 test("PROOF-B-012-BOUNDb — reason="A".repeat(500) (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.block", basePayload_PROOF_B_012_BOUND("A".repeat(500)), adminCookie);
+  const { status } = await trpcMutation(request, "products.block", basePayload_PROOF_B_012_BOUND("A".repeat(500)), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in reason validation (off-by-one)
 });
 
 test("PROOF-B-012-BOUNDc — reason="" (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.block", basePayload_PROOF_B_012_BOUND(""), adminCookie);
+  const { status } = await trpcMutation(request, "products.block", basePayload_PROOF_B_012_BOUND(""), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove reason boundary validation
 });
 
 test("PROOF-B-012-BOUNDd — reason="A".repeat(501) (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.block", basePayload_PROOF_B_012_BOUND("A".repeat(501)), adminCookie);
+  const { status } = await trpcMutation(request, "products.block", basePayload_PROOF_B_012_BOUND("A".repeat(501)), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove reason boundary validation
 });
 
 test("PROOF-B-012-BOUNDe — reason=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.block", basePayload_PROOF_B_012_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.block", basePayload_PROOF_B_012_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove reason boundary validation
 });
 
-// PROOF-B-013-BOUND — Boundary: Mutate routers
+// PROOF-B-013-BOUND — Boundary: Mutate products
 // Risk: critical
 
 const basePayload_PROOF_B_013_BOUND = (boundaryValue: unknown) => ({
     id: boundaryValue,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
 });
 
 test("PROOF-B-013-BOUNDa — id=0 (minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.gdprDelete", basePayload_PROOF_B_013_BOUND(0), adminCookie);
+  const { status } = await trpcMutation(request, "products.gdprDelete", basePayload_PROOF_B_013_BOUND(0), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in id validation (off-by-one)
 });
 
 test("PROOF-B-013-BOUNDb — id=100 (maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.gdprDelete", basePayload_PROOF_B_013_BOUND(100), adminCookie);
+  const { status } = await trpcMutation(request, "products.gdprDelete", basePayload_PROOF_B_013_BOUND(100), adminCookie);
   expect(status).toBe(200);
   // Kills: Change >= to > in id validation (off-by-one)
 });
 
 test("PROOF-B-013-BOUNDc — id=-1 (below minimum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.gdprDelete", basePayload_PROOF_B_013_BOUND(-1), adminCookie);
+  const { status } = await trpcMutation(request, "products.gdprDelete", basePayload_PROOF_B_013_BOUND(-1), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove id boundary validation
 });
 
 test("PROOF-B-013-BOUNDd — id=101 (above maximum)", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.gdprDelete", basePayload_PROOF_B_013_BOUND(101), adminCookie);
+  const { status } = await trpcMutation(request, "products.gdprDelete", basePayload_PROOF_B_013_BOUND(101), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove id boundary validation
 });
 
 test("PROOF-B-013-BOUNDe — id=null", async ({ request }) => {
-  const { status } = await trpcMutation(request, "routers.gdprDelete", basePayload_PROOF_B_013_BOUND(null), adminCookie);
+  const { status } = await trpcMutation(request, "products.gdprDelete", basePayload_PROOF_B_013_BOUND(null), adminCookie);
   expect([400, 422]).toContain(status);
   // Kills: Remove id boundary validation
 });

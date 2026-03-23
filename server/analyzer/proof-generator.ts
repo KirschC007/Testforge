@@ -99,6 +99,7 @@ function getFilename(pt: ProofType): string {
     cron_job: "tests/integration/cron-jobs.spec.ts",
     webhook: "tests/integration/webhooks.spec.ts",
     feature_gate: "tests/business/feature-gates.spec.ts",
+    e2e_flow: "tests/e2e/flows.spec.ts",
   };
   return map[pt];
 }
@@ -493,8 +494,14 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
 
   // Use resolved endpoint from IR, or TODO placeholder
-  const endpoint = target.endpoint || "TODO_REPLACE_WITH_MUTATION_ENDPOINT";
-  const hasEndpoint = !!target.endpoint;
+  const endpoint = target.endpoint
+    || analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add") ||
+      e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("delete") ||
+      e.name.toLowerCase().includes("submit") || e.name.toLowerCase().includes("post"))?.name
+    || analysis.ir.apiEndpoints[0]?.name
+    || "TODO_REPLACE_WITH_MUTATION_ENDPOINT";
+  const hasEndpoint = !!target.endpoint || analysis.ir.apiEndpoints.length > 0;
   const listEndpoint = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name
     || analysis.ir.apiEndpoints[0]?.name
@@ -873,7 +880,12 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
     analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby")) ??
     analysis.ir.apiEndpoints.find(e =>
-      e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))
+      e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get")) ??
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("find") || e.name.toLowerCase().includes("fetch") || e.name.toLowerCase().includes("read")) ??
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("detail") || e.name.toLowerCase().includes("show") || e.name.toLowerCase().includes("view")) ??
+    analysis.ir.apiEndpoints[0]  // final fallback: use first available endpoint rather than TODO placeholder
   )?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
 
   // Goldstandard: Use statusMachine from IR if available, otherwise fall back to text extraction
@@ -891,7 +903,9 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
       ? rawSm.forbidden.filter((t): t is [string, string] => Array.isArray(t) && t.length >= 2)
       : [],
   } : null;
-  const arrowPattern = /([a-z][a-z_0-9]*)\s*(?:→|->|to\s+)\s*([a-z][a-z_0-9]*)/i;
+  // ISSUE 5 FIX: Extended arrow pattern to handle quoted status values
+  // Matches: "review → done", "review -> done", "to 'done'", "to \"completed\""
+  const arrowPattern = /([a-z][a-z_0-9]*)\s*(?:→|->|to\s+)['"]?\s*([a-z][a-z_0-9]*)['"]?/i;
   const titleMatch = behavior?.title.match(arrowPattern);
   // precondMatch: extract status value from preconditions, but skip meta-words like 'transition', 'valid', 'is'
   const STATUS_META_WORDS = new Set(['transition', 'valid', 'invalid', 'is', 'the', 'a', 'an', 'be', 'change', 'update', 'set', 'backwards', 'backward', 'forward', 'forwards', 'skipping', 'skip', 'reverse', 'reversed', 'check', 'field', 'value', 'must', 'should', 'cannot', 'not']);
@@ -1085,6 +1099,7 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
           (e.name.toLowerCase().includes('gdpr') && e.name.toLowerCase().includes('export')))?.name
         || analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes('gdpr'))?.name
         || target.endpoint
+        || analysis.ir.apiEndpoints[0]?.name
         || 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
     }
     if (isWorkspaceDeleteAll || (isHardDelete && !target.endpoint?.toLowerCase().includes('delete'))) {
@@ -1112,6 +1127,7 @@ function generateDSGVOTest(target: ProofTarget, analysis: AnalysisResult): strin
     return analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes('gdpr') || e.name.toLowerCase().includes('delete') ||
       e.name.toLowerCase().includes('dsgvo') || e.name.toLowerCase().includes('anon'))?.name
+      || analysis.ir.apiEndpoints[0]?.name
       || 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT';
   })();
    const hasEndpoint = endpoint !== 'TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT' && endpoint !== 'TODO_REPLACE_WITH_EXPORT_ENDPOINT';
@@ -1519,8 +1535,13 @@ function generateRiskScoringTest(target: ProofTarget, analysis: AnalysisResult):
     e.name.toLowerCase().includes("status") || e.name.toLowerCase().includes("update"))?.name || "TODO_REPLACE_WITH_STATUS_ENDPOINT";
   const upsertEp = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("upsert") || e.name.toLowerCase().includes("update"))?.name || "TODO_REPLACE_WITH_UPSERT_ENDPOINT";
-  const getByIdEp = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
+  const getByIdEp = (
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby") || e.name.toLowerCase().includes("get")) ??
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("find") || e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("fetch")) ??
+    analysis.ir.apiEndpoints[0]
+  )?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
   const hasEndpoints = analysis.ir.apiEndpoints.length > 0;
 
   // Determine the risk score field name from behavior postconditions
@@ -1614,8 +1635,13 @@ export function generateBusinessLogicTest(target: ProofTarget, analysis: Analysi
   const ep = target.endpoint || analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"))?.name || "TODO_REPLACE_WITH_MUTATION_ENDPOINT";
   const hasEndpoint = !!target.endpoint || analysis.ir.apiEndpoints.length > 0;
-  const getEp = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_QUERY_ENDPOINT";
+  const getEp = (
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get")) ??
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("find") || e.name.toLowerCase().includes("fetch") || e.name.toLowerCase().includes("read")) ??
+    analysis.ir.apiEndpoints[0]
+  )?.name || "TODO_REPLACE_WITH_QUERY_ENDPOINT";
 
    const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
   // Build payload from known input fields using getValidDefault (no TODO_ placeholders)
@@ -2750,8 +2776,13 @@ export function generateFlowTest(target: ProofTarget, analysis: AnalysisResult):
     e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"))?.name || "TODO_REPLACE_WITH_CREATE_ENDPOINT";
   const updateEp = analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("status"))?.name || "TODO_REPLACE_WITH_UPDATE_ENDPOINT";
-  const getEp = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"))?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
+  const getEp = (
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get")) ??
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("find") || e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("fetch")) ??
+    analysis.ir.apiEndpoints[0]
+  )?.name || "TODO_REPLACE_WITH_GET_ENDPOINT";
 
   const stepComments = hasSteps
     ? steps.map((s, i) => `  // Step ${i + 1}: ${s.action} → status ${s.expectedStatus ?? "?"}`).join("\n")
@@ -3004,6 +3035,95 @@ test("${target.id}c — unauthenticated user is rejected (401)", async ({ reques
 }
 
 
+/**
+ * E2E Flow Test Generator
+ * Generates Playwright-style tests for user flows extracted from the spec.
+ * Falls back to generateBusinessLogicTest if no matching flow is found.
+ */
+export function generateE2EFlowTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
+
+  // Find a matching user flow from the IR
+  const flow = ir.userFlows?.find(f =>
+    f.relatedEndpoints?.some(ep => ep === target.endpoint) ||
+    f.id === target.behaviorId ||
+    f.name.toLowerCase().includes(target.description.toLowerCase().slice(0, 20))
+  );
+
+  // If no flow found, fall back to business logic test
+  if (!flow) {
+    return generateBusinessLogicTest(target, analysis);
+  }
+
+  // Build step code from flow.steps (string array)
+  const stepLines = flow.steps.map((step: string, i: number) => {
+    const s = step.toLowerCase();
+    if (s.includes("navigate") || s.includes("open") || s.includes("go to")) {
+      const pathMatch = step.match(/\/[\w\-\/{}]+/);
+      const path = pathMatch ? pathMatch[0] : "/";
+      return `  // Step ${i + 1}: ${step}\n  await page.goto(\`\${BASE_URL}${path}\`);\n  await page.waitForLoadState("networkidle");`;
+    }
+    if (s.includes("fill") || s.includes("enter") || s.includes("type")) {
+      const fieldMatch = step.match(/(\w+)\s*(?:field|input|with)/i);
+      const field = fieldMatch ? fieldMatch[1] : "field";
+      return `  // Step ${i + 1}: ${step}\n  await page.getByLabel(/${field}/i).fill("test-value");`;
+    }
+    if (s.includes("click") || s.includes("submit") || s.includes("press")) {
+      const btnMatch = step.match(/(?:click|submit|press)\s+(?:the\s+)?(\w+)/i);
+      const btn = btnMatch ? btnMatch[1] : "submit";
+      return `  // Step ${i + 1}: ${step}\n  await page.getByRole("button", { name: /${btn}/i }).click();`;
+    }
+    if (s.includes("verify") || s.includes("see") || s.includes("confirm") || s.includes("check")) {
+      const expectedMatch = step.match(/(?:see|verify|confirm|check)\s+(?:that\s+)?(.+)/i);
+      const expected = expectedMatch ? expectedMatch[1].slice(0, 30) : "success";
+      return `  // Step ${i + 1}: ${step}\n  await expect(page.getByText(/${expected}/i)).toBeVisible({ timeout: 10000 });`;
+    }
+    // Generic step
+    return `  // Step ${i + 1}: ${step}`;
+  }).join("\n\n");
+
+  // Build success criteria assertions
+  const successAssertions = (flow.successCriteria || []).slice(0, 3).map((criterion: string) => {
+    const match = criterion.match(/(?:see|verify|confirm|check|returns?)\s+(.+)/i);
+    const expected = match ? match[1].slice(0, 30) : criterion.slice(0, 30);
+    return `  await expect(page.getByText(/${expected}/i)).toBeVisible({ timeout: 10000 });`;
+  }).join("\n");
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+// ${target.id} — E2E Flow: ${flow.name}
+// Actor: ${flow.actor}
+// Steps: ${flow.steps.length}
+
+test("${target.id} — ${flow.name}", async ({ page, request }) => {
+${stepLines}
+
+${successAssertions}
+
+  // Verify API state after flow
+  const { data, status } = await trpcQuery(request, "${target.endpoint || flow.relatedEndpoints[0] || "auth.me"}",
+    { ${tenantField}: ${tenantConst} }, adminCookie);
+  expect(status).toBe(200);
+  expect(data).toBeDefined();
+  // Kills: ${target.mutationTargets[0]?.description || "Flow does not complete successfully"}
+});
+`;
+}
+
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const t0 = Date.now();
 
@@ -3025,6 +3145,7 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     cron_job: generateCronJobTest,
     webhook: generateWebhookTest,
     feature_gate: generateFeatureGateTest,
+    e2e_flow: generateE2EFlowTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);

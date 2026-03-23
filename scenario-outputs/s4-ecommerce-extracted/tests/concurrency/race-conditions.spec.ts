@@ -1,19 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { BASE_URL, trpcMutation, trpcQuery } from "../../helpers/api";
 import { getAdminCookie } from "../../helpers/auth";
-import { TEST_WORKSPACE_ID } from "../../helpers/factories";
+import { TEST_SHOP_ID } from "../../helpers/factories";
 
 // Proof: PROOF-B-001-CONCURRENCY
-// Behavior: Create routers
+// Behavior: Create products
 // Risk: critical
-// Kills: Remove mutex/lock around Create in routers.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for routers update
+// Kills: Remove mutex/lock around Create in products.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for products update
 
 function basePayload_PROOF_B_001_CONCURRENCY() {
   return {
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     name: "Test name-${Date.now()}",
     description: "Test description",
-    sku: "SKU-1774266723952",
+    sku: "SKU-1774281018677",
     price: 1,
     stock: 1,
     category: "test-category",
@@ -23,7 +23,7 @@ function basePayload_PROOF_B_001_CONCURRENCY() {
   };
 }
 
-test.describe("Concurrency: Create routers", () => {
+test.describe("Concurrency: Create products", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
@@ -35,7 +35,7 @@ test.describe("Concurrency: Create routers", () => {
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "routers.create", basePayload_PROOF_B_001_CONCURRENCY(), cookie)
+        trpcMutation(request, "products.create", basePayload_PROOF_B_001_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -48,11 +48,11 @@ test.describe("Concurrency: Create routers", () => {
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent Create must not create duplicate routerss", async ({ request }) => {
+  test("concurrent Create must not create duplicate productss", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "routers.create", basePayload_PROOF_B_001_CONCURRENCY(), cookie)
+        trpcMutation(request, "products.create", basePayload_PROOF_B_001_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -69,11 +69,11 @@ test.describe("Concurrency: Create routers", () => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "routers.create", basePayload_PROOF_B_001_CONCURRENCY(), cookie)
+        trpcMutation(request, "products.create", basePayload_PROOF_B_001_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "routers.list", { workspaceId: TEST_WORKSPACE_ID }, cookie);
+    const listResponse = await trpcQuery(request, "products.list", { shopId: TEST_SHOP_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
@@ -90,14 +90,14 @@ test.describe("Concurrency: Create routers", () => {
 });
 
 // Proof: PROOF-B-003-CONCURRENCY
-// Behavior: Update routers
+// Behavior: Update products
 // Risk: critical
-// Kills: Remove mutex/lock around Update in routers.update | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for routers update
+// Kills: Remove mutex/lock around Update in products.update | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for products update
 
 function basePayload_PROOF_B_003_CONCURRENCY() {
   return {
     id: 1,
-    shopId: TEST_WORKSPACE_ID,
+    shopId: TEST_SHOP_ID,
     name: "Test name-${Date.now()}",
     description: "Test description",
     price: 1,
@@ -107,7 +107,7 @@ function basePayload_PROOF_B_003_CONCURRENCY() {
   };
 }
 
-test.describe("Concurrency: Update routers", () => {
+test.describe("Concurrency: Update products", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
@@ -119,7 +119,7 @@ test.describe("Concurrency: Update routers", () => {
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "routers.update", basePayload_PROOF_B_003_CONCURRENCY(), cookie)
+        trpcMutation(request, "products.update", basePayload_PROOF_B_003_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -132,11 +132,11 @@ test.describe("Concurrency: Update routers", () => {
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent Update must not create duplicate routerss", async ({ request }) => {
+  test("concurrent Update must not create duplicate productss", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "routers.update", basePayload_PROOF_B_003_CONCURRENCY(), cookie)
+        trpcMutation(request, "products.update", basePayload_PROOF_B_003_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -153,11 +153,11 @@ test.describe("Concurrency: Update routers", () => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "routers.update", basePayload_PROOF_B_003_CONCURRENCY(), cookie)
+        trpcMutation(request, "products.update", basePayload_PROOF_B_003_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "routers.list", { workspaceId: TEST_WORKSPACE_ID }, cookie);
+    const listResponse = await trpcQuery(request, "products.list", { shopId: TEST_SHOP_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);

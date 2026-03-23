@@ -302,9 +302,18 @@ export async function resetTestTenant(request: any): Promise<void> {
         case "date":
           base = `z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).or(z.string().datetime({ offset: true }))`;
           break;
-        case "enum":
-          base = `z.enum([${f.enumValues?.map(v => `"${v}"`).join(", ") || '"unknown"'}])`;
+        case "enum": {
+          // Fix 3B: if enumValues is empty, look up in ir.enums by field name or table-qualified name
+          const resolvedEnumVals = f.enumValues?.length
+            ? f.enumValues
+            : ir.enums[f.name]
+              || ir.apiEndpoints.flatMap(e => e.inputFields).find(ef => ef.name === f.name && ef.enumValues?.length)?.enumValues
+              || [];
+          base = resolvedEnumVals.length
+            ? `z.enum([${resolvedEnumVals.map(v => `"${v}"`).join(", ")}])`
+            : `z.string() /* enum: values unknown */`;
           break;
+        }
         case "array":
           if (f.arrayItemType === "object" && f.arrayItemFields?.length) {
             const objFields = f.arrayItemFields

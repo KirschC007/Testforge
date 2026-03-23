@@ -10,7 +10,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 // Proof: PROOF-B-001-AUTHMATRIX
-// Behavior: Create routers
+// Behavior: Create tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_001_AUTHMATRIX() {
@@ -25,17 +25,17 @@ function basePayload_PROOF_B_001_AUTHMATRIX() {
     labels: [],
   };
 }
-test.describe("Auth Matrix: Create routers", () => {
-  test("admin must be able to Create routers", async ({ request }) => {
+test.describe("Auth Matrix: Create tasks", () => {
+  test("admin must be able to Create tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), "");
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -45,9 +45,9 @@ test.describe("Auth Matrix: Create routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Create routers", async ({ request }) => {
+  test("user must NOT be able to Create tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), roleCookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -59,66 +59,66 @@ test.describe("Auth Matrix: Create routers", () => {
       ...basePayload_PROOF_B_001_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "routers.create", crossTenantPayload, cookie);
+    const response = await trpcMutation(request, "tasks.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.create", async ({ request }) => {
-    // Kills: Remove role check in routers.create
+  test("mutation-kill-1: Remove role check in tasks.create", async ({ request }) => {
+    // Kills: Remove role check in tasks.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Create routers", async ({ request }) => {
-    // Kills: admin should not be able to Create routers
+  test("mutation-kill-3: admin should not be able to Create tasks", async ({ request }) => {
+    // Kills: admin should not be able to Create tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Create routers — verify no data leaked in error response
+    // Kills: admin should not be able to Create tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Create routers — verify error code is present
+    // Kills: admin should not be able to Create tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Create routers", async ({ request }) => {
-    // Kills: user should not be able to Create routers
+  test("mutation-kill-4: user should not be able to Create tasks", async ({ request }) => {
+    // Kills: user should not be able to Create tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_001_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Create routers — verify no data leaked in error response
+    // Kills: user should not be able to Create tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Create routers — verify error code is present
+    // Kills: user should not be able to Create tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-002-AUTHMATRIX
-// Behavior: Get routers
+// Behavior: Get tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_002_AUTHMATRIX() {
@@ -133,17 +133,17 @@ function basePayload_PROOF_B_002_AUTHMATRIX() {
     pageSize: 1,
   };
 }
-test.describe("Auth Matrix: Get routers", () => {
-  test("admin must be able to Get routers", async ({ request }) => {
+test.describe("Auth Matrix: Get tasks", () => {
+  test("admin must be able to Get tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -153,9 +153,9 @@ test.describe("Auth Matrix: Get routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Get routers", async ({ request }) => {
+  test("user must NOT be able to Get tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -167,66 +167,66 @@ test.describe("Auth Matrix: Get routers", () => {
       ...basePayload_PROOF_B_002_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "routers.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "tasks.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.list", async ({ request }) => {
-    // Kills: Remove role check in routers.list
+  test("mutation-kill-1: Remove role check in tasks.list", async ({ request }) => {
+    // Kills: Remove role check in tasks.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Get routers", async ({ request }) => {
-    // Kills: admin should not be able to Get routers
+  test("mutation-kill-3: admin should not be able to Get tasks", async ({ request }) => {
+    // Kills: admin should not be able to Get tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Get routers — verify no data leaked in error response
+    // Kills: admin should not be able to Get tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Get routers — verify error code is present
+    // Kills: admin should not be able to Get tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Get routers", async ({ request }) => {
-    // Kills: user should not be able to Get routers
+  test("mutation-kill-4: user should not be able to Get tasks", async ({ request }) => {
+    // Kills: user should not be able to Get tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_002_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Get routers — verify no data leaked in error response
+    // Kills: user should not be able to Get tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Get routers — verify error code is present
+    // Kills: user should not be able to Get tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-003-AUTHMATRIX
-// Behavior: Get routers
+// Behavior: Get tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_003_AUTHMATRIX() {
@@ -235,17 +235,17 @@ function basePayload_PROOF_B_003_AUTHMATRIX() {
     workspaceId: TEST_WORKSPACE_ID,
   };
 }
-test.describe("Auth Matrix: Get routers", () => {
-  test("admin must be able to Get routers", async ({ request }) => {
+test.describe("Auth Matrix: Get tasks", () => {
+  test("admin must be able to Get tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -255,9 +255,9 @@ test.describe("Auth Matrix: Get routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Get routers", async ({ request }) => {
+  test("user must NOT be able to Get tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -269,66 +269,66 @@ test.describe("Auth Matrix: Get routers", () => {
       ...basePayload_PROOF_B_003_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "routers.getById", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "tasks.getById", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.getById", async ({ request }) => {
-    // Kills: Remove role check in routers.getById
+  test("mutation-kill-1: Remove role check in tasks.getById", async ({ request }) => {
+    // Kills: Remove role check in tasks.getById
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.getById — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.getById — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Get routers", async ({ request }) => {
-    // Kills: admin should not be able to Get routers
+  test("mutation-kill-3: admin should not be able to Get tasks", async ({ request }) => {
+    // Kills: admin should not be able to Get tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Get routers — verify no data leaked in error response
+    // Kills: admin should not be able to Get tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Get routers — verify error code is present
+    // Kills: admin should not be able to Get tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Get routers", async ({ request }) => {
-    // Kills: user should not be able to Get routers
+  test("mutation-kill-4: user should not be able to Get tasks", async ({ request }) => {
+    // Kills: user should not be able to Get tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.getById", basePayload_PROOF_B_003_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Get routers — verify no data leaked in error response
+    // Kills: user should not be able to Get tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Get routers — verify error code is present
+    // Kills: user should not be able to Get tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-004-AUTHMATRIX
-// Behavior: Update routers
+// Behavior: Update tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_004_AUTHMATRIX() {
@@ -344,17 +344,17 @@ function basePayload_PROOF_B_004_AUTHMATRIX() {
     labels: [],
   };
 }
-test.describe("Auth Matrix: Update routers", () => {
-  test("admin must be able to Update routers", async ({ request }) => {
+test.describe("Auth Matrix: Update tasks", () => {
+  test("admin must be able to Update tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), "");
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -364,9 +364,9 @@ test.describe("Auth Matrix: Update routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Update routers", async ({ request }) => {
+  test("user must NOT be able to Update tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), roleCookie);
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -378,66 +378,66 @@ test.describe("Auth Matrix: Update routers", () => {
       ...basePayload_PROOF_B_004_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "routers.update", crossTenantPayload, cookie);
+    const response = await trpcMutation(request, "tasks.update", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.update", async ({ request }) => {
-    // Kills: Remove role check in routers.update
+  test("mutation-kill-1: Remove role check in tasks.update", async ({ request }) => {
+    // Kills: Remove role check in tasks.update
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.update — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.update — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Update routers", async ({ request }) => {
-    // Kills: admin should not be able to Update routers
+  test("mutation-kill-3: admin should not be able to Update tasks", async ({ request }) => {
+    // Kills: admin should not be able to Update tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Update routers — verify no data leaked in error response
+    // Kills: admin should not be able to Update tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Update routers — verify error code is present
+    // Kills: admin should not be able to Update tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Update routers", async ({ request }) => {
-    // Kills: user should not be able to Update routers
+  test("mutation-kill-4: user should not be able to Update tasks", async ({ request }) => {
+    // Kills: user should not be able to Update tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.update", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Update routers — verify no data leaked in error response
+    // Kills: user should not be able to Update tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Update routers — verify error code is present
+    // Kills: user should not be able to Update tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-005-AUTHMATRIX
-// Behavior: Update routers
+// Behavior: Update tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_005_AUTHMATRIX() {
@@ -447,17 +447,17 @@ function basePayload_PROOF_B_005_AUTHMATRIX() {
     status: "active",
   };
 }
-test.describe("Auth Matrix: Update routers", () => {
-  test("admin must be able to Update routers", async ({ request }) => {
+test.describe("Auth Matrix: Update tasks", () => {
+  test("admin must be able to Update tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), "");
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -467,9 +467,9 @@ test.describe("Auth Matrix: Update routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Update routers", async ({ request }) => {
+  test("user must NOT be able to Update tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), roleCookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -481,66 +481,66 @@ test.describe("Auth Matrix: Update routers", () => {
       ...basePayload_PROOF_B_005_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "routers.updateStatus", crossTenantPayload, cookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.updateStatus", async ({ request }) => {
-    // Kills: Remove role check in routers.updateStatus
+  test("mutation-kill-1: Remove role check in tasks.updateStatus", async ({ request }) => {
+    // Kills: Remove role check in tasks.updateStatus
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.updateStatus — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.updateStatus — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Update routers", async ({ request }) => {
-    // Kills: admin should not be able to Update routers
+  test("mutation-kill-3: admin should not be able to Update tasks", async ({ request }) => {
+    // Kills: admin should not be able to Update tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Update routers — verify no data leaked in error response
+    // Kills: admin should not be able to Update tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Update routers — verify error code is present
+    // Kills: admin should not be able to Update tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Update routers", async ({ request }) => {
-    // Kills: user should not be able to Update routers
+  test("mutation-kill-4: user should not be able to Update tasks", async ({ request }) => {
+    // Kills: user should not be able to Update tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.updateStatus", basePayload_PROOF_B_005_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Update routers — verify no data leaked in error response
+    // Kills: user should not be able to Update tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Update routers — verify error code is present
+    // Kills: user should not be able to Update tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-006-AUTHMATRIX
-// Behavior: Delete routers
+// Behavior: Delete tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_006_AUTHMATRIX() {
@@ -549,17 +549,17 @@ function basePayload_PROOF_B_006_AUTHMATRIX() {
     workspaceId: TEST_WORKSPACE_ID,
   };
 }
-test.describe("Auth Matrix: Delete routers", () => {
-  test("admin must be able to Delete routers", async ({ request }) => {
+test.describe("Auth Matrix: Delete tasks", () => {
+  test("admin must be able to Delete tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), "");
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -569,9 +569,9 @@ test.describe("Auth Matrix: Delete routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Delete routers", async ({ request }) => {
+  test("user must NOT be able to Delete tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), roleCookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -583,66 +583,66 @@ test.describe("Auth Matrix: Delete routers", () => {
       ...basePayload_PROOF_B_006_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "routers.delete", crossTenantPayload, cookie);
+    const response = await trpcMutation(request, "tasks.delete", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.delete", async ({ request }) => {
-    // Kills: Remove role check in routers.delete
+  test("mutation-kill-1: Remove role check in tasks.delete", async ({ request }) => {
+    // Kills: Remove role check in tasks.delete
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.delete — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.delete — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Delete routers", async ({ request }) => {
-    // Kills: admin should not be able to Delete routers
+  test("mutation-kill-3: admin should not be able to Delete tasks", async ({ request }) => {
+    // Kills: admin should not be able to Delete tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Delete routers — verify no data leaked in error response
+    // Kills: admin should not be able to Delete tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Delete routers — verify error code is present
+    // Kills: admin should not be able to Delete tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Delete routers", async ({ request }) => {
-    // Kills: user should not be able to Delete routers
+  test("mutation-kill-4: user should not be able to Delete tasks", async ({ request }) => {
+    // Kills: user should not be able to Delete tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_006_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Delete routers — verify no data leaked in error response
+    // Kills: user should not be able to Delete tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Delete routers — verify error code is present
+    // Kills: user should not be able to Delete tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-007-AUTHMATRIX
-// Behavior: Bulk operation on routers
+// Behavior: Bulk operation on tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_007_AUTHMATRIX() {
@@ -651,17 +651,17 @@ function basePayload_PROOF_B_007_AUTHMATRIX() {
     workspaceId: TEST_WORKSPACE_ID,
   };
 }
-test.describe("Auth Matrix: Bulk operation on routers", () => {
-  test("admin must be able to Bulk operation on routers", async ({ request }) => {
+test.describe("Auth Matrix: Bulk operation on tasks", () => {
+  test("admin must be able to Bulk operation on tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -671,9 +671,9 @@ test.describe("Auth Matrix: Bulk operation on routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Bulk operation on routers", async ({ request }) => {
+  test("user must NOT be able to Bulk operation on tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -685,66 +685,66 @@ test.describe("Auth Matrix: Bulk operation on routers", () => {
       ...basePayload_PROOF_B_007_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "routers.bulkDelete", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.bulkDelete", async ({ request }) => {
-    // Kills: Remove role check in routers.bulkDelete
+  test("mutation-kill-1: Remove role check in tasks.bulkDelete", async ({ request }) => {
+    // Kills: Remove role check in tasks.bulkDelete
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.bulkDelete — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.bulkDelete — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Bulk operation on routers", async ({ request }) => {
-    // Kills: admin should not be able to Bulk operation on routers
+  test("mutation-kill-3: admin should not be able to Bulk operation on tasks", async ({ request }) => {
+    // Kills: admin should not be able to Bulk operation on tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Bulk operation on routers — verify no data leaked in error response
+    // Kills: admin should not be able to Bulk operation on tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Bulk operation on routers — verify error code is present
+    // Kills: admin should not be able to Bulk operation on tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Bulk operation on routers", async ({ request }) => {
-    // Kills: user should not be able to Bulk operation on routers
+  test("mutation-kill-4: user should not be able to Bulk operation on tasks", async ({ request }) => {
+    // Kills: user should not be able to Bulk operation on tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkDelete", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Bulk operation on routers — verify no data leaked in error response
+    // Kills: user should not be able to Bulk operation on tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Bulk operation on routers — verify error code is present
+    // Kills: user should not be able to Bulk operation on tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-008-AUTHMATRIX
-// Behavior: Bulk operation on routers
+// Behavior: Bulk operation on tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_008_AUTHMATRIX() {
@@ -754,17 +754,17 @@ function basePayload_PROOF_B_008_AUTHMATRIX() {
     status: "active",
   };
 }
-test.describe("Auth Matrix: Bulk operation on routers", () => {
-  test("admin must be able to Bulk operation on routers", async ({ request }) => {
+test.describe("Auth Matrix: Bulk operation on tasks", () => {
+  test("admin must be able to Bulk operation on tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -774,9 +774,9 @@ test.describe("Auth Matrix: Bulk operation on routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Bulk operation on routers", async ({ request }) => {
+  test("user must NOT be able to Bulk operation on tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -788,66 +788,66 @@ test.describe("Auth Matrix: Bulk operation on routers", () => {
       ...basePayload_PROOF_B_008_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.bulkUpdateStatus", async ({ request }) => {
-    // Kills: Remove role check in routers.bulkUpdateStatus
+  test("mutation-kill-1: Remove role check in tasks.bulkUpdateStatus", async ({ request }) => {
+    // Kills: Remove role check in tasks.bulkUpdateStatus
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.bulkUpdateStatus — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.bulkUpdateStatus — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Bulk operation on routers", async ({ request }) => {
-    // Kills: admin should not be able to Bulk operation on routers
+  test("mutation-kill-3: admin should not be able to Bulk operation on tasks", async ({ request }) => {
+    // Kills: admin should not be able to Bulk operation on tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Bulk operation on routers — verify no data leaked in error response
+    // Kills: admin should not be able to Bulk operation on tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Bulk operation on routers — verify error code is present
+    // Kills: admin should not be able to Bulk operation on tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Bulk operation on routers", async ({ request }) => {
-    // Kills: user should not be able to Bulk operation on routers
+  test("mutation-kill-4: user should not be able to Bulk operation on tasks", async ({ request }) => {
+    // Kills: user should not be able to Bulk operation on tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.bulkUpdateStatus", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Bulk operation on routers — verify no data leaked in error response
+    // Kills: user should not be able to Bulk operation on tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Bulk operation on routers — verify error code is present
+    // Kills: user should not be able to Bulk operation on tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-009-AUTHMATRIX
-// Behavior: Create routers
+// Behavior: Create tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_009_AUTHMATRIX() {
@@ -862,17 +862,17 @@ function basePayload_PROOF_B_009_AUTHMATRIX() {
     labels: [],
   };
 }
-test.describe("Auth Matrix: Create routers", () => {
-  test("admin must be able to Create routers", async ({ request }) => {
+test.describe("Auth Matrix: Create tasks", () => {
+  test("admin must be able to Create tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), "");
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -882,9 +882,9 @@ test.describe("Auth Matrix: Create routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Create routers", async ({ request }) => {
+  test("user must NOT be able to Create tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -896,66 +896,66 @@ test.describe("Auth Matrix: Create routers", () => {
       ...basePayload_PROOF_B_009_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "routers.create", crossTenantPayload, cookie);
+    const response = await trpcMutation(request, "tasks.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.create", async ({ request }) => {
-    // Kills: Remove role check in routers.create
+  test("mutation-kill-1: Remove role check in tasks.create", async ({ request }) => {
+    // Kills: Remove role check in tasks.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Create routers", async ({ request }) => {
-    // Kills: admin should not be able to Create routers
+  test("mutation-kill-3: admin should not be able to Create tasks", async ({ request }) => {
+    // Kills: admin should not be able to Create tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Create routers — verify no data leaked in error response
+    // Kills: admin should not be able to Create tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Create routers — verify error code is present
+    // Kills: admin should not be able to Create tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Create routers", async ({ request }) => {
-    // Kills: user should not be able to Create routers
+  test("mutation-kill-4: user should not be able to Create tasks", async ({ request }) => {
+    // Kills: user should not be able to Create tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Create routers — verify no data leaked in error response
+    // Kills: user should not be able to Create tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Create routers — verify error code is present
+    // Kills: user should not be able to Create tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-010-AUTHMATRIX
-// Behavior: Get routers
+// Behavior: Get tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_010_AUTHMATRIX() {
@@ -970,17 +970,17 @@ function basePayload_PROOF_B_010_AUTHMATRIX() {
     pageSize: 1,
   };
 }
-test.describe("Auth Matrix: Get routers", () => {
-  test("admin must be able to Get routers", async ({ request }) => {
+test.describe("Auth Matrix: Get tasks", () => {
+  test("admin must be able to Get tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -990,9 +990,9 @@ test.describe("Auth Matrix: Get routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Get routers", async ({ request }) => {
+  test("user must NOT be able to Get tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -1004,66 +1004,66 @@ test.describe("Auth Matrix: Get routers", () => {
       ...basePayload_PROOF_B_010_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "routers.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "tasks.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.list", async ({ request }) => {
-    // Kills: Remove role check in routers.list
+  test("mutation-kill-1: Remove role check in tasks.list", async ({ request }) => {
+    // Kills: Remove role check in tasks.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Get routers", async ({ request }) => {
-    // Kills: admin should not be able to Get routers
+  test("mutation-kill-3: admin should not be able to Get tasks", async ({ request }) => {
+    // Kills: admin should not be able to Get tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Get routers — verify no data leaked in error response
+    // Kills: admin should not be able to Get tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Get routers — verify error code is present
+    // Kills: admin should not be able to Get tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Get routers", async ({ request }) => {
-    // Kills: user should not be able to Get routers
+  test("mutation-kill-4: user should not be able to Get tasks", async ({ request }) => {
+    // Kills: user should not be able to Get tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcQuery(request, "routers.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "tasks.list", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Get routers — verify no data leaked in error response
+    // Kills: user should not be able to Get tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Get routers — verify error code is present
+    // Kills: user should not be able to Get tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-011-AUTHMATRIX
-// Behavior: Delete routers
+// Behavior: Delete tasks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_011_AUTHMATRIX() {
@@ -1072,17 +1072,17 @@ function basePayload_PROOF_B_011_AUTHMATRIX() {
     workspaceId: TEST_WORKSPACE_ID,
   };
 }
-test.describe("Auth Matrix: Delete routers", () => {
-  test("admin must be able to Delete routers", async ({ request }) => {
+test.describe("Auth Matrix: Delete tasks", () => {
+  test("admin must be able to Delete tasks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), "");
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1092,9 +1092,9 @@ test.describe("Auth Matrix: Delete routers", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("user must NOT be able to Delete routers", async ({ request }) => {
+  test("user must NOT be able to Delete tasks", async ({ request }) => {
     const roleCookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -1106,59 +1106,59 @@ test.describe("Auth Matrix: Delete routers", () => {
       ...basePayload_PROOF_B_011_AUTHMATRIX(),
       workspaceId: TEST_WORKSPACE_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "routers.delete", crossTenantPayload, cookie);
+    const response = await trpcMutation(request, "tasks.delete", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in routers.delete", async ({ request }) => {
-    // Kills: Remove role check in routers.delete
+  test("mutation-kill-1: Remove role check in tasks.delete", async ({ request }) => {
+    // Kills: Remove role check in tasks.delete
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in routers.delete — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in tasks.delete — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access routers", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access routers
+  test("mutation-kill-2: Allow lower-privileged role to access tasks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access routers — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access routers — verify error code is present
+    // Kills: Allow lower-privileged role to access tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: admin should not be able to Delete routers", async ({ request }) => {
-    // Kills: admin should not be able to Delete routers
+  test("mutation-kill-3: admin should not be able to Delete tasks", async ({ request }) => {
+    // Kills: admin should not be able to Delete tasks
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: admin should not be able to Delete routers — verify no data leaked in error response
+    // Kills: admin should not be able to Delete tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: admin should not be able to Delete routers — verify error code is present
+    // Kills: admin should not be able to Delete tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: user should not be able to Delete routers", async ({ request }) => {
-    // Kills: user should not be able to Delete routers
+  test("mutation-kill-4: user should not be able to Delete tasks", async ({ request }) => {
+    // Kills: user should not be able to Delete tasks
     const cookie = await getUserCookie(request);
-    const response = await trpcMutation(request, "routers.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcMutation(request, "tasks.delete", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: user should not be able to Delete routers — verify no data leaked in error response
+    // Kills: user should not be able to Delete tasks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: user should not be able to Delete routers — verify error code is present
+    // Kills: user should not be able to Delete tasks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });

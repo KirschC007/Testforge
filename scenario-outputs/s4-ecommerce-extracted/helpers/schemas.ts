@@ -2,27 +2,43 @@
 // Usage: const validated = validateSchema(BookingSchema, data);
 import { z } from "zod";
 
-
-
-// Input schema for routers.create
-export const routers_createSchema = z.object({
+// Response schema for Product
+export const ProductSchema = z.object({
+  id: z.number(),
+  shopId: z.number(),
   name: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),
   sku: z.string().min(3).max(50),
   price: z.number().min(1).max(99999999),
   stock: z.number().min(0).max(999999),
   category: z.string().max(100).optional(),
-  status: z.enum(["unknown"]),
+  status: z.string() /* enum: values unknown */,
+  weight: z.number().min(0).max(100000).optional(),
+  isDigital: z.boolean(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+}).passthrough();
+export type Product = z.infer<typeof ProductSchema>;
+
+// Input schema for products.create
+export const products_createSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(5000).optional(),
+  sku: z.string().min(3).max(50),
+  price: z.number().min(1).max(99999999),
+  stock: z.number().min(0).max(999999),
+  category: z.string().max(100).optional(),
+  status: z.string() /* enum: values unknown */,
   weight: z.number().min(0).max(100000).optional(),
   isDigital: z.boolean()
 });
-export const routers_createResponseSchema = z.object({
+export const products_createResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.list
-export const routers_listSchema = z.object({
-  status: z.enum(["unknown"]),
+// Input schema for products.list
+export const products_listSchema = z.object({
+  status: z.string() /* enum: values unknown */,
   category: z.string().optional(),
   search: z.string().max(200).optional(),
   minPrice: z.number().min(0).optional(),
@@ -31,132 +47,132 @@ export const routers_listSchema = z.object({
   page: z.number().min(1),
   pageSize: z.number().min(1).max(100)
 });
-export const routers_listResponseSchema = z.object({
+export const products_listResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.update
-export const routers_updateSchema = z.object({
+// Input schema for products.update
+export const products_updateSchema = z.object({
   id: z.number(),
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
   price: z.number().min(1).max(99999999).optional(),
   stock: z.number().min(0).max(999999).optional(),
   category: z.string().max(100).optional(),
-  status: z.enum(["unknown"])
+  status: z.string() /* enum: values unknown */
 });
-export const routers_updateResponseSchema = z.object({
+export const products_updateResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.delete
-export const routers_deleteSchema = z.object({
+// Input schema for products.delete
+export const products_deleteSchema = z.object({
   id: z.number()
 });
-export const routers_deleteResponseSchema = z.object({
+export const products_deleteResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.create
-export const routers_createSchema = z.object({
+// Input schema for products.create
+export const products_createSchema = z.object({
   items: z.array(z.unknown()),
   productId: z.number(),
   quantity: z.number().min(1).max(100),
   shippingAddress: z.string().max(500).optional(),
   discountCode: z.string().max(50).optional(),
-  paymentMethod: z.enum(["unknown"]),
+  paymentMethod: z.string() /* enum: values unknown */,
   notes: z.string().max(1000).optional()
 });
-export const routers_createResponseSchema = z.object({
+export const products_createResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.list
-export const routers_listSchema = z.object({
-  status: z.enum(["unknown"]),
-  paymentStatus: z.enum(["unknown"]),
+// Input schema for products.list
+export const products_listSchema = z.object({
+  status: z.string() /* enum: values unknown */,
+  paymentStatus: z.string() /* enum: values unknown */,
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   page: z.number().min(1),
   pageSize: z.number().min(1).max(100)
 });
-export const routers_listResponseSchema = z.object({
+export const products_listResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.getById
-export const routers_getByIdSchema = z.object({
+// Input schema for products.getById
+export const products_getByIdSchema = z.object({
   id: z.number()
 });
-export const routers_getByIdResponseSchema = z.object({
+export const products_getByIdResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.updateStatus
-export const routers_updateStatusSchema = z.object({
+// Input schema for products.updateStatus
+export const products_updateStatusSchema = z.object({
   id: z.number(),
-  status: z.enum(["unknown"]),
+  status: z.string() /* enum: values unknown */,
   trackingNumber: z.string().max(100).optional(),
   cancelReason: z.string().max(500).optional()
 });
-export const routers_updateStatusResponseSchema = z.object({
+export const products_updateStatusResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.cancel
-export const routers_cancelSchema = z.object({
+// Input schema for products.cancel
+export const products_cancelSchema = z.object({
   id: z.number(),
   reason: z.string().max(500).optional()
 });
-export const routers_cancelResponseSchema = z.object({
+export const products_cancelResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.create
-export const routers_createSchema = z.object({
+// Input schema for products.create
+export const products_createSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().max(255),
   phone: z.string().max(20).optional(),
   address: z.string().max(500).optional(),
   notes: z.string().max(2000).optional()
 });
-export const routers_createResponseSchema = z.object({
+export const products_createResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.list
-export const routers_listSchema = z.object({
+// Input schema for products.list
+export const products_listSchema = z.object({
   search: z.string().max(200).optional(),
   isBlocked: z.boolean().optional(),
   page: z.number().min(1),
   pageSize: z.number().min(1).max(100)
 });
-export const routers_listResponseSchema = z.object({
+export const products_listResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.block
-export const routers_blockSchema = z.object({
+// Input schema for products.block
+export const products_blockSchema = z.object({
   id: z.number(),
   reason: z.string().max(500)
 });
-export const routers_blockResponseSchema = z.object({
+export const products_blockResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.gdprDelete
-export const routers_gdprDeleteSchema = z.object({
+// Input schema for products.gdprDelete
+export const products_gdprDeleteSchema = z.object({
   id: z.number()
 });
-export const routers_gdprDeleteResponseSchema = z.object({
+export const products_gdprDeleteResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for routers.gdprExport
-export const routers_gdprExportSchema = z.object({
+// Input schema for products.gdprExport
+export const products_gdprExportSchema = z.object({
   id: z.number()
 });
-export const routers_gdprExportResponseSchema = z.object({
+export const products_gdprExportResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 

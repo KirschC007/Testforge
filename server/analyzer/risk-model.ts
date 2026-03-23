@@ -647,6 +647,7 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     cron_job: ["cron", "trigger", "release", "debug"],
     webhook: ["webhook", "callback", "event"],
     feature_gate: ["create", "series", "ai", "premium"],
+    e2e_flow: ["create", "submit", "book", "order", "register"],
   };
 
   const kws = keywords[proofType] || [];

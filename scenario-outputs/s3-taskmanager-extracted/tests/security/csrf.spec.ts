@@ -12,13 +12,13 @@ test.beforeAll(async ({ request }) => {
 // PROOF-B-001-CSRF — CSRF: Create must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create tasks
 
 test("PROOF-B-001-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.create`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.create`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -38,10 +38,10 @@ test("PROOF-B-001-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.create
+  // Kills: Remove CSRF middleware from tasks.create
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["title"] === uniqueTitle
@@ -55,7 +55,7 @@ test("PROOF-B-001-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.create`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.create`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -81,13 +81,13 @@ test("PROOF-B-001-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-004-CSRF — CSRF: Update must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Update routers
+// Behavior: Update tasks
 
 test("PROOF-B-004-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.update`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.update`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -108,10 +108,10 @@ test("PROOF-B-004-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.update
+  // Kills: Remove CSRF middleware from tasks.update
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["title"] === uniqueTitle
@@ -125,7 +125,7 @@ test("PROOF-B-004-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.update`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.update`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -152,13 +152,13 @@ test("PROOF-B-004-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-005-CSRF — CSRF: Update must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Update routers
+// Behavior: Update tasks
 
 test("PROOF-B-005-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.updateStatus`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.updateStatus`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -173,10 +173,10 @@ test("PROOF-B-005-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.updateStatus
+  // Kills: Remove CSRF middleware from tasks.updateStatus
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["id"] === uniqueTitle
@@ -190,7 +190,7 @@ test("PROOF-B-005-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.updateStatus`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.updateStatus`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -211,13 +211,13 @@ test("PROOF-B-005-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-006-CSRF — CSRF: Delete must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Delete routers
+// Behavior: Delete tasks
 
 test("PROOF-B-006-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.delete`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.delete`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -231,10 +231,10 @@ test("PROOF-B-006-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.delete
+  // Kills: Remove CSRF middleware from tasks.delete
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["id"] === uniqueTitle
@@ -248,7 +248,7 @@ test("PROOF-B-006-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.delete`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.delete`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -268,13 +268,13 @@ test("PROOF-B-006-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-007-CSRF — CSRF: Bulk operation on must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Bulk operation on routers
+// Behavior: Bulk operation on tasks
 
 test("PROOF-B-007-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.bulkDelete`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.bulkDelete`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -288,10 +288,10 @@ test("PROOF-B-007-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.bulkDelete
+  // Kills: Remove CSRF middleware from tasks.bulkDelete
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["taskIds"] === uniqueTitle
@@ -305,7 +305,7 @@ test("PROOF-B-007-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.bulkDelete`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.bulkDelete`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -325,13 +325,13 @@ test("PROOF-B-007-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-008-CSRF — CSRF: Bulk operation on must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Bulk operation on routers
+// Behavior: Bulk operation on tasks
 
 test("PROOF-B-008-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.bulkUpdateStatus`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.bulkUpdateStatus`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -346,10 +346,10 @@ test("PROOF-B-008-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.bulkUpdateStatus
+  // Kills: Remove CSRF middleware from tasks.bulkUpdateStatus
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["taskIds"] === uniqueTitle
@@ -363,7 +363,7 @@ test("PROOF-B-008-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.bulkUpdateStatus`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.bulkUpdateStatus`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -384,13 +384,13 @@ test("PROOF-B-008-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-009-CSRF — CSRF: Create must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create tasks
 
 test("PROOF-B-009-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.create`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.create`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -410,10 +410,10 @@ test("PROOF-B-009-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.create
+  // Kills: Remove CSRF middleware from tasks.create
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["title"] === uniqueTitle
@@ -427,7 +427,7 @@ test("PROOF-B-009-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.create`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.create`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -453,13 +453,13 @@ test("PROOF-B-009-CSRFb — POST with valid CSRF token succeeds", async ({ reque
 // PROOF-B-011-CSRF — CSRF: Delete must be CSRF-protected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Delete routers
+// Behavior: Delete tasks
 
 test("PROOF-B-011-CSRFa — POST without CSRF token is rejected (no DB write)", async ({ request }) => {
   // Use a unique sentinel value to detect any DB write
   const uniqueTitle = `CSRF-Test-${Date.now()}`;
   // Send request WITHOUT X-CSRF-Token header
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.delete`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.delete`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,
@@ -473,10 +473,10 @@ test("PROOF-B-011-CSRFa — POST without CSRF token is rejected (no DB write)", 
     },
   });
   expect(res.status()).toBe(403);
-  // Kills: Remove CSRF middleware from routers.delete
+  // Kills: Remove CSRF middleware from tasks.delete
   // Kills: Accept requests without CSRF token
   // DB-Check: verify no record was written despite 403
-  const { data: list } = await trpcQuery(request, "routers.list",
+  const { data: list } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const leaked = (list as Array<Record<string, unknown>>)?.find(
     r => (r as Record<string, unknown>)["id"] === uniqueTitle
@@ -490,7 +490,7 @@ test("PROOF-B-011-CSRFb — POST with valid CSRF token succeeds", async ({ reque
   expect(typeof csrfToken).toBe("string");
   expect(csrfToken.length).toBeGreaterThanOrEqual(16);
   // Kills: Accept any token value without validation
-  const res = await request.post(`${BASE_URL}/api/trpc/routers.delete`, {
+  const res = await request.post(`${BASE_URL}/api/trpc/tasks.delete`, {
     headers: {
       "Content-Type": "application/json",
       "Cookie": adminCookie,

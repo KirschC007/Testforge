@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { trpcMutation, trpcQuery } from "../../helpers/api";
 import { getAdminCookie } from "../../helpers/auth";
-import { TEST_WORKSPACE_ID, createTestResource } from "../../helpers/factories";
+import { TEST_SHOP_ID, createTestResource } from "../../helpers/factories";
 
 let adminCookie: string;
 
@@ -21,14 +21,14 @@ test("PROOF-B-015-DSGVOa — All records permanently deleted after GDPR deletion
   expect(resourceId).toBeDefined();
 
   // Execute GDPR deletion
-  const { status } = await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
   expect(status).toBe(200);
   // Kills: Skip name anonymization in GDPR delete handler
 
   // Verify deletion result
-  const { data: afterDeletion } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterDeletion } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   // Hard-delete: record must be completely gone
   const deletedRecord = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(deletedRecord).toBeUndefined();
@@ -41,12 +41,12 @@ test("PROOF-B-015-DSGVOb — Hard-delete is irreversible", async ({ request }) =
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
 
-  await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
 
   // Hard-delete: record must NOT be recoverable
-  const { data: afterHardDelete } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterHardDelete } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   const recovered = (afterHardDelete as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(recovered).toBeUndefined();
   // Kills: Allow recovery of hard-deleted records
@@ -64,14 +64,14 @@ test("PROOF-B-016-DSGVOa — All records permanently deleted after GDPR deletion
   expect(resourceId).toBeDefined();
 
   // Execute GDPR deletion
-  const { status } = await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
   expect(status).toBe(200);
   // Kills: Skip name anonymization in GDPR delete handler
 
   // Verify deletion result
-  const { data: afterDeletion } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterDeletion } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   // Hard-delete: record must be completely gone
   const deletedRecord = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(deletedRecord).toBeUndefined();
@@ -84,12 +84,12 @@ test("PROOF-B-016-DSGVOb — Hard-delete is irreversible", async ({ request }) =
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
 
-  await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
 
   // Hard-delete: record must NOT be recoverable
-  const { data: afterHardDelete } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterHardDelete } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   const recovered = (afterHardDelete as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(recovered).toBeUndefined();
   // Kills: Allow recovery of hard-deleted records
@@ -107,14 +107,14 @@ test("PROOF-B-017-DSGVOa — All records permanently deleted after GDPR deletion
   expect(resourceId).toBeDefined();
 
   // Execute GDPR deletion
-  const { status } = await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
   expect(status).toBe(200);
   // Kills: Skip name anonymization in GDPR delete handler
 
   // Verify deletion result
-  const { data: afterDeletion } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterDeletion } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   // Hard-delete: record must be completely gone
   const deletedRecord = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(deletedRecord).toBeUndefined();
@@ -127,12 +127,12 @@ test("PROOF-B-017-DSGVOb — Hard-delete is irreversible", async ({ request }) =
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
 
-  await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
 
   // Hard-delete: record must NOT be recoverable
-  const { data: afterHardDelete } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterHardDelete } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   const recovered = (afterHardDelete as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(recovered).toBeUndefined();
   // Kills: Allow recovery of hard-deleted records
@@ -150,14 +150,14 @@ test("PROOF-B-018-DSGVOa — All records permanently deleted after GDPR deletion
   expect(resourceId).toBeDefined();
 
   // Execute GDPR deletion
-  const { status } = await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
   expect(status).toBe(200);
   // Kills: Skip name anonymization in GDPR delete handler
 
   // Verify deletion result
-  const { data: afterDeletion } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterDeletion } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   // Hard-delete: record must be completely gone
   const deletedRecord = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(deletedRecord).toBeUndefined();
@@ -170,12 +170,12 @@ test("PROOF-B-018-DSGVOb — Hard-delete is irreversible", async ({ request }) =
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
 
-  await trpcMutation(request, "routers.delete",
-    { id: resourceId, shopId: TEST_WORKSPACE_ID }, adminCookie);
+  await trpcMutation(request, "products.delete",
+    { id: resourceId, shopId: TEST_SHOP_ID }, adminCookie);
 
   // Hard-delete: record must NOT be recoverable
-  const { data: afterHardDelete } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID }, adminCookie);
+  const { data: afterHardDelete } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID }, adminCookie);
   const recovered = (afterHardDelete as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(recovered).toBeUndefined();
   // Kills: Allow recovery of hard-deleted records

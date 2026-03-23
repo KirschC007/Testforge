@@ -4,8 +4,8 @@
 import { trpcMutation, trpcQuery } from "./api";
 
 // Test tenant IDs — update these to match your test environment
-export const TEST_WORKSPACE_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
-export const TEST_WORKSPACE_B_ID = parseInt(process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
+export const TEST_SHOP_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
+export const TEST_SHOP_B_ID = parseInt(process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
 
 
 export interface CreateTestResourceOpts {
@@ -27,8 +27,8 @@ export async function createTestResource(
   cookieHeader: string,
   opts: CreateTestResourceOpts = {}
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcMutation(request, "routers.create", {
-    shopId: opts.shopId ?? TEST_WORKSPACE_ID,
+  const { data, error } = await trpcMutation(request, "products.create", {
+    shopId: opts.shopId ?? TEST_SHOP_ID,
     name: opts.name ?? "Test name-${Date.now()}",
     description: opts.description ?? "test-description-${Date.now()}",
     sku: opts.sku ?? "SKU-${Date.now()}",
@@ -51,8 +51,8 @@ export async function getResource(
   id: number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcQuery(request, "routers.getById",
-    { id, shopId: TEST_WORKSPACE_ID }, cookieHeader);
+  const { data, error } = await trpcQuery(request, "products.getById",
+    { id, shopId: TEST_SHOP_ID }, cookieHeader);
   if (error) throw new Error(`getResource failed: ${JSON.stringify(error)}`);
   return data as Record<string, unknown>;
 }
@@ -64,8 +64,8 @@ export async function listResources(
   cookieHeader: string,
   extra: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>[]> {
-  const { data } = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_ID, ...extra }, cookieHeader);
+  const { data } = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_ID, ...extra }, cookieHeader);
   return (data as Record<string, unknown>[]) ?? [];
 }
 
@@ -76,8 +76,8 @@ export async function getResourceByIdentifier(
   identifier: string | number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcQuery(request, "routers.getById",
-    { shopId: TEST_WORKSPACE_ID, id: identifier }, cookieHeader);
+  const { data, error } = await trpcQuery(request, "products.getById",
+    { shopId: TEST_SHOP_ID, id: identifier }, cookieHeader);
   if (error) throw new Error(`getResourceByIdentifier failed: ${JSON.stringify(error)}`);
   return data as Record<string, unknown>;
 }

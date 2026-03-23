@@ -28,13 +28,13 @@ export const TransactionSchema = z.object({
 }).passthrough();
 export type Transaction = z.infer<typeof TransactionSchema>;
 
-// Input schema for createAccount.create
-export const createAccount_createSchema = z.object({
+// Input schema for accounts.create
+export const accounts_createSchema = z.object({
   customerId: z.number(),
   accountType: z.enum(["checking", "savings", "loan"]),
   initialDeposit: z.number().min(0).max(1000000)
 });
-export const createAccount_createResponseSchema = z.object({
+export const accounts_createResponseSchema = z.object({
   id: z.unknown(),
   bankId: z.unknown(),
   customerId: z.unknown(),
@@ -45,12 +45,12 @@ export const createAccount_createResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for listAccounts.list
-export const listAccounts_listSchema = z.object({
+// Input schema for accounts.list
+export const accounts_listSchema = z.object({
   customerId: z.number().optional(),
   status: z.enum(["active", "frozen", "closed"]).optional()
 });
-export const listAccounts_listResponseSchema = z.object({
+export const accounts_listResponseSchema = z.object({
   id: z.unknown(),
   bankId: z.unknown(),
   customerId: z.unknown(),
@@ -61,11 +61,11 @@ export const listAccounts_listResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for getAccount.list
-export const getAccount_listSchema = z.object({
-  id: z.string()
+// Input schema for accounts.getById
+export const accounts_getByIdSchema = z.object({
+  id: z.number()
 });
-export const getAccount_listResponseSchema = z.object({
+export const accounts_getByIdResponseSchema = z.object({
   id: z.unknown(),
   bankId: z.unknown(),
   customerId: z.unknown(),
@@ -76,15 +76,15 @@ export const getAccount_listResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for createTransaction.create
-export const createTransaction_createSchema = z.object({
+// Input schema for transactions.create
+export const transactions_createSchema = z.object({
   fromAccountId: z.number(),
   toAccountId: z.number(),
   amount: z.number().min(1).max(50000000),
   description: z.string().max(500).optional(),
   idempotencyKey: z.string().max(64)
 });
-export const createTransaction_createResponseSchema = z.object({
+export const transactions_createResponseSchema = z.object({
   id: z.unknown(),
   bankId: z.unknown(),
   fromAccountId: z.unknown(),
@@ -95,12 +95,12 @@ export const createTransaction_createResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for updateTransactionStatus.update
-export const updateTransactionStatus_updateSchema = z.object({
-  id: z.string(),
+// Input schema for transactions.status
+export const transactions_statusSchema = z.object({
+  id: z.number(),
   status: z.enum(["processing", "completed", "failed", "reversed"])
 });
-export const updateTransactionStatus_updateResponseSchema = z.object({
+export const transactions_statusResponseSchema = z.object({
   id: z.unknown(),
   bankId: z.unknown(),
   fromAccountId: z.unknown(),
@@ -111,8 +111,8 @@ export const updateTransactionStatus_updateResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for listTransactions.list
-export const listTransactions_listSchema = z.object({
+// Input schema for transactions.list
+export const transactions_listSchema = z.object({
   accountId: z.number().optional(),
   status: z.enum(["pending", "processing", "completed", "failed", "reversed"]).optional(),
   fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.string().datetime({ offset: true })).optional(),
@@ -120,7 +120,7 @@ export const listTransactions_listSchema = z.object({
   page: z.number().min(1).optional(),
   pageSize: z.number().min(1).max(100).optional()
 });
-export const listTransactions_listResponseSchema = z.object({
+export const transactions_listResponseSchema = z.object({
   id: z.unknown(),
   bankId: z.unknown(),
   fromAccountId: z.unknown(),
@@ -131,56 +131,54 @@ export const listTransactions_listResponseSchema = z.object({
   createdAt: z.unknown()
 }).passthrough();
 
-// Input schema for closeAccount.delete
-export const closeAccount_deleteSchema = z.object({
-  id: z.string()
+// Input schema for accounts.delete
+export const accounts_deleteSchema = z.object({
+  id: z.number()
 });
-export const closeAccount_deleteResponseSchema = z.object({
+export const accounts_deleteResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for freezeAccount.create
-export const freezeAccount_createSchema = z.object({
-  id: z.string(),
-  reason: z.string().max(500)
+// Input schema for accounts.freeze
+export const accounts_freezeSchema = z.object({
+  id: z.number(),
+  reason: z.string().max(500).optional()
 });
-export const freezeAccount_createResponseSchema = z.object({
+export const accounts_freezeResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for unfreezeAccount.create
-export const unfreezeAccount_createSchema = z.object({
-  id: z.string()
+// Input schema for accounts.unfreeze
+export const accounts_unfreezeSchema = z.object({
+  id: z.number()
 });
-export const unfreezeAccount_createResponseSchema = z.object({
+export const accounts_unfreezeResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for anonymizeCustomerGDPR.delete
-export const anonymizeCustomerGDPR_deleteSchema = z.object({
-  id: z.string()
+// Input schema for customers.gdpr
+export const customers_gdprSchema = z.object({
+  id: z.number()
 });
-export const anonymizeCustomerGDPR_deleteResponseSchema = z.object({
+export const customers_gdprResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for exportCustomerGDPR.list
-export const exportCustomerGDPR_listSchema = z.object({
-  id: z.string()
+// Input schema for customers.getById
+export const customers_getByIdSchema = z.object({
+  id: z.number()
 });
-export const exportCustomerGDPR_listResponseSchema = z.object({
+export const customers_getByIdResponseSchema = z.object({
   id: z.number().or(z.string())
 }).passthrough();
 
-// Input schema for subscribeWebhook.create
-export const subscribeWebhook_createSchema = z.object({
+// Input schema for webhooks.subscribe
+export const webhooks_subscribeSchema = z.object({
   url: z.string(),
   events: z.array(z.unknown())
 });
-export const subscribeWebhook_createResponseSchema = z.object({
-  id: z.unknown(),
-  url: z.unknown(),
-  events: z.unknown()
+export const webhooks_subscribeResponseSchema = z.object({
+  id: z.number().or(z.string())
 }).passthrough();
 
 // Validate helper — throws on schema mismatch

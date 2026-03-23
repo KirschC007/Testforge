@@ -21,13 +21,13 @@ test("PROOF-B-012-DSGVOa — All records permanently deleted after GDPR deletion
   expect(resourceId).toBeDefined();
 
   // Execute GDPR deletion
-  const { status } = await trpcMutation(request, "routers.delete",
+  const { status } = await trpcMutation(request, "tasks.delete",
     { id: resourceId, workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   expect(status).toBe(200);
   // Kills: Skip name anonymization in GDPR delete handler
 
   // Verify deletion result
-  const { data: afterDeletion } = await trpcQuery(request, "routers.list",
+  const { data: afterDeletion } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   // Hard-delete: record must be completely gone
   const deletedRecord = (afterDeletion as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
@@ -41,11 +41,11 @@ test("PROOF-B-012-DSGVOb — Hard-delete is irreversible", async ({ request }) =
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   const resourceId = resource.id as number;
 
-  await trpcMutation(request, "routers.delete",
+  await trpcMutation(request, "tasks.delete",
     { id: resourceId, workspaceId: TEST_WORKSPACE_ID }, adminCookie);
 
   // Hard-delete: record must NOT be recoverable
-  const { data: afterHardDelete } = await trpcQuery(request, "routers.list",
+  const { data: afterHardDelete } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID }, adminCookie);
   const recovered = (afterHardDelete as Array<Record<string, unknown>>)?.find(r => r.id === resourceId);
   expect(recovered).toBeUndefined();

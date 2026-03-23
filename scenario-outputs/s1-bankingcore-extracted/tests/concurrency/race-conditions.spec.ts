@@ -6,7 +6,7 @@ import { TEST_BANK_ID } from "../../helpers/factories";
 // Proof: PROOF-B-014-CONCURRENCY
 // Behavior: Initial deposit is added to balance atomically
 // Risk: high
-// Kills: Remove mutex/lock around is added to in createAccount.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for balance atomically update
+// Kills: Remove mutex/lock around adds in accounts.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for initialDeposit to balance update
 
 function basePayload_PROOF_B_014_CONCURRENCY() {
   return {
@@ -24,12 +24,12 @@ test.describe("Concurrency: Initial deposit is added to balance atomically", () 
     cookie = await getAdminCookie(request);
   });
 
-  test("concurrent is added to requests must not cause race conditions", async ({ request }) => {
+  test("concurrent adds requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createAccount.create", basePayload_PROOF_B_014_CONCURRENCY(), cookie)
+        trpcMutation(request, "accounts.create", basePayload_PROOF_B_014_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -42,11 +42,11 @@ test.describe("Concurrency: Initial deposit is added to balance atomically", () 
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent is added to must not create duplicate balance atomicallys", async ({ request }) => {
+  test("concurrent adds must not create duplicate initialDeposit to balances", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createAccount.create", basePayload_PROOF_B_014_CONCURRENCY(), cookie)
+        trpcMutation(request, "accounts.create", basePayload_PROOF_B_014_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -59,15 +59,15 @@ test.describe("Concurrency: Initial deposit is added to balance atomically", () 
     }
   });
 
-  test("system remains consistent after concurrent is added to", async ({ request }) => {
+  test("system remains consistent after concurrent adds", async ({ request }) => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "createAccount.create", basePayload_PROOF_B_014_CONCURRENCY(), cookie)
+        trpcMutation(request, "accounts.create", basePayload_PROOF_B_014_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "createAccount.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "accounts.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
@@ -84,9 +84,9 @@ test.describe("Concurrency: Initial deposit is added to balance atomically", () 
 });
 
 // Proof: PROOF-B-018-CONCURRENCY
-// Behavior: POST /api/accounts returns 400 for invalid initialDeposit range
+// Behavior: POST /api/accounts returns 400 for invalid initialDeposit
 // Risk: medium
-// Kills: Remove mutex/lock around returns 400 INVALID_DEPOSIT in createAccount.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for if initialDeposit is out of range update
+// Kills: Remove mutex/lock around returns 400 in accounts.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for response update
 
 function basePayload_PROOF_B_018_CONCURRENCY() {
   return {
@@ -97,19 +97,19 @@ function basePayload_PROOF_B_018_CONCURRENCY() {
   };
 }
 
-test.describe("Concurrency: POST /api/accounts returns 400 for invalid initialDeposit range", () => {
+test.describe("Concurrency: POST /api/accounts returns 400 for invalid initialDeposit", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
     cookie = await getAdminCookie(request);
   });
 
-  test("concurrent returns 400 INVALID_DEPOSIT requests must not cause race conditions", async ({ request }) => {
+  test("concurrent returns 400 requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createAccount.create", basePayload_PROOF_B_018_CONCURRENCY(), cookie)
+        trpcMutation(request, "accounts.create", basePayload_PROOF_B_018_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -122,11 +122,11 @@ test.describe("Concurrency: POST /api/accounts returns 400 for invalid initialDe
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent returns 400 INVALID_DEPOSIT must not create duplicate if initialDeposit is out of ranges", async ({ request }) => {
+  test("concurrent returns 400 must not create duplicate responses", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createAccount.create", basePayload_PROOF_B_018_CONCURRENCY(), cookie)
+        trpcMutation(request, "accounts.create", basePayload_PROOF_B_018_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -139,15 +139,15 @@ test.describe("Concurrency: POST /api/accounts returns 400 for invalid initialDe
     }
   });
 
-  test("system remains consistent after concurrent returns 400 INVALID_DEPOSIT", async ({ request }) => {
+  test("system remains consistent after concurrent returns 400", async ({ request }) => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "createAccount.create", basePayload_PROOF_B_018_CONCURRENCY(), cookie)
+        trpcMutation(request, "accounts.create", basePayload_PROOF_B_018_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "createAccount.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "accounts.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
@@ -164,9 +164,9 @@ test.describe("Concurrency: POST /api/accounts returns 400 for invalid initialDe
 });
 
 // Proof: PROOF-B-029-CONCURRENCY
-// Behavior: POST /api/transactions rejects cross-bank transfers
+// Behavior: POST /api/transactions returns 403 if fromAccountId and toAccountId are not in same bank
 // Risk: critical
-// Kills: Remove mutex/lock around returns 403 CROSS_BANK_TRANSFER in createTransaction.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for if fromAccountId and toAccountId belong to different bankId update
+// Kills: Remove mutex/lock around returns 403 in transactions.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for response update
 
 function basePayload_PROOF_B_029_CONCURRENCY() {
   return {
@@ -179,19 +179,19 @@ function basePayload_PROOF_B_029_CONCURRENCY() {
   };
 }
 
-test.describe("Concurrency: POST /api/transactions rejects cross-bank transfers", () => {
+test.describe("Concurrency: POST /api/transactions returns 403 if fromAccountId and toAccountId are not in same bank", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
     cookie = await getAdminCookie(request);
   });
 
-  test("concurrent returns 403 CROSS_BANK_TRANSFER requests must not cause race conditions", async ({ request }) => {
+  test("concurrent returns 403 requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_029_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_029_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -204,11 +204,11 @@ test.describe("Concurrency: POST /api/transactions rejects cross-bank transfers"
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent returns 403 CROSS_BANK_TRANSFER must not create duplicate if fromAccountId and toAccountId belong to different bankIds", async ({ request }) => {
+  test("concurrent returns 403 must not create duplicate responses", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_029_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_029_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -221,15 +221,15 @@ test.describe("Concurrency: POST /api/transactions rejects cross-bank transfers"
     }
   });
 
-  test("system remains consistent after concurrent returns 403 CROSS_BANK_TRANSFER", async ({ request }) => {
+  test("system remains consistent after concurrent returns 403", async ({ request }) => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_029_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_029_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "createTransaction.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "transactions.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
@@ -248,7 +248,7 @@ test.describe("Concurrency: POST /api/transactions rejects cross-bank transfers"
 // Proof: PROOF-B-031-CONCURRENCY
 // Behavior: Amount is deducted from fromAccount and credited to toAccount atomically
 // Risk: high
-// Kills: Remove mutex/lock around is deducted from fromAccount and credited to toAccount in createTransaction.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for atomically update
+// Kills: Remove mutex/lock around deducts and credits amount in transactions.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for accounts update
 
 function basePayload_PROOF_B_031_CONCURRENCY() {
   return {
@@ -268,12 +268,12 @@ test.describe("Concurrency: Amount is deducted from fromAccount and credited to 
     cookie = await getAdminCookie(request);
   });
 
-  test("concurrent is deducted from fromAccount and credited to toAccount requests must not cause race conditions", async ({ request }) => {
+  test("concurrent deducts and credits amount requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_031_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_031_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -286,11 +286,11 @@ test.describe("Concurrency: Amount is deducted from fromAccount and credited to 
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent is deducted from fromAccount and credited to toAccount must not create duplicate atomicallys", async ({ request }) => {
+  test("concurrent deducts and credits amount must not create duplicate accountss", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_031_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_031_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -303,15 +303,15 @@ test.describe("Concurrency: Amount is deducted from fromAccount and credited to 
     }
   });
 
-  test("system remains consistent after concurrent is deducted from fromAccount and credited to toAccount", async ({ request }) => {
+  test("system remains consistent after concurrent deducts and credits amount", async ({ request }) => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_031_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_031_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "createTransaction.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "transactions.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
@@ -328,9 +328,9 @@ test.describe("Concurrency: Amount is deducted from fromAccount and credited to 
 });
 
 // Proof: PROOF-B-033-CONCURRENCY
-// Behavior: POST /api/transactions returns 400 for same account transfer
+// Behavior: POST /api/transactions returns 400 if fromAccountId equals toAccountId
 // Risk: medium
-// Kills: Remove mutex/lock around returns 400 SAME_ACCOUNT in createTransaction.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for if fromAccountId equals toAccountId update
+// Kills: Remove mutex/lock around returns 400 in transactions.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for response update
 
 function basePayload_PROOF_B_033_CONCURRENCY() {
   return {
@@ -343,19 +343,19 @@ function basePayload_PROOF_B_033_CONCURRENCY() {
   };
 }
 
-test.describe("Concurrency: POST /api/transactions returns 400 for same account transfer", () => {
+test.describe("Concurrency: POST /api/transactions returns 400 if fromAccountId equals toAccountId", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
     cookie = await getAdminCookie(request);
   });
 
-  test("concurrent returns 400 SAME_ACCOUNT requests must not cause race conditions", async ({ request }) => {
+  test("concurrent returns 400 requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_033_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_033_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -368,11 +368,11 @@ test.describe("Concurrency: POST /api/transactions returns 400 for same account 
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent returns 400 SAME_ACCOUNT must not create duplicate if fromAccountId equals toAccountIds", async ({ request }) => {
+  test("concurrent returns 400 must not create duplicate responses", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_033_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_033_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -385,15 +385,15 @@ test.describe("Concurrency: POST /api/transactions returns 400 for same account 
     }
   });
 
-  test("system remains consistent after concurrent returns 400 SAME_ACCOUNT", async ({ request }) => {
+  test("system remains consistent after concurrent returns 400", async ({ request }) => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "createTransaction.create", basePayload_PROOF_B_033_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.create", basePayload_PROOF_B_033_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "createTransaction.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "transactions.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
@@ -412,11 +412,11 @@ test.describe("Concurrency: POST /api/transactions returns 400 for same account 
 // Proof: PROOF-B-045-CONCURRENCY
 // Behavior: Reversed transaction restores original balance
 // Risk: high
-// Kills: Remove mutex/lock around restores in updateTransactionStatus.update | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for original balance update
+// Kills: Remove mutex/lock around restores balance in transactions.status | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for accounts update
 
 function basePayload_PROOF_B_045_CONCURRENCY() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
     status: "processing",
   };
 }
@@ -428,12 +428,12 @@ test.describe("Concurrency: Reversed transaction restores original balance", () 
     cookie = await getAdminCookie(request);
   });
 
-  test("concurrent restores requests must not cause race conditions", async ({ request }) => {
+  test("concurrent restores balance requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "updateTransactionStatus.update", basePayload_PROOF_B_045_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.status", basePayload_PROOF_B_045_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -446,11 +446,11 @@ test.describe("Concurrency: Reversed transaction restores original balance", () 
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent restores must not create duplicate original balances", async ({ request }) => {
+  test("concurrent restores balance must not create duplicate accountss", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "updateTransactionStatus.update", basePayload_PROOF_B_045_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.status", basePayload_PROOF_B_045_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -463,15 +463,15 @@ test.describe("Concurrency: Reversed transaction restores original balance", () 
     }
   });
 
-  test("system remains consistent after concurrent restores", async ({ request }) => {
+  test("system remains consistent after concurrent restores balance", async ({ request }) => {
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "updateTransactionStatus.update", basePayload_PROOF_B_045_CONCURRENCY(), cookie)
+        trpcMutation(request, "transactions.status", basePayload_PROOF_B_045_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)
-    const listResponse = await trpcQuery(request, "updateTransactionStatus.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "transactions.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);

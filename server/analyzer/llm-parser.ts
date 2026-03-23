@@ -257,29 +257,109 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     }
     return String(f);
   });
-  // Normalize endpoint names: LLM may return "POST /api/accounts" — convert to "accounts.create"
-  const normalizeEndpointName = (name: string, method?: string): string => {
-    // Already dot-notation (e.g. "accounts.create", "tasks.list") — keep as-is
-    if (/^[a-z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(name)) return name;
-    // REST pattern: "POST /api/accounts" or "GET /api/accounts/:id"
-    const restMatch = name.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(.+)$/i);
-    const httpMethod = restMatch ? restMatch[1].toUpperCase() : (method || "").toUpperCase();
-    const path = restMatch ? restMatch[2] : name;
-    // Strip /api/ prefix, split segments, ignore path params
-    const segments = path.replace(/^\/api\//, "").split("/").filter(s => s && !s.startsWith(":") && !s.startsWith("{"));
-    if (segments.length === 0) return name;
-    const resource = segments[0];
-    const subAction = segments.length > 1 ? segments[segments.length - 1] : null;
-    const hasIdParam = path.includes(":") || path.includes("{");
-    const methodMap: Record<string, string> = {
-      GET: hasIdParam ? "getById" : "list",
-      POST: subAction || "create",
-      PUT: subAction || "update",
-      PATCH: subAction || "update",
-      DELETE: subAction || "delete",
-    };
-    const verb = methodMap[httpMethod] || (subAction || "call");
-    return `${resource}.${verb}`;
+  // Normalize endpoint names: exact implementation from v4.0 briefing
+  // Handles: camelCase verb-resource patterns, duplicate-verb patterns, REST paths
+  const normalizeEndpointName = (raw: string, method?: string): string => {
+    // Already correct: simple resource.action dot-notation
+    const simpleResource = /^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/;
+    if (simpleResource.test(raw)) return raw;
+
+    // Pattern: "createAccount.create" → verb-duplicate → "accounts.create"
+    const dupMatch = raw.match(/^(create|list|get|update|delete|find|add|remove)([A-Z]\w*)\.(\1)$/i);
+    if (dupMatch) {
+      const resource = dupMatch[2].toLowerCase().replace(/^([a-z]+)$/, m => m.endsWith("s") ? m : m + "s");
+      return `${resource}.${dupMatch[1].toLowerCase()}`;
+    }
+
+    // Pattern: dot-notation with camelCase left side: "createAccount.create", "listAccounts.list"
+    if (/^[a-z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(raw)) {
+      const [left, right] = raw.split(".");
+      const verbs = ["create", "list", "get", "update", "delete", "add", "remove", "find", "fetch",
+        "patch", "set", "freeze", "unfreeze", "cancel", "approve", "reject", "complete", "archive",
+        "send", "export", "import", "anonymize", "void", "mark", "close", "open", "start", "stop",
+        "pause", "resume", "skip", "scan"];
+      const matchedVerb = verbs.find(v => left.toLowerCase().startsWith(v) && left.length > v.length);
+      if (matchedVerb) {
+        const resourceRaw = left.slice(matchedVerb.length);
+        const resourceBase = resourceRaw
+          .replace(/([A-Z][a-z]+)/g, (m) => m.toLowerCase() + "-")
+          .replace(/-+$/, "")
+          .split("-")[0];
+        const resource = resourceBase.endsWith("s") ? resourceBase : resourceBase + "s";
+        let action = right;
+        const extraSuffix = resourceRaw.includes("-") ? resourceRaw.split("-").slice(1).join("") : "";
+        if (extraSuffix && extraSuffix.toLowerCase() !== "s") {
+          action = right + extraSuffix.charAt(0).toUpperCase() + extraSuffix.slice(1).toLowerCase();
+        }
+        if (resourceRaw.toUpperCase().includes("GDPR")) {
+          action = "gdpr" + right.charAt(0).toUpperCase() + right.slice(1);
+        }
+        return `${resource}.${action}`;
+      }
+      return raw;
+    }
+
+    // Pattern: pure camelCase without dot: "createAccount" → "accounts.create"
+    const verbFirst = raw.match(/^(create|list|get|find|update|patch|delete|remove|close|freeze|unfreeze|cancel|approve|reject|complete|archive|anonymize|export|send|mark)([A-Z]\w*)$/);
+    if (verbFirst) {
+      const verb = verbFirst[1].toLowerCase();
+      let resource = verbFirst[2]
+        .replace(/GDPR|Gdpr|ById|ByPhone|ByEmail|Status$/g, "")
+        .replace(/^[A-Z]/, c => c.toLowerCase());
+      resource = resource.endsWith("s") ? resource : resource + "s";
+      const verbMap: Record<string, string> = {
+        create: "create", add: "create",
+        list: "list", find: "list",
+        get: "getById", fetch: "getById",
+        update: "update", patch: "update",
+        delete: "delete", remove: "delete", close: "delete",
+      };
+      const action = verbMap[verb] || verb;
+      if (verbFirst[2].includes("Status")) return `${resource}.updateStatus`;
+      if (verbFirst[2].toUpperCase().includes("GDPR")) return `${resource}.gdprDelete`;
+      return `${resource}.${action}`;
+    }
+
+    // REST pattern: "POST /api/accounts" or "GET /api/accounts/:id/freeze"
+    if (method) {
+      const pathMatch = method.match(/(GET|POST|PUT|PATCH|DELETE)\s+\/api\/(?:v\d+\/)?([\w-]+)/i);
+      if (pathMatch) {
+        const resource = pathMatch[2].toLowerCase();
+        const httpVerb = pathMatch[1].toUpperCase();
+        const path = method.toLowerCase();
+        const actionMatch = path.match(/\/([a-z][a-z0-9_]*)$/);
+        const lastSegment = actionMatch?.[1];
+        if (lastSegment && !lastSegment.startsWith(":") && lastSegment !== resource && lastSegment !== "id") {
+          return `${resource}.${lastSegment}`;
+        }
+        const map: Record<string, string> = { GET: "list", POST: "create", PUT: "update", PATCH: "update", DELETE: "delete" };
+        if (path.includes(":id") || path.includes("{id}")) return `${resource}.${httpVerb === "GET" ? "getById" : map[httpVerb]}`;
+        return `${resource}.${map[httpVerb] || "call"}`;
+      }
+    }
+
+    // REST pattern in name itself
+    const restMatch = raw.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(.+)$/i);
+    if (restMatch) {
+      const httpMethod = restMatch[1].toUpperCase();
+      const path = restMatch[2];
+      const segments = path.replace(/^\/api\//, "").split("/").filter(s => s && !s.startsWith(":") && !s.startsWith("{"));
+      if (segments.length > 0) {
+        const resource = segments[0];
+        const subAction = segments.length > 1 ? segments[segments.length - 1] : null;
+        const hasIdParam = path.includes(":") || path.includes("{");
+        const methodMap: Record<string, string> = {
+          GET: hasIdParam ? "getById" : "list",
+          POST: subAction || "create",
+          PUT: subAction || "update",
+          PATCH: subAction || "update",
+          DELETE: subAction || "delete",
+        };
+        return `${resource}.${methodMap[httpMethod] || subAction || "call"}`;
+      }
+    }
+
+    return raw;
   };
 
   merged.apiEndpoints = merged.apiEndpoints.map(e => ({

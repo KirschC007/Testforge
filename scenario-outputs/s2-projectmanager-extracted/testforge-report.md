@@ -1,89 +1,89 @@
 # TestForge Report v3.0 — ProjectManager
 
-Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
+Generated: 2026-03-23 15:50:18 | Spec Type: api-spec | Quality Score: 7.0/10.0
 
 ## Verdict
 
-**126/126 proofs passed validation (score: 10.0/10.0)**
+**124/124 proofs passed validation (score: 10.0/10.0)**
 
 | Metric | Value |
 |---|---|
 | Verdict Score | 10.0/10.0 |
-| Behaviors Extracted | 107 |
-| API Endpoints Discovered | 13 |
-| Coverage | 77% (82/107) |
-| Validated Proofs | 126 |
+| Behaviors Extracted | 106 |
+| API Endpoints Discovered | 18 |
+| Coverage | 75% (80/106) |
+| Validated Proofs | 124 |
 | Discarded Proofs | 0 |
-| IDOR Attack Vectors | 9 |
+| IDOR Attack Vectors | 7 |
 | CSRF Endpoints | 4 |
 
 ## LLM Checker Results
 
 | Verdict | Count |
 |---|---|
-| ✅ Approved | 107 |
-| ⚠️ Flagged | 0 |
+| ✅ Approved | 105 |
+| ⚠️ Flagged | 1 |
 | ❌ Rejected (hallucinated) | 0 |
-| Avg Confidence | 99% |
+| Avg Confidence | 98% |
 
 ## Risk Distribution
 
 | Level | Count |
 |---|---|
-| 🔴 Critical | 44 |
-| 🟠 High | 34 |
-| 🟡 Medium | 9 |
-| 🟢 Low | 20 |
+| 🔴 Critical | 45 |
+| 🟠 High | 32 |
+| 🟡 Medium | 11 |
+| 🟢 Low | 18 |
 
 ## Ambiguity Gate
 
-### B-010 — ⚠ Reduces Confidence
-**Problem:** The spec states 'full access' for owner role but then lists specific permissions. It's unclear if 'full access' implies more than just deleting workspace and managing billing, or if those are the only additional owner-specific permissions.
-**Question:** What does 'full access' for the owner role specifically entail beyond deleting workspaces and managing billing? Are there other implicit permissions?
+### B-008 — ⚠ Reduces Confidence
+**Problem:** The spec states 'full access' for owner but doesn't explicitly define what 'full access' entails beyond deleting workspaces and managing billing. It's unclear if 'full access' implies all permissions of other roles or additional, unlisted permissions.
+**Question:** What specific actions are included in 'full access' for the 'owner' role? Does it encompass all permissions of admin, member, and viewer roles?
 
-### B-020 — ⚠ Reduces Confidence
-**Problem:** The spec for POST /api/projects states 'Authorization: owner, admin, or member'. However, the previous overview states 'Users belong to one or more workspaces'. It's not explicitly stated how the system determines which workspace a 'member' is authorized to create a project in if they belong to multiple.
-**Question:** If a user is a 'member' of multiple workspaces, which workspace are they authorized to create a project in when using POST /api/projects? Is it based on the JWT's workspaceId, or can they specify any workspace they are a member of?
+### B-012 — ⚠ Reduces Confidence
+**Problem:** The mechanism for 'explicitly shared' projects with guests is not defined. It's unclear how a project is shared, who can share it, and if there are different levels of guest access (e.g., read-only, comment-only).
+**Question:** How are projects explicitly shared with 'guest' users? What are the permissions granted to a guest on a shared project?
 
-### B-026 — ⚠ Reduces Confidence
-**Problem:** The spec says 'guest sees only shared projects' for GET /api/projects. It's not clear how a project is 'shared' with a guest. Is there a specific sharing mechanism or endpoint for this?
-**Question:** How are projects 'explicitly shared' with a guest? Is there an API for sharing, or is it an admin action not covered here?
+### B-019 — ⚠ Reduces Confidence
+**Problem:** The spec states `workspaceId` must match JWT `workspaceId` for POST /api/projects, but it's not explicitly stated for other endpoints that take `workspaceId` (e.g., GET /api/projects, GET /api/tasks, POST /api/comments, POST /api/time-entries). While 'Cross-workspace access returns 403' is mentioned generally, the specific check for the input `workspaceId` matching JWT `workspaceId` is only explicitly called out here.
+**Question:** Does the `workspaceId` input parameter for all endpoints (e.g., GET /api/projects, GET /api/tasks, POST /api/comments, POST /api/time-entries) also need to match the user's JWT `workspaceId`? Or is the general 'Cross-workspace access returns 403' sufficient for those?
 
-### B-030 — ⚠ Reduces Confidence
-**Problem:** Similar to B-026, the spec for GET /api/projects/:id states 'guest only if shared'. The mechanism for sharing projects with guests is not defined.
-**Question:** What is the process for sharing a specific project with a guest to allow access via GET /api/projects/:id?
+### B-022 — ⚠ Reduces Confidence
+**Problem:** The `search` input parameter for GET /api/projects is a string, but its behavior is not defined (e.g., what fields it searches, if it's case-sensitive, if it supports partial matches or wildcards).
+**Question:** How does the `search` parameter for GET /api/projects function? What fields does it search, and what kind of matching (e.g., exact, partial, case-insensitive) does it perform?
 
-### B-049 — ⚠ Reduces Confidence
-**Problem:** The authorization for PATCH /api/tasks/:id states 'member can only edit own tasks or tasks assigned to them'. It's not explicitly stated what happens if a member tries to edit a task that is neither 'own' nor 'assigned' to them, but belongs to their workspace.
-**Question:** If a member attempts to edit a task that is not 'own' and not 'assigned' to them, but is within their workspace, what is the expected error code? Is it a generic 403 or a more specific one like NOT_YOUR_TASK?
+### B-025 — ⚠ Reduces Confidence
+**Problem:** The behavior 'Cross-workspace access returns 403' for GET /api/projects is broad. It's unclear if this applies when the `workspaceId` query parameter is explicitly provided and doesn't match the JWT, or if it implies an implicit workspace context from the JWT that is always enforced.
+**Question:** When does 'Cross-workspace access returns 403' apply to GET /api/projects? Is it when the `workspaceId` query parameter is provided and doesn't match the user's JWT, or is it an implicit check based on the JWT's `workspaceId` regardless of query parameters?
 
-### B-050 — ⚠ Reduces Confidence
-**Problem:** The spec states 'member can only edit own tasks or tasks assigned to them'. 'Own tasks' implies `createdBy = userId`. 'Tasks assigned to them' implies `assigneeId = userId`. What if a member is `createdBy` but not `assigneeId`, or vice versa? The phrasing is a bit ambiguous if it's 'OR' or 'AND'.
-**Question:** Does 'member can only edit own tasks OR tasks assigned to them' mean they can edit tasks where (createdBy = userId) OR (assigneeId = userId)? Or is it a combination?
+### B-044 — ⚠ Reduces Confidence
+**Problem:** The `search` input parameter for GET /api/tasks is a string, but its behavior is not defined (e.g., what fields it searches, if it's case-sensitive, if it supports partial matches or wildcards).
+**Question:** How does the `search` parameter for GET /api/tasks function? What fields does it search, and what kind of matching (e.g., exact, partial, case-insensitive) does it perform?
 
-### B-062 — ⚠ Reduces Confidence
-**Problem:** The spec states 'Member can only delete own tasks (createdBy = userId)'. This is clear for deletion. However, for editing (B-050), it says 'own tasks OR tasks assigned to them'. This creates a discrepancy between edit and delete permissions for members.
-**Question:** Why is a member's ability to delete tasks restricted to 'own tasks' (`createdBy = userId`), while their ability to edit tasks extends to 'own tasks OR tasks assigned to them'? Is this an intentional difference in permission scope?
+### B-048 — ⚠ Reduces Confidence
+**Problem:** The definition of 'own tasks' and 'tasks assigned to them' for a member is clear, but the behavior for a member editing 'someone else's unassigned task' returning 403 NOT_YOUR_TASK implies a specific error code for this scenario. It's not explicitly stated what happens if a member tries to edit 'someone else's assigned task' (i.e., assigned to another member) or 'someone else's own task'.
+**Question:** What is the expected behavior (and error code) if a member attempts to edit a task that is assigned to another member, or a task created by another member but not assigned to anyone?
 
-### B-070 — ⚠ Reduces Confidence
-**Problem:** The authorization for POST /api/comments states 'guest can comment on shared projects'. Similar to B-026 and B-030, the mechanism for how projects are 'shared' with guests is not defined.
-**Question:** How are projects 'shared' with a guest to allow them to comment on tasks within those projects?
+### B-053 — ⚠ Reduces Confidence
+**Problem:** The 'Status machine rules apply' for PATCH /api/tasks/:id/status, but the specific HTTP status code or error message for an invalid transition is not defined. For example, if a user tries to move 'todo' to 'done'.
+**Question:** What is the specific HTTP status code and error message returned when an invalid task status transition is attempted?
 
-### B-099 — ⚠ Reduces Confidence
-**Problem:** The GDPR anonymization for email changes it to 'deleted_{id}@removed.local'. It's not specified which 'id' is used here (userId, workspaceId, or a new anonymization ID).
-**Question:** Which 'id' is used in the anonymized email format 'deleted_{id}@removed.local'?
+### B-061 — ⚠ Reduces Confidence
+**Problem:** The 'Status machine rules apply to each task individually' for bulk status updates, but it's not specified what happens if some tasks in the bulk request have valid transitions and others have invalid ones. The 'Atomic' rule says 'if any task fails validation, none are updated', which seems to contradict individual rule application if a valid task's update is rolled back due to another's invalidity.
+**Question:** If a bulk status update contains tasks with both valid and invalid status transitions, does the 'Atomic' rule (none are updated if any fail validation) apply to *any* validation failure (including state machine rules), or only to input validation for the `taskIds` or `status` parameters?
+
+### B-067 — ⚠ Reduces Confidence
+**Problem:** The behavior for guest commenting on shared projects is mentioned, but the definition of 'shared projects' for guests is not fully detailed. It's unclear if guest comments are limited to specific projects, or if they have full commenting abilities on any project they can view.
+**Question:** What are the specific conditions for a guest user to be able to comment on a project? Are there any limitations on their commenting abilities (e.g., only on certain tasks, or only if they have specific permissions on the shared project)?
+
+### B-072 — ⚠ Reduces Confidence
+**Problem:** The spec mentions 'time tracking' as a feature gate, but it doesn't explicitly state what happens if a user on a plan without time tracking attempts to use the /api/time-entries endpoint. B-096 partially addresses this for 'Free' plan users, but not for other plans.
+**Question:** What is the specific error message and HTTP status code if a user on a 'Pro' plan (which has time tracking) tries to log time but their workspace somehow doesn't have the 'time tracking' feature enabled (if that's possible)? Or if a 'Business' plan user tries to log time and fails due to a feature gate?
 
 ### B-103 — ⚠ Reduces Confidence
-**Problem:** The optimistic locking mechanism is mentioned ('first write wins (optimistic locking with `updatedAt` check)'). It's not explicitly stated what the client-side behavior should be if a write fails due to this, e.g., if a 409 Conflict is returned and the client needs to re-fetch and retry.
-**Question:** What is the expected error response (e.g., HTTP status code) when an optimistic locking conflict occurs for simultaneous task status updates? What is the recommended client-side handling for such a conflict?
-
-### B-104 — ⚠ Reduces Confidence
-**Problem:** The spec mentions a '5s grace period' for cascade delete to catch orphans. It's unclear what happens to the orphaned tasks during this 5-second window, e.g., are they still accessible, or are they immediately marked for deletion?
-**Question:** During the 5-second grace period for cascade delete, are orphaned tasks still temporarily accessible or are they immediately inaccessible/marked for deletion?
-
-### B-106 — ⚠ Reduces Confidence
-**Problem:** The spec states 'Time entry logged at 23:45 for 1 hour → ... counted as single entry on original date'. It's not explicitly stated how this affects daily hour limits. If a user logs 23.5 hours on Day 1, then logs 1 hour at 23:45 on Day 1, does the 1 hour count fully against Day 1's 24-hour limit, making it 24.5 hours and triggering a 422? Or is there a different calculation for entries crossing midnight?
-**Question:** How does a time entry spanning midnight (e.g., 23:45 for 1 hour) interact with the 'Cannot exceed 24 hours per user per day' rule? Is the entire duration counted against the start date's limit, potentially exceeding it, or is there a special handling for such cases?
+**Problem:** The '5s grace period' for catching orphaned tasks is mentioned, but the mechanism for this grace period and how orphans are detected and cleaned up is not detailed. It's also unclear if 'orphaned tasks' refers to tasks that were in the process of being created but whose parent project was deleted, or any task that loses its project reference.
+**Question:** What is the exact mechanism for the '5s grace period' and how are orphaned tasks detected and cleaned up? What defines an 'orphaned task' in this context?
 
 ## Validated Proofs
 
@@ -94,6 +94,36 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
 ### PROOF-B-001-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-002-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-008-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-008-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-009-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-009-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
@@ -123,8 +153,8 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-012-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
+### PROOF-B-012-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -135,26 +165,8 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-013-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-013-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-014-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-014-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
+### PROOF-B-013-CSRF — CSRF
+- **File:** `tests/security/csrf.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -171,56 +183,68 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-017-CSRF — CSRF
-- **File:** `tests/security/csrf.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-018-CSRF — CSRF
-- **File:** `tests/security/csrf.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-020-BL — BUSINESS_LOGIC
+### PROOF-B-018-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-020-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-018-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-021-IDOR — IDOR
+### PROOF-B-019-IDOR — IDOR
 - **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-021-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-019-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-022-BOUND — BOUNDARY
+### PROOF-B-020-BOUND — BOUNDARY
 - **File:** `tests/business/boundary.spec.ts`
 - **Risk:** medium
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-022-IDEMPOTENCY — IDEMPOTENCY
+### PROOF-B-020-IDEMPOTENCY — IDEMPOTENCY
 - **File:** `tests/integration/idempotency.spec.ts`
 - **Risk:** medium
 - **Mutation Score:** 33%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-025-BL — BUSINESS_LOGIC
+### PROOF-B-023-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-023-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-024-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-024-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-025-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -231,20 +255,8 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-026-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-026-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-027-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
+### PROOF-B-027-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -255,13 +267,13 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-029-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
+### PROOF-B-028-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-029-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-028-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
@@ -279,8 +291,8 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-032-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
+### PROOF-B-032-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -291,15 +303,21 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-034-BL — BUSINESS_LOGIC
+### PROOF-B-033-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-034-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-033-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-034-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
+- **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
@@ -315,87 +333,63 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-036-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-037-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-037-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-038-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-039-STATUS — STATUS_TRANSITION
+### PROOF-B-037-STATUS — STATUS_TRANSITION
 - **File:** `tests/integration/status-transitions.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-041-BL — BUSINESS_LOGIC
+### PROOF-B-039-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-041-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-039-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-042-IDOR — IDOR
+### PROOF-B-040-IDOR — IDOR
 - **File:** `tests/security/idor.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-040-BOUND — BOUNDARY
+- **File:** `tests/business/boundary.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-040-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
 ### PROOF-B-042-BOUND — BOUNDARY
 - **File:** `tests/business/boundary.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-042-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-043-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-043-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-044-BOUND — BOUNDARY
-- **File:** `tests/business/boundary.spec.ts`
 - **Risk:** medium
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-045-STATUS — STATUS_TRANSITION
+### PROOF-B-043-STATUS — STATUS_TRANSITION
 - **File:** `tests/integration/status-transitions.spec.ts`
 - **Risk:** high
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-045-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-045-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
@@ -406,6 +400,18 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
 ### PROOF-B-047-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-048-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-048-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
@@ -435,20 +441,14 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-051-BL — BUSINESS_LOGIC
+### PROOF-B-051-STATUS — STATUS_TRANSITION
+- **File:** `tests/integration/status-transitions.spec.ts`
+- **Risk:** high
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-052-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-051-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-052-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -465,15 +465,9 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-054-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-054-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
+### PROOF-B-054-STATUS — STATUS_TRANSITION
+- **File:** `tests/integration/status-transitions.spec.ts`
+- **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
@@ -495,26 +489,20 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-057-STATUS — STATUS_TRANSITION
-- **File:** `tests/integration/status-transitions.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-057-IDEMPOTENCY — IDEMPOTENCY
-- **File:** `tests/integration/idempotency.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 33%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-058-STATUS — STATUS_TRANSITION
-- **File:** `tests/integration/status-transitions.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-060-BL — BUSINESS_LOGIC
+### PROOF-B-058-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-058-AUTHMATRIX — AUTH_MATRIX
+- **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-060-IDOR — IDOR
+- **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -525,14 +513,20 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-061-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
+### PROOF-B-061-STATUS — STATUS_TRANSITION
+- **File:** `tests/integration/status-transitions.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-062-IDOR — IDOR
-- **File:** `tests/security/idor.spec.ts`
+### PROOF-B-061-CONCURRENCY — CONCURRENCY
+- **File:** `tests/concurrency/race-conditions.spec.ts`
+- **Risk:** high
+- **Mutation Score:** 33%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-062-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -543,117 +537,117 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-064-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-064-AUTHMATRIX — AUTH_MATRIX
-- **File:** `tests/security/auth-matrix.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-065-IDOR — IDOR
+### PROOF-B-063-IDOR — IDOR
 - **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-065-BOUND — BOUNDARY
+### PROOF-B-063-BOUND — BOUNDARY
 - **File:** `tests/business/boundary.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-065-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-063-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-066-STATUS — STATUS_TRANSITION
+### PROOF-B-064-STATUS — STATUS_TRANSITION
 - **File:** `tests/integration/status-transitions.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-068-BL — BUSINESS_LOGIC
+### PROOF-B-066-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-068-CONCURRENCY — CONCURRENCY
+### PROOF-B-066-CONCURRENCY — CONCURRENCY
 - **File:** `tests/concurrency/race-conditions.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 33%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-070-BL — BUSINESS_LOGIC
+### PROOF-B-068-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-070-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-068-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-071-IDOR — IDOR
+### PROOF-B-069-IDOR — IDOR
 - **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-071-BOUND — BOUNDARY
+### PROOF-B-069-BOUND — BOUNDARY
 - **File:** `tests/business/boundary.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-071-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-069-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-071-BL — BUSINESS_LOGIC
+- **File:** `tests/business/logic.spec.ts`
+- **Risk:** high
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-072-BOUND — BOUNDARY
+- **File:** `tests/business/boundary.spec.ts`
+- **Risk:** medium
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
 ### PROOF-B-073-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-075-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-075-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-073-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-076-BOUND — BOUNDARY
-- **File:** `tests/business/boundary.spec.ts`
-- **Risk:** medium
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-078-BL — BUSINESS_LOGIC
+### PROOF-B-076-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-079-BOUND — BOUNDARY
+### PROOF-B-077-BOUND — BOUNDARY
 - **File:** `tests/business/boundary.spec.ts`
 - **Risk:** medium
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-078-STATUS — STATUS_TRANSITION
+- **File:** `tests/integration/status-transitions.spec.ts`
+- **Risk:** high
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-079-STATUS — STATUS_TRANSITION
+- **File:** `tests/integration/status-transitions.spec.ts`
+- **Risk:** high
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
@@ -747,38 +741,38 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-095-STATUS — STATUS_TRANSITION
-- **File:** `tests/integration/status-transitions.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-096-STATUS — STATUS_TRANSITION
-- **File:** `tests/integration/status-transitions.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-097-BL — BUSINESS_LOGIC
+### PROOF-B-095-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-097-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-095-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-098-BL — BUSINESS_LOGIC
+### PROOF-B-096-BL — BUSINESS_LOGIC
 - **File:** `tests/business/logic.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-098-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-096-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-097-DSGVO — DSGVO
+- **File:** `tests/compliance/dsgvo.spec.ts`
+- **Risk:** critical
+- **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-098-DSGVO — DSGVO
+- **File:** `tests/compliance/dsgvo.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
@@ -801,16 +795,16 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-102-DSGVO — DSGVO
-- **File:** `tests/compliance/dsgvo.spec.ts`
-- **Risk:** critical
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-103-STATUS — STATUS_TRANSITION
+### PROOF-B-102-STATUS — STATUS_TRANSITION
 - **File:** `tests/integration/status-transitions.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 100%
+- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
+
+### PROOF-B-102-CONCURRENCY — CONCURRENCY
+- **File:** `tests/concurrency/race-conditions.spec.ts`
+- **Risk:** high
+- **Mutation Score:** 33%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
 ### PROOF-B-104-BL — BUSINESS_LOGIC
@@ -819,25 +813,19 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-105-BL — BUSINESS_LOGIC
-- **File:** `tests/business/logic.spec.ts`
-- **Risk:** high
-- **Mutation Score:** 100%
-- **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
-
-### PROOF-B-105-CONCURRENCY — CONCURRENCY
+### PROOF-B-104-CONCURRENCY — CONCURRENCY
 - **File:** `tests/concurrency/race-conditions.spec.ts`
 - **Risk:** high
 - **Mutation Score:** 33%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-107-IDOR — IDOR
+### PROOF-B-106-IDOR — IDOR
 - **File:** `tests/security/idor.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
 - **Validation:** ✓ R1: No if-wrapper assertions, ✓ R2: Has value assertions, ✓ R3: No broad status codes, ✓ R4: Has side-effect check, ✓ R5: Has positive control, ✓ R6: Baseline present, ✓ R8: Preconditions verified, ✓ R7: Has mutation-kill comments, ✓ R7b: No fake IDOR IDs
 
-### PROOF-B-107-AUTHMATRIX — AUTH_MATRIX
+### PROOF-B-106-AUTHMATRIX — AUTH_MATRIX
 - **File:** `tests/security/auth-matrix.spec.ts`
 - **Risk:** critical
 - **Mutation Score:** 100%
@@ -845,31 +833,32 @@ Generated: 2026-03-23 11:52:03 | Spec Type: api-spec | Quality Score: 8.0/10.0
 
 ## Uncovered Behaviors
 
-- **B-002**: System assigns users to one or more workspaces
-- **B-003**: System assigns projects, tasks, and comments to exactly one workspace
-- **B-004**: Login endpoint returns JWT and sets session cookie
-- **B-005**: Logout endpoint clears session cookie
-- **B-006**: JWT contains userId, workspaceId, and role
-- **B-007**: Session expires after 24h of inactivity
-- **B-008**: System locks out user after 10 failed login attempts per email per hour
-- **B-009**: Password must meet complexity requirements
-- **B-019**: POST /api/projects creates a new project
-- **B-023**: Project creation fails if color is not a valid hex format
-- **B-024**: GET /api/projects lists projects in workspace
-- **B-028**: GET /api/projects/:id retrieves project details
-- **B-031**: GET /api/projects/:id returns 404 if project not found
-- **B-033**: PUT /api/projects/:id updates project details
-- **B-040**: POST /api/tasks creates a task
-- **B-046**: GET /api/tasks lists tasks with filters
-- **B-048**: PATCH /api/tasks/:id updates task fields
-- **B-059**: DELETE /api/tasks/:id deletes a task
-- **B-063**: POST /api/tasks/bulk-status updates statuses for multiple tasks
-- **B-067**: Bulk status update returns update summary
-- **B-069**: POST /api/comments adds comment to task
-- **B-072**: Comment creation fails if parentId is not a comment on same task
-- **B-074**: POST /api/time-entries logs time on a task
-- **B-077**: Time entry fails if date is more than 30 days in the past
-- **B-106**: Time entry logged at 23:45 for 1 hour is counted as a single entry on the original date
+- **B-003**: Login endpoint returns JWT and sets session cookie
+- **B-004**: Logout endpoint clears session cookie
+- **B-005**: Session expires after 24 hours of inactivity
+- **B-006**: System locks out user after 10 failed login attempts per email per hour
+- **B-007**: Password must meet minimum complexity requirements
+- **B-014**: GET /api/auth/csrf-token returns CSRF token
+- **B-017**: POST /api/projects creates a new project
+- **B-021**: Project creation fails if color is not valid hex format
+- **B-022**: GET /api/projects lists projects in workspace
+- **B-026**: GET /api/projects/:id retrieves project details
+- **B-029**: Project detail retrieval returns 404 if project not found
+- **B-031**: PUT /api/projects/:id updates project details
+- **B-036**: Project deletion cascades to tasks, comments, time entries, attachments
+- **B-038**: POST /api/tasks creates a new task
+- **B-041**: Task creation fails if assigneeId is not a member of the workspace
+- **B-044**: GET /api/tasks lists tasks with filters
+- **B-046**: PATCH /api/tasks/:id updates task fields
+- **B-057**: DELETE /api/tasks/:id deletes a task
+- **B-059**: Task deletion cascades to comments and time entries
+- **B-065**: Bulk task status update returns details of updated and failed tasks
+- **B-067**: POST /api/comments adds comment to task
+- **B-070**: Comment creation fails if parentId is not a comment on the same task
+- **B-074**: Time logging fails if date is in the future
+- **B-075**: Time logging fails if date is more than 30 days in the past
+- **B-103**: Cascade delete catches orphaned tasks after 5s grace period when deleting project during task creation
+- **B-105**: Time entry logged at 23:45 for 1 hour is counted as single entry on original date
 
 ## Getting Started
 

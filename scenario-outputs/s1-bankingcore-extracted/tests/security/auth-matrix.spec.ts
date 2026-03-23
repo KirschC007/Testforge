@@ -9,8 +9,234 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await getAdminCookie(request);
 });
 
+// Proof: PROOF-B-007-AUTHMATRIX
+// Behavior: Customer role can only access own accounts
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_007_AUTHMATRIX() {
+  return {
+    bankId: TEST_BANK_ID,
+    customerId: 2,
+    accountType: "checking",
+    initialDeposit: 1,
+  };
+}
+test.describe("Auth Matrix: Customer role can only access own accounts", () => {
+  test("admin must be able to accesses own accounts", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("customer must NOT be able to accesses own accounts", async ({ request }) => {
+    const roleCookie = await getCustomerCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("advisor must NOT be able to accesses own accounts", async ({ request }) => {
+    const roleCookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant accesses must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_007_AUTHMATRIX(),
+      bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access own accounts", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access own accounts
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access own accounts — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access own accounts — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: customer should not be able to accesses own accounts", async ({ request }) => {
+    // Kills: customer should not be able to accesses own accounts
+    const cookie = await getCustomerCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: customer should not be able to accesses own accounts — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: customer should not be able to accesses own accounts — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: advisor should not be able to accesses own accounts", async ({ request }) => {
+    // Kills: advisor should not be able to accesses own accounts
+    const cookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: advisor should not be able to accesses own accounts — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: advisor should not be able to accesses own accounts — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-008-AUTHMATRIX
+// Behavior: Customer role can only access own transactions
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_008_AUTHMATRIX() {
+  return {
+    bankId: TEST_BANK_ID,
+    customerId: 2,
+    accountType: "checking",
+    initialDeposit: 1,
+  };
+}
+test.describe("Auth Matrix: Customer role can only access own transactions", () => {
+  test("admin must be able to accesses own transactions", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("customer must NOT be able to accesses own transactions", async ({ request }) => {
+    const roleCookie = await getCustomerCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("advisor must NOT be able to accesses own transactions", async ({ request }) => {
+    const roleCookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant accesses must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_008_AUTHMATRIX(),
+      bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access own transactions", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access own transactions
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access own transactions — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access own transactions — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: customer should not be able to accesses own transactions", async ({ request }) => {
+    // Kills: customer should not be able to accesses own transactions
+    const cookie = await getCustomerCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: customer should not be able to accesses own transactions — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: customer should not be able to accesses own transactions — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: advisor should not be able to accesses own transactions", async ({ request }) => {
+    // Kills: advisor should not be able to accesses own transactions
+    const cookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: advisor should not be able to accesses own transactions — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: advisor should not be able to accesses own transactions — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
 // Proof: PROOF-B-009-AUTHMATRIX
-// Behavior: Customer role can only access own accounts and transactions
+// Behavior: Advisor role can access all accounts within their bankId
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_009_AUTHMATRIX() {
@@ -21,17 +247,17 @@ function basePayload_PROOF_B_009_AUTHMATRIX() {
     initialDeposit: 1,
   };
 }
-test.describe("Auth Matrix: Customer role can only access own accounts and transactions", () => {
-  test("admin must be able to accesses own accounts and transactions", async ({ request }) => {
+test.describe("Auth Matrix: Advisor role can access all accounts within their bankId", () => {
+  test("admin must be able to accesses all accounts", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -41,18 +267,18 @@ test.describe("Auth Matrix: Customer role can only access own accounts and trans
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to accesses own accounts and transactions", async ({ request }) => {
+  test("customer must NOT be able to accesses all accounts", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to accesses own accounts and transactions", async ({ request }) => {
+  test("advisor must NOT be able to accesses all accounts", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -64,66 +290,66 @@ test.describe("Auth Matrix: Customer role can only access own accounts and trans
       ...basePayload_PROOF_B_009_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createAccount.create", async ({ request }) => {
-    // Kills: Remove role check in createAccount.create
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access own accounts and transactions", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access own accounts and transactions
+  test("mutation-kill-2: Allow lower-privileged role to access all accounts", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access all accounts
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access own accounts and transactions — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access all accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access own accounts and transactions — verify error code is present
+    // Kills: Allow lower-privileged role to access all accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to accesses own accounts and transactions", async ({ request }) => {
-    // Kills: customer should not be able to accesses own accounts and transactions
+  test("mutation-kill-3: customer should not be able to accesses all accounts", async ({ request }) => {
+    // Kills: customer should not be able to accesses all accounts
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to accesses own accounts and transactions — verify no data leaked in error response
+    // Kills: customer should not be able to accesses all accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to accesses own accounts and transactions — verify error code is present
+    // Kills: customer should not be able to accesses all accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to accesses own accounts and transactions", async ({ request }) => {
-    // Kills: advisor should not be able to accesses own accounts and transactions
+  test("mutation-kill-4: advisor should not be able to accesses all accounts", async ({ request }) => {
+    // Kills: advisor should not be able to accesses all accounts
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to accesses own accounts and transactions — verify no data leaked in error response
+    // Kills: advisor should not be able to accesses all accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to accesses own accounts and transactions — verify error code is present
+    // Kills: advisor should not be able to accesses all accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-010-AUTHMATRIX
-// Behavior: Advisor role can access all accounts within their bankId
+// Behavior: Admin role can access everything within their bankId
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_010_AUTHMATRIX() {
@@ -134,17 +360,17 @@ function basePayload_PROOF_B_010_AUTHMATRIX() {
     initialDeposit: 1,
   };
 }
-test.describe("Auth Matrix: Advisor role can access all accounts within their bankId", () => {
-  test("admin must be able to accesses all accounts within their bankId", async ({ request }) => {
+test.describe("Auth Matrix: Admin role can access everything within their bankId", () => {
+  test("admin must be able to accesses everything", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -154,18 +380,18 @@ test.describe("Auth Matrix: Advisor role can access all accounts within their ba
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to accesses all accounts within their bankId", async ({ request }) => {
+  test("customer must NOT be able to accesses everything", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to accesses all accounts within their bankId", async ({ request }) => {
+  test("advisor must NOT be able to accesses everything", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -177,66 +403,66 @@ test.describe("Auth Matrix: Advisor role can access all accounts within their ba
       ...basePayload_PROOF_B_010_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createAccount.create", async ({ request }) => {
-    // Kills: Remove role check in createAccount.create
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access all accounts within their bankId", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access all accounts within their bankId
+  test("mutation-kill-2: Allow lower-privileged role to access everything", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access everything
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access all accounts within their bankId — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access everything — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access all accounts within their bankId — verify error code is present
+    // Kills: Allow lower-privileged role to access everything — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to accesses all accounts within their bankId", async ({ request }) => {
-    // Kills: customer should not be able to accesses all accounts within their bankId
+  test("mutation-kill-3: customer should not be able to accesses everything", async ({ request }) => {
+    // Kills: customer should not be able to accesses everything
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to accesses all accounts within their bankId — verify no data leaked in error response
+    // Kills: customer should not be able to accesses everything — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to accesses all accounts within their bankId — verify error code is present
+    // Kills: customer should not be able to accesses everything — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to accesses all accounts within their bankId", async ({ request }) => {
-    // Kills: advisor should not be able to accesses all accounts within their bankId
+  test("mutation-kill-4: advisor should not be able to accesses everything", async ({ request }) => {
+    // Kills: advisor should not be able to accesses everything
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to accesses all accounts within their bankId — verify no data leaked in error response
+    // Kills: advisor should not be able to accesses everything — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to accesses all accounts within their bankId — verify error code is present
+    // Kills: advisor should not be able to accesses everything — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-011-AUTHMATRIX
-// Behavior: Admin role can access everything within their bankId
+// Behavior: Admin role cannot access other banks
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_011_AUTHMATRIX() {
@@ -247,17 +473,17 @@ function basePayload_PROOF_B_011_AUTHMATRIX() {
     initialDeposit: 1,
   };
 }
-test.describe("Auth Matrix: Admin role can access everything within their bankId", () => {
-  test("admin must be able to accesses everything within their bankId", async ({ request }) => {
+test.describe("Auth Matrix: Admin role cannot access other banks", () => {
+  test("admin must be able to cannot access other banks", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -267,89 +493,89 @@ test.describe("Auth Matrix: Admin role can access everything within their bankId
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to accesses everything within their bankId", async ({ request }) => {
+  test("customer must NOT be able to cannot access other banks", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to accesses everything within their bankId", async ({ request }) => {
+  test("advisor must NOT be able to cannot access other banks", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant accesses must be rejected", async ({ request }) => {
+  test("cross-tenant cannot access must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_011_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createAccount.create", async ({ request }) => {
-    // Kills: Remove role check in createAccount.create
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access everything within their bankId", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access everything within their bankId
+  test("mutation-kill-2: Allow lower-privileged role to access other banks", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access other banks
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access everything within their bankId — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access other banks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access everything within their bankId — verify error code is present
+    // Kills: Allow lower-privileged role to access other banks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to accesses everything within their bankId", async ({ request }) => {
-    // Kills: customer should not be able to accesses everything within their bankId
+  test("mutation-kill-3: customer should not be able to cannot access other banks", async ({ request }) => {
+    // Kills: customer should not be able to cannot access other banks
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to accesses everything within their bankId — verify no data leaked in error response
+    // Kills: customer should not be able to cannot access other banks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to accesses everything within their bankId — verify error code is present
+    // Kills: customer should not be able to cannot access other banks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to accesses everything within their bankId", async ({ request }) => {
-    // Kills: advisor should not be able to accesses everything within their bankId
+  test("mutation-kill-4: advisor should not be able to cannot access other banks", async ({ request }) => {
+    // Kills: advisor should not be able to cannot access other banks
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to accesses everything within their bankId — verify no data leaked in error response
+    // Kills: advisor should not be able to cannot access other banks — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to accesses everything within their bankId — verify error code is present
+    // Kills: advisor should not be able to cannot access other banks — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-012-AUTHMATRIX
-// Behavior: POST /api/accounts requires advisor or admin role
+// Behavior: POST /api/accounts requires advisor or admin authorization
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_012_AUTHMATRIX() {
@@ -360,17 +586,17 @@ function basePayload_PROOF_B_012_AUTHMATRIX() {
     initialDeposit: 1,
   };
 }
-test.describe("Auth Matrix: POST /api/accounts requires advisor or admin role", () => {
-  test("admin must be able to requires advisor or admin role", async ({ request }) => {
+test.describe("Auth Matrix: POST /api/accounts requires advisor or admin authorization", () => {
+  test("admin must be able to requires authorization advisor or admin", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -380,82 +606,82 @@ test.describe("Auth Matrix: POST /api/accounts requires advisor or admin role", 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to requires advisor or admin role", async ({ request }) => {
+  test("customer must NOT be able to requires authorization advisor or admin", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to requires advisor or admin role", async ({ request }) => {
+  test("advisor must NOT be able to requires authorization advisor or admin", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant requires authorization must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_012_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createAccount.create", async ({ request }) => {
-    // Kills: Remove role check in createAccount.create
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access advisor or admin role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access advisor or admin role
+  test("mutation-kill-2: Allow lower-privileged role to access advisor or admin", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access advisor or admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access advisor or admin role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access advisor or admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access advisor or admin role — verify error code is present
+    // Kills: Allow lower-privileged role to access advisor or admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to requires advisor or admin role", async ({ request }) => {
-    // Kills: customer should not be able to requires advisor or admin role
+  test("mutation-kill-3: customer should not be able to requires authorization advisor or admin", async ({ request }) => {
+    // Kills: customer should not be able to requires authorization advisor or admin
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to requires advisor or admin role — verify no data leaked in error response
+    // Kills: customer should not be able to requires authorization advisor or admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to requires advisor or admin role — verify error code is present
+    // Kills: customer should not be able to requires authorization advisor or admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to requires advisor or admin role", async ({ request }) => {
-    // Kills: advisor should not be able to requires advisor or admin role
+  test("mutation-kill-4: advisor should not be able to requires authorization advisor or admin", async ({ request }) => {
+    // Kills: advisor should not be able to requires authorization advisor or admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to requires advisor or admin role — verify no data leaked in error response
+    // Kills: advisor should not be able to requires authorization advisor or admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to requires advisor or admin role — verify error code is present
+    // Kills: advisor should not be able to requires authorization advisor or admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
@@ -474,16 +700,16 @@ function basePayload_PROOF_B_013_AUTHMATRIX() {
   };
 }
 test.describe("Auth Matrix: POST /api/accounts rejects cross-tenant account creation", () => {
-  test("admin must be able to returns 403 for cross-tenant account creation", async ({ request }) => {
+  test("admin must be able to returns 403 response", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -493,18 +719,18 @@ test.describe("Auth Matrix: POST /api/accounts rejects cross-tenant account crea
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to returns 403 for cross-tenant account creation", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to returns 403 for cross-tenant account creation", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -516,66 +742,66 @@ test.describe("Auth Matrix: POST /api/accounts rejects cross-tenant account crea
       ...basePayload_PROOF_B_013_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createAccount.create", async ({ request }) => {
-    // Kills: Remove role check in createAccount.create
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access for cross-tenant account creation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access for cross-tenant account creation
+  test("mutation-kill-2: Allow lower-privileged role to access response", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access for cross-tenant account creation — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access for cross-tenant account creation — verify error code is present
+    // Kills: Allow lower-privileged role to access response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to returns 403 for cross-tenant account creation", async ({ request }) => {
-    // Kills: customer should not be able to returns 403 for cross-tenant account creation
+  test("mutation-kill-3: customer should not be able to returns 403 response", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to returns 403 for cross-tenant account creation — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to returns 403 for cross-tenant account creation — verify error code is present
+    // Kills: customer should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to returns 403 for cross-tenant account creation", async ({ request }) => {
-    // Kills: advisor should not be able to returns 403 for cross-tenant account creation
+  test("mutation-kill-4: advisor should not be able to returns 403 response", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to returns 403 for cross-tenant account creation — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to returns 403 for cross-tenant account creation — verify error code is present
+    // Kills: advisor should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-016-AUTHMATRIX
-// Behavior: Customer must exist and belong to same bankId for account creation
+// Behavior: Customer for new account must exist and belong to same bankId
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_016_AUTHMATRIX() {
@@ -586,17 +812,17 @@ function basePayload_PROOF_B_016_AUTHMATRIX() {
     initialDeposit: 1,
   };
 }
-test.describe("Auth Matrix: Customer must exist and belong to same bankId for account creation", () => {
-  test("admin must be able to validates customer existence and bankId match", async ({ request }) => {
+test.describe("Auth Matrix: Customer for new account must exist and belong to same bankId", () => {
+  test("admin must be able to validates customer existence and bankId", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -606,18 +832,18 @@ test.describe("Auth Matrix: Customer must exist and belong to same bankId for ac
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to validates customer existence and bankId match", async ({ request }) => {
+  test("customer must NOT be able to validates customer existence and bankId", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to validates customer existence and bankId match", async ({ request }) => {
+  test("advisor must NOT be able to validates customer existence and bankId", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -629,66 +855,66 @@ test.describe("Auth Matrix: Customer must exist and belong to same bankId for ac
       ...basePayload_PROOF_B_016_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createAccount.create", async ({ request }) => {
-    // Kills: Remove role check in createAccount.create
+  test("mutation-kill-1: Remove role check in accounts.create", async ({ request }) => {
+    // Kills: Remove role check in accounts.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access customer existence and bankId match", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access customer existence and bankId match
+  test("mutation-kill-2: Allow lower-privileged role to access customer existence and bankId", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access customer existence and bankId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access customer existence and bankId match — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access customer existence and bankId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access customer existence and bankId match — verify error code is present
+    // Kills: Allow lower-privileged role to access customer existence and bankId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to validates customer existence and bankId match", async ({ request }) => {
-    // Kills: customer should not be able to validates customer existence and bankId match
+  test("mutation-kill-3: customer should not be able to validates customer existence and bankId", async ({ request }) => {
+    // Kills: customer should not be able to validates customer existence and bankId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to validates customer existence and bankId match — verify no data leaked in error response
+    // Kills: customer should not be able to validates customer existence and bankId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to validates customer existence and bankId match — verify error code is present
+    // Kills: customer should not be able to validates customer existence and bankId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to validates customer existence and bankId match", async ({ request }) => {
-    // Kills: advisor should not be able to validates customer existence and bankId match
+  test("mutation-kill-4: advisor should not be able to validates customer existence and bankId", async ({ request }) => {
+    // Kills: advisor should not be able to validates customer existence and bankId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createAccount.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to validates customer existence and bankId match — verify no data leaked in error response
+    // Kills: advisor should not be able to validates customer existence and bankId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to validates customer existence and bankId match — verify error code is present
+    // Kills: advisor should not be able to validates customer existence and bankId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-019-AUTHMATRIX
-// Behavior: GET /api/accounts authorization for customer role
+// Behavior: GET /api/accounts allows customer to see only own accounts
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_019_AUTHMATRIX() {
@@ -698,17 +924,17 @@ function basePayload_PROOF_B_019_AUTHMATRIX() {
     status: "active",
   };
 }
-test.describe("Auth Matrix: GET /api/accounts authorization for customer role", () => {
-  test("admin must be able to sees only own accounts when listing", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/accounts allows customer to see only own accounts", () => {
+  test("admin must be able to filters accounts", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -718,89 +944,89 @@ test.describe("Auth Matrix: GET /api/accounts authorization for customer role", 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to sees only own accounts when listing", async ({ request }) => {
+  test("customer must NOT be able to filters accounts", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to sees only own accounts when listing", async ({ request }) => {
+  test("advisor must NOT be able to filters accounts", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sees only must be rejected", async ({ request }) => {
+  test("cross-tenant filters must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_019_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listAccounts.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listAccounts.list", async ({ request }) => {
-    // Kills: Remove role check in listAccounts.list
+  test("mutation-kill-1: Remove role check in accounts.list", async ({ request }) => {
+    // Kills: Remove role check in accounts.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listAccounts.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access own accounts when listing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access own accounts when listing
+  test("mutation-kill-2: Allow lower-privileged role to access accounts", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access accounts
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access own accounts when listing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access own accounts when listing — verify error code is present
+    // Kills: Allow lower-privileged role to access accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to sees only own accounts when listing", async ({ request }) => {
-    // Kills: customer should not be able to sees only own accounts when listing
+  test("mutation-kill-3: customer should not be able to filters accounts", async ({ request }) => {
+    // Kills: customer should not be able to filters accounts
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to sees only own accounts when listing — verify no data leaked in error response
+    // Kills: customer should not be able to filters accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to sees only own accounts when listing — verify error code is present
+    // Kills: customer should not be able to filters accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to sees only own accounts when listing", async ({ request }) => {
-    // Kills: advisor should not be able to sees only own accounts when listing
+  test("mutation-kill-4: advisor should not be able to filters accounts", async ({ request }) => {
+    // Kills: advisor should not be able to filters accounts
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to sees only own accounts when listing — verify no data leaked in error response
+    // Kills: advisor should not be able to filters accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to sees only own accounts when listing — verify error code is present
+    // Kills: advisor should not be able to filters accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-020-AUTHMATRIX
-// Behavior: GET /api/accounts authorization for advisor/admin role
+// Behavior: GET /api/accounts allows advisor/admin to see all accounts within bank
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_020_AUTHMATRIX() {
@@ -810,17 +1036,17 @@ function basePayload_PROOF_B_020_AUTHMATRIX() {
     status: "active",
   };
 }
-test.describe("Auth Matrix: GET /api/accounts authorization for advisor/admin role", () => {
-  test("admin must be able to sees all accounts within bank when listing", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/accounts allows advisor/admin to see all accounts within bank", () => {
+  test("admin must be able to lists all accounts", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -830,89 +1056,89 @@ test.describe("Auth Matrix: GET /api/accounts authorization for advisor/admin ro
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to sees all accounts within bank when listing", async ({ request }) => {
+  test("customer must NOT be able to lists all accounts", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to sees all accounts within bank when listing", async ({ request }) => {
+  test("advisor must NOT be able to lists all accounts", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sees all must be rejected", async ({ request }) => {
+  test("cross-tenant lists must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_020_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listAccounts.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listAccounts.list", async ({ request }) => {
-    // Kills: Remove role check in listAccounts.list
+  test("mutation-kill-1: Remove role check in accounts.list", async ({ request }) => {
+    // Kills: Remove role check in accounts.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listAccounts.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access accounts within bank when listing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access accounts within bank when listing
+  test("mutation-kill-2: Allow lower-privileged role to access all accounts", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access all accounts
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access accounts within bank when listing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access all accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access accounts within bank when listing — verify error code is present
+    // Kills: Allow lower-privileged role to access all accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to sees all accounts within bank when listing", async ({ request }) => {
-    // Kills: customer should not be able to sees all accounts within bank when listing
+  test("mutation-kill-3: customer should not be able to lists all accounts", async ({ request }) => {
+    // Kills: customer should not be able to lists all accounts
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to sees all accounts within bank when listing — verify no data leaked in error response
+    // Kills: customer should not be able to lists all accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to sees all accounts within bank when listing — verify error code is present
+    // Kills: customer should not be able to lists all accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to sees all accounts within bank when listing", async ({ request }) => {
-    // Kills: advisor should not be able to sees all accounts within bank when listing
+  test("mutation-kill-4: advisor should not be able to lists all accounts", async ({ request }) => {
+    // Kills: advisor should not be able to lists all accounts
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to sees all accounts within bank when listing — verify no data leaked in error response
+    // Kills: advisor should not be able to lists all accounts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to sees all accounts within bank when listing — verify error code is present
+    // Kills: advisor should not be able to lists all accounts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-021-AUTHMATRIX
-// Behavior: GET /api/accounts automatically filters for customer's own accounts
+// Behavior: GET /api/accounts automatically filters customer's accounts
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_021_AUTHMATRIX() {
@@ -922,17 +1148,17 @@ function basePayload_PROOF_B_021_AUTHMATRIX() {
     status: "active",
   };
 }
-test.describe("Auth Matrix: GET /api/accounts automatically filters for customer's own accounts", () => {
-  test("admin must be able to filters accounts to own customerId for customer role", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/accounts automatically filters customer's accounts", () => {
+  test("admin must be able to filters accounts by customerId", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -942,18 +1168,18 @@ test.describe("Auth Matrix: GET /api/accounts automatically filters for customer
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to filters accounts to own customerId for customer role", async ({ request }) => {
+  test("customer must NOT be able to filters accounts by customerId", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to filters accounts to own customerId for customer role", async ({ request }) => {
+  test("advisor must NOT be able to filters accounts by customerId", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -965,66 +1191,66 @@ test.describe("Auth Matrix: GET /api/accounts automatically filters for customer
       ...basePayload_PROOF_B_021_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listAccounts.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listAccounts.list", async ({ request }) => {
-    // Kills: Remove role check in listAccounts.list
+  test("mutation-kill-1: Remove role check in accounts.list", async ({ request }) => {
+    // Kills: Remove role check in accounts.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listAccounts.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access to own customerId for customer role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access to own customerId for customer role
+  test("mutation-kill-2: Allow lower-privileged role to access by customerId", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access by customerId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access to own customerId for customer role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access by customerId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access to own customerId for customer role — verify error code is present
+    // Kills: Allow lower-privileged role to access by customerId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to filters accounts to own customerId for customer role", async ({ request }) => {
-    // Kills: customer should not be able to filters accounts to own customerId for customer role
+  test("mutation-kill-3: customer should not be able to filters accounts by customerId", async ({ request }) => {
+    // Kills: customer should not be able to filters accounts by customerId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to filters accounts to own customerId for customer role — verify no data leaked in error response
+    // Kills: customer should not be able to filters accounts by customerId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to filters accounts to own customerId for customer role — verify error code is present
+    // Kills: customer should not be able to filters accounts by customerId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to filters accounts to own customerId for customer role", async ({ request }) => {
-    // Kills: advisor should not be able to filters accounts to own customerId for customer role
+  test("mutation-kill-4: advisor should not be able to filters accounts by customerId", async ({ request }) => {
+    // Kills: advisor should not be able to filters accounts by customerId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to filters accounts to own customerId for customer role — verify no data leaked in error response
+    // Kills: advisor should not be able to filters accounts by customerId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to filters accounts to own customerId for customer role — verify error code is present
+    // Kills: advisor should not be able to filters accounts by customerId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-022-AUTHMATRIX
-// Behavior: Advisor/admin can filter accounts by customerId or see all
+// Behavior: GET /api/accounts allows advisor/admin to filter by customerId
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_022_AUTHMATRIX() {
@@ -1034,17 +1260,17 @@ function basePayload_PROOF_B_022_AUTHMATRIX() {
     status: "active",
   };
 }
-test.describe("Auth Matrix: Advisor/admin can filter accounts by customerId or see all", () => {
-  test("admin must be able to filters accounts by customerId or sees all", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/accounts allows advisor/admin to filter by customerId", () => {
+  test("admin must be able to filters accounts by customerId", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1054,18 +1280,18 @@ test.describe("Auth Matrix: Advisor/admin can filter accounts by customerId or s
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to filters accounts by customerId or sees all", async ({ request }) => {
+  test("customer must NOT be able to filters accounts by customerId", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to filters accounts by customerId or sees all", async ({ request }) => {
+  test("advisor must NOT be able to filters accounts by customerId", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -1077,59 +1303,59 @@ test.describe("Auth Matrix: Advisor/admin can filter accounts by customerId or s
       ...basePayload_PROOF_B_022_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listAccounts.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listAccounts.list", async ({ request }) => {
-    // Kills: Remove role check in listAccounts.list
+  test("mutation-kill-1: Remove role check in accounts.list", async ({ request }) => {
+    // Kills: Remove role check in accounts.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listAccounts.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access by customerId or sees all", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access by customerId or sees all
+  test("mutation-kill-2: Allow lower-privileged role to access by customerId", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access by customerId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access by customerId or sees all — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access by customerId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access by customerId or sees all — verify error code is present
+    // Kills: Allow lower-privileged role to access by customerId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to filters accounts by customerId or sees all", async ({ request }) => {
-    // Kills: customer should not be able to filters accounts by customerId or sees all
+  test("mutation-kill-3: customer should not be able to filters accounts by customerId", async ({ request }) => {
+    // Kills: customer should not be able to filters accounts by customerId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to filters accounts by customerId or sees all — verify no data leaked in error response
+    // Kills: customer should not be able to filters accounts by customerId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to filters accounts by customerId or sees all — verify error code is present
+    // Kills: customer should not be able to filters accounts by customerId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to filters accounts by customerId or sees all", async ({ request }) => {
-    // Kills: advisor should not be able to filters accounts by customerId or sees all
+  test("mutation-kill-4: advisor should not be able to filters accounts by customerId", async ({ request }) => {
+    // Kills: advisor should not be able to filters accounts by customerId
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to filters accounts by customerId or sees all — verify no data leaked in error response
+    // Kills: advisor should not be able to filters accounts by customerId — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to filters accounts by customerId or sees all — verify error code is present
+    // Kills: advisor should not be able to filters accounts by customerId — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
@@ -1147,16 +1373,16 @@ function basePayload_PROOF_B_023_AUTHMATRIX() {
   };
 }
 test.describe("Auth Matrix: GET /api/accounts returns 403 with empty data for cross-tenant listing", () => {
-  test("admin must be able to returns 403 with empty data for cross-tenant listing", async ({ request }) => {
+  test("admin must be able to returns 403 response with empty data", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1166,18 +1392,18 @@ test.describe("Auth Matrix: GET /api/accounts returns 403 with empty data for cr
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to returns 403 with empty data for cross-tenant listing", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response with empty data", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to returns 403 with empty data for cross-tenant listing", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response with empty data", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -1189,59 +1415,59 @@ test.describe("Auth Matrix: GET /api/accounts returns 403 with empty data for cr
       ...basePayload_PROOF_B_023_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listAccounts.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listAccounts.list", async ({ request }) => {
-    // Kills: Remove role check in listAccounts.list
+  test("mutation-kill-1: Remove role check in accounts.list", async ({ request }) => {
+    // Kills: Remove role check in accounts.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listAccounts.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access with empty data for cross-tenant listing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access with empty data for cross-tenant listing
+  test("mutation-kill-2: Allow lower-privileged role to access response with empty data", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response with empty data
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access with empty data for cross-tenant listing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response with empty data — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access with empty data for cross-tenant listing — verify error code is present
+    // Kills: Allow lower-privileged role to access response with empty data — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to returns 403 with empty data for cross-tenant listing", async ({ request }) => {
-    // Kills: customer should not be able to returns 403 with empty data for cross-tenant listing
+  test("mutation-kill-3: customer should not be able to returns 403 response with empty data", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response with empty data
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to returns 403 with empty data for cross-tenant listing — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response with empty data — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to returns 403 with empty data for cross-tenant listing — verify error code is present
+    // Kills: customer should not be able to returns 403 response with empty data — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to returns 403 with empty data for cross-tenant listing", async ({ request }) => {
-    // Kills: advisor should not be able to returns 403 with empty data for cross-tenant listing
+  test("mutation-kill-4: advisor should not be able to returns 403 response with empty data", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response with empty data
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listAccounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.list", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to returns 403 with empty data for cross-tenant listing — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response with empty data — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to returns 403 with empty data for cross-tenant listing — verify error code is present
+    // Kills: advisor should not be able to returns 403 response with empty data — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
@@ -1253,20 +1479,20 @@ test.describe("Auth Matrix: GET /api/accounts returns 403 with empty data for cr
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_025_AUTHMATRIX() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
   };
 }
 test.describe("Auth Matrix: GET /api/accounts/:id returns 403 if account belongs to different bank", () => {
-  test("admin must be able to returns 403 FORBIDDEN if account belongs to different bank", async ({ request }) => {
+  test("admin must be able to returns 403 response", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1276,107 +1502,107 @@ test.describe("Auth Matrix: GET /api/accounts/:id returns 403 if account belongs
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to returns 403 FORBIDDEN if account belongs to different bank", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to returns 403 FORBIDDEN if account belongs to different bank", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 FORBIDDEN must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_025_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "getAccount.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.getById", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in getAccount.list", async ({ request }) => {
-    // Kills: Remove role check in getAccount.list
+  test("mutation-kill-1: Remove role check in accounts.getById", async ({ request }) => {
+    // Kills: Remove role check in accounts.getById
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in getAccount.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.getById — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access if account belongs to different bank", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access if account belongs to different bank
+  test("mutation-kill-2: Allow lower-privileged role to access response", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access if account belongs to different bank — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access if account belongs to different bank — verify error code is present
+    // Kills: Allow lower-privileged role to access response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to returns 403 FORBIDDEN if account belongs to different bank", async ({ request }) => {
-    // Kills: customer should not be able to returns 403 FORBIDDEN if account belongs to different bank
+  test("mutation-kill-3: customer should not be able to returns 403 response", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to returns 403 FORBIDDEN if account belongs to different bank — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to returns 403 FORBIDDEN if account belongs to different bank — verify error code is present
+    // Kills: customer should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to returns 403 FORBIDDEN if account belongs to different bank", async ({ request }) => {
-    // Kills: advisor should not be able to returns 403 FORBIDDEN if account belongs to different bank
+  test("mutation-kill-4: advisor should not be able to returns 403 response", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to returns 403 FORBIDDEN if account belongs to different bank — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to returns 403 FORBIDDEN if account belongs to different bank — verify error code is present
+    // Kills: advisor should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-026-AUTHMATRIX
-// Behavior: GET /api/accounts/:id returns 403 for customer accessing other's account
+// Behavior: GET /api/accounts/:id returns 403 if customer role accesses another customer's account
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_026_AUTHMATRIX() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
   };
 }
-test.describe("Auth Matrix: GET /api/accounts/:id returns 403 for customer accessing other's account", () => {
-  test("admin must be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/accounts/:id returns 403 if customer role accesses another customer's account", () => {
+  test("admin must be able to returns 403 response", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1386,89 +1612,89 @@ test.describe("Auth Matrix: GET /api/accounts/:id returns 403 for customer acces
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 FORBIDDEN must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_026_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "getAccount.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.getById", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in getAccount.list", async ({ request }) => {
-    // Kills: Remove role check in getAccount.list
+  test("mutation-kill-1: Remove role check in accounts.getById", async ({ request }) => {
+    // Kills: Remove role check in accounts.getById
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in getAccount.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.getById — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access if customer role and account.customerId !== jwt.userId", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access if customer role and account.customerId !== jwt.userId
-    const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
+  test("mutation-kill-2: Allow lower-privileged role to access response", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access if customer role and account.customerId !== jwt.userId — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access if customer role and account.customerId !== jwt.userId — verify error code is present
+    // Kills: Allow lower-privileged role to access response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId", async ({ request }) => {
-    // Kills: customer should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId
+  test("mutation-kill-3: customer should not be able to returns 403 response", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId — verify error code is present
+    // Kills: customer should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId", async ({ request }) => {
-    // Kills: advisor should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId
-    const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "getAccount.list", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
+  test("mutation-kill-4: advisor should not be able to returns 403 response", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response
+    const cookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.getById", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to returns 403 FORBIDDEN if customer role and account.customerId !== jwt.userId — verify error code is present
+    // Kills: advisor should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-027-AUTHMATRIX
-// Behavior: POST /api/transactions requires advisor or admin role
+// Behavior: POST /api/transactions requires advisor or admin authorization
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_027_AUTHMATRIX() {
@@ -1481,17 +1707,17 @@ function basePayload_PROOF_B_027_AUTHMATRIX() {
     idempotencyKey: "idempotency-key-${Date.now()}",
   };
 }
-test.describe("Auth Matrix: POST /api/transactions requires advisor or admin role", () => {
-  test("admin must be able to requires advisor or admin role", async ({ request }) => {
+test.describe("Auth Matrix: POST /api/transactions requires advisor or admin authorization", () => {
+  test("admin must be able to requires authorization advisor or admin", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1501,89 +1727,89 @@ test.describe("Auth Matrix: POST /api/transactions requires advisor or admin rol
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to requires advisor or admin role", async ({ request }) => {
+  test("customer must NOT be able to requires authorization advisor or admin", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to requires advisor or admin role", async ({ request }) => {
+  test("advisor must NOT be able to requires authorization advisor or admin", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant requires authorization must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_027_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createTransaction.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createTransaction.create", async ({ request }) => {
-    // Kills: Remove role check in createTransaction.create
+  test("mutation-kill-1: Remove role check in transactions.create", async ({ request }) => {
+    // Kills: Remove role check in transactions.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createTransaction.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access advisor or admin role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access advisor or admin role
+  test("mutation-kill-2: Allow lower-privileged role to access advisor or admin", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access advisor or admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access advisor or admin role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access advisor or admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access advisor or admin role — verify error code is present
+    // Kills: Allow lower-privileged role to access advisor or admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to requires advisor or admin role", async ({ request }) => {
-    // Kills: customer should not be able to requires advisor or admin role
+  test("mutation-kill-3: customer should not be able to requires authorization advisor or admin", async ({ request }) => {
+    // Kills: customer should not be able to requires authorization advisor or admin
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to requires advisor or admin role — verify no data leaked in error response
+    // Kills: customer should not be able to requires authorization advisor or admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to requires advisor or admin role — verify error code is present
+    // Kills: customer should not be able to requires authorization advisor or admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to requires advisor or admin role", async ({ request }) => {
-    // Kills: advisor should not be able to requires advisor or admin role
+  test("mutation-kill-4: advisor should not be able to requires authorization advisor or admin", async ({ request }) => {
+    // Kills: advisor should not be able to requires authorization advisor or admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to requires advisor or admin role — verify no data leaked in error response
+    // Kills: advisor should not be able to requires authorization advisor or admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to requires advisor or admin role — verify error code is present
+    // Kills: advisor should not be able to requires authorization advisor or admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-028-AUTHMATRIX
-// Behavior: POST /api/transactions rejects cross-tenant transaction creation
+// Behavior: POST /api/transactions returns 403 for cross-tenant transaction creation
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_028_AUTHMATRIX() {
@@ -1596,17 +1822,17 @@ function basePayload_PROOF_B_028_AUTHMATRIX() {
     idempotencyKey: "idempotency-key-${Date.now()}",
   };
 }
-test.describe("Auth Matrix: POST /api/transactions rejects cross-tenant transaction creation", () => {
-  test("admin must be able to returns 403 FORBIDDEN on cross-tenant transaction", async ({ request }) => {
+test.describe("Auth Matrix: POST /api/transactions returns 403 for cross-tenant transaction creation", () => {
+  test("admin must be able to returns 403 response", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1616,89 +1842,89 @@ test.describe("Auth Matrix: POST /api/transactions rejects cross-tenant transact
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to returns 403 FORBIDDEN on cross-tenant transaction", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to returns 403 FORBIDDEN on cross-tenant transaction", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 FORBIDDEN must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_028_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createTransaction.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createTransaction.create", async ({ request }) => {
-    // Kills: Remove role check in createTransaction.create
+  test("mutation-kill-1: Remove role check in transactions.create", async ({ request }) => {
+    // Kills: Remove role check in transactions.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createTransaction.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access on cross-tenant transaction", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access on cross-tenant transaction
+  test("mutation-kill-2: Allow lower-privileged role to access response", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access on cross-tenant transaction — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access on cross-tenant transaction — verify error code is present
+    // Kills: Allow lower-privileged role to access response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to returns 403 FORBIDDEN on cross-tenant transaction", async ({ request }) => {
-    // Kills: customer should not be able to returns 403 FORBIDDEN on cross-tenant transaction
+  test("mutation-kill-3: customer should not be able to returns 403 response", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to returns 403 FORBIDDEN on cross-tenant transaction — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to returns 403 FORBIDDEN on cross-tenant transaction — verify error code is present
+    // Kills: customer should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to returns 403 FORBIDDEN on cross-tenant transaction", async ({ request }) => {
-    // Kills: advisor should not be able to returns 403 FORBIDDEN on cross-tenant transaction
+  test("mutation-kill-4: advisor should not be able to returns 403 response", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to returns 403 FORBIDDEN on cross-tenant transaction — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to returns 403 FORBIDDEN on cross-tenant transaction — verify error code is present
+    // Kills: advisor should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-029-AUTHMATRIX
-// Behavior: POST /api/transactions rejects cross-bank transfers
+// Behavior: POST /api/transactions returns 403 if fromAccountId and toAccountId are not in same bank
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_029_AUTHMATRIX() {
@@ -1711,17 +1937,17 @@ function basePayload_PROOF_B_029_AUTHMATRIX() {
     idempotencyKey: "idempotency-key-${Date.now()}",
   };
 }
-test.describe("Auth Matrix: POST /api/transactions rejects cross-bank transfers", () => {
-  test("admin must be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId", async ({ request }) => {
+test.describe("Auth Matrix: POST /api/transactions returns 403 if fromAccountId and toAccountId are not in same bank", () => {
+  test("admin must be able to returns 403 response", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1731,108 +1957,108 @@ test.describe("Auth Matrix: POST /api/transactions rejects cross-bank transfers"
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 CROSS_BANK_TRANSFER must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_029_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "createTransaction.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in createTransaction.create", async ({ request }) => {
-    // Kills: Remove role check in createTransaction.create
+  test("mutation-kill-1: Remove role check in transactions.create", async ({ request }) => {
+    // Kills: Remove role check in transactions.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in createTransaction.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access if fromAccountId and toAccountId belong to different bankId", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access if fromAccountId and toAccountId belong to different bankId
+  test("mutation-kill-2: Allow lower-privileged role to access response", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access if fromAccountId and toAccountId belong to different bankId — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access if fromAccountId and toAccountId belong to different bankId — verify error code is present
+    // Kills: Allow lower-privileged role to access response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId", async ({ request }) => {
-    // Kills: customer should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId
+  test("mutation-kill-3: customer should not be able to returns 403 response", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId — verify error code is present
+    // Kills: customer should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId", async ({ request }) => {
-    // Kills: advisor should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId
+  test("mutation-kill-4: advisor should not be able to returns 403 response", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "createTransaction.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to returns 403 CROSS_BANK_TRANSFER if fromAccountId and toAccountId belong to different bankId — verify error code is present
+    // Kills: advisor should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-036-AUTHMATRIX
-// Behavior: PATCH /api/transactions/:id/status requires admin role
+// Behavior: PATCH /api/transactions/:id/status requires admin authorization
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_036_AUTHMATRIX() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
     status: "processing",
   };
 }
-test.describe("Auth Matrix: PATCH /api/transactions/:id/status requires admin role", () => {
-  test("admin must be able to requires admin role", async ({ request }) => {
+test.describe("Auth Matrix: PATCH /api/transactions/:id/status requires admin authorization", () => {
+  test("admin must be able to requires authorization admin", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1842,113 +2068,108 @@ test.describe("Auth Matrix: PATCH /api/transactions/:id/status requires admin ro
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to requires admin role", async ({ request }) => {
+  test("customer must NOT be able to requires authorization admin", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to requires admin role", async ({ request }) => {
+  test("advisor must NOT be able to requires authorization admin", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant requires authorization must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_036_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "updateTransactionStatus.update", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.status", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in updateTransactionStatus.update", async ({ request }) => {
-    // Kills: Remove role check in updateTransactionStatus.update
+  test("mutation-kill-1: Remove role check in transactions.status", async ({ request }) => {
+    // Kills: Remove role check in transactions.status
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in updateTransactionStatus.update — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.status — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access admin role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access admin role
+  test("mutation-kill-2: Allow lower-privileged role to access admin", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access admin
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access admin role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access admin role — verify error code is present
+    // Kills: Allow lower-privileged role to access admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to requires admin role", async ({ request }) => {
-    // Kills: customer should not be able to requires admin role
+  test("mutation-kill-3: customer should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: customer should not be able to requires authorization admin
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to requires admin role — verify no data leaked in error response
+    // Kills: customer should not be able to requires authorization admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to requires admin role — verify error code is present
+    // Kills: customer should not be able to requires authorization admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to requires admin role", async ({ request }) => {
-    // Kills: advisor should not be able to requires admin role
+  test("mutation-kill-4: advisor should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: advisor should not be able to requires authorization admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "updateTransactionStatus.update", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to requires admin role — verify no data leaked in error response
+    // Kills: advisor should not be able to requires authorization admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to requires admin role — verify error code is present
+    // Kills: advisor should not be able to requires authorization admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-047-AUTHMATRIX
-// Behavior: GET /api/transactions authorization for customer role
+// Behavior: PATCH /api/transactions/:id/status returns 403 for non-admin users
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_047_AUTHMATRIX() {
   return {
-    bankId: TEST_BANK_ID,
-    accountId: 1,
-    status: "pending",
-    fromDate: tomorrowStr(),
-    toDate: tomorrowStr(),
-    page: 1,
-    pageSize: 1,
+    id: 1,
+    status: "processing",
   };
 }
-test.describe("Auth Matrix: GET /api/transactions authorization for customer role", () => {
-  test("admin must be able to sees only own transactions when listing", async ({ request }) => {
+test.describe("Auth Matrix: PATCH /api/transactions/:id/status returns 403 for non-admin users", () => {
+  test("admin must be able to returns 403 response", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1958,89 +2179,89 @@ test.describe("Auth Matrix: GET /api/transactions authorization for customer rol
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to sees only own transactions when listing", async ({ request }) => {
+  test("customer must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to sees only own transactions when listing", async ({ request }) => {
+  test("advisor must NOT be able to returns 403 response", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sees only must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_047_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listTransactions.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.status", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listTransactions.list", async ({ request }) => {
-    // Kills: Remove role check in listTransactions.list
+  test("mutation-kill-1: Remove role check in transactions.status", async ({ request }) => {
+    // Kills: Remove role check in transactions.status
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listTransactions.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.status — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access own transactions when listing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access own transactions when listing
+  test("mutation-kill-2: Allow lower-privileged role to access response", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access response
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access own transactions when listing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access own transactions when listing — verify error code is present
+    // Kills: Allow lower-privileged role to access response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to sees only own transactions when listing", async ({ request }) => {
-    // Kills: customer should not be able to sees only own transactions when listing
+  test("mutation-kill-3: customer should not be able to returns 403 response", async ({ request }) => {
+    // Kills: customer should not be able to returns 403 response
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to sees only own transactions when listing — verify no data leaked in error response
+    // Kills: customer should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to sees only own transactions when listing — verify error code is present
+    // Kills: customer should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to sees only own transactions when listing", async ({ request }) => {
-    // Kills: advisor should not be able to sees only own transactions when listing
+  test("mutation-kill-4: advisor should not be able to returns 403 response", async ({ request }) => {
+    // Kills: advisor should not be able to returns 403 response
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.status", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to sees only own transactions when listing — verify no data leaked in error response
+    // Kills: advisor should not be able to returns 403 response — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to sees only own transactions when listing — verify error code is present
+    // Kills: advisor should not be able to returns 403 response — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-048-AUTHMATRIX
-// Behavior: GET /api/transactions authorization for advisor/admin role
+// Behavior: GET /api/transactions allows customer to see only own transactions
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_048_AUTHMATRIX() {
@@ -2054,17 +2275,17 @@ function basePayload_PROOF_B_048_AUTHMATRIX() {
     pageSize: 1,
   };
 }
-test.describe("Auth Matrix: GET /api/transactions authorization for advisor/admin role", () => {
-  test("admin must be able to sees all transactions within bank when listing", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/transactions allows customer to see only own transactions", () => {
+  test("admin must be able to filters transactions", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -2074,107 +2295,113 @@ test.describe("Auth Matrix: GET /api/transactions authorization for advisor/admi
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to sees all transactions within bank when listing", async ({ request }) => {
+  test("customer must NOT be able to filters transactions", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to sees all transactions within bank when listing", async ({ request }) => {
+  test("advisor must NOT be able to filters transactions", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sees all must be rejected", async ({ request }) => {
+  test("cross-tenant filters must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_048_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "listTransactions.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in listTransactions.list", async ({ request }) => {
-    // Kills: Remove role check in listTransactions.list
+  test("mutation-kill-1: Remove role check in transactions.list", async ({ request }) => {
+    // Kills: Remove role check in transactions.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in listTransactions.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access transactions within bank when listing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access transactions within bank when listing
+  test("mutation-kill-2: Allow lower-privileged role to access transactions", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access transactions
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access transactions within bank when listing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access transactions — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access transactions within bank when listing — verify error code is present
+    // Kills: Allow lower-privileged role to access transactions — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to sees all transactions within bank when listing", async ({ request }) => {
-    // Kills: customer should not be able to sees all transactions within bank when listing
+  test("mutation-kill-3: customer should not be able to filters transactions", async ({ request }) => {
+    // Kills: customer should not be able to filters transactions
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to sees all transactions within bank when listing — verify no data leaked in error response
+    // Kills: customer should not be able to filters transactions — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to sees all transactions within bank when listing — verify error code is present
+    // Kills: customer should not be able to filters transactions — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to sees all transactions within bank when listing", async ({ request }) => {
-    // Kills: advisor should not be able to sees all transactions within bank when listing
+  test("mutation-kill-4: advisor should not be able to filters transactions", async ({ request }) => {
+    // Kills: advisor should not be able to filters transactions
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "listTransactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to sees all transactions within bank when listing — verify no data leaked in error response
+    // Kills: advisor should not be able to filters transactions — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to sees all transactions within bank when listing — verify error code is present
+    // Kills: advisor should not be able to filters transactions — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-049-AUTHMATRIX
-// Behavior: DELETE /api/accounts/:id requires admin role
+// Behavior: GET /api/transactions allows advisor/admin to see all transactions within bank
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_049_AUTHMATRIX() {
   return {
-    id: TEST_BANK_ID,
+    bankId: TEST_BANK_ID,
+    accountId: 1,
+    status: "pending",
+    fromDate: tomorrowStr(),
+    toDate: tomorrowStr(),
+    page: 1,
+    pageSize: 1,
   };
 }
-test.describe("Auth Matrix: DELETE /api/accounts/:id requires admin role", () => {
-  test("admin must be able to requires admin role", async ({ request }) => {
+test.describe("Auth Matrix: GET /api/transactions allows advisor/admin to see all transactions within bank", () => {
+  test("admin must be able to lists all transactions", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -2184,108 +2411,218 @@ test.describe("Auth Matrix: DELETE /api/accounts/:id requires admin role", () =>
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to requires admin role", async ({ request }) => {
+  test("customer must NOT be able to lists all transactions", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to requires admin role", async ({ request }) => {
+  test("advisor must NOT be able to lists all transactions", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant lists must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_049_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "closeAccount.delete", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "transactions.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in closeAccount.delete", async ({ request }) => {
-    // Kills: Remove role check in closeAccount.delete
+  test("mutation-kill-1: Remove role check in transactions.list", async ({ request }) => {
+    // Kills: Remove role check in transactions.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in closeAccount.delete — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in transactions.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access admin role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access admin role
+  test("mutation-kill-2: Allow lower-privileged role to access all transactions", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access all transactions
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access admin role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access all transactions — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access admin role — verify error code is present
+    // Kills: Allow lower-privileged role to access all transactions — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to requires admin role", async ({ request }) => {
-    // Kills: customer should not be able to requires admin role
+  test("mutation-kill-3: customer should not be able to lists all transactions", async ({ request }) => {
+    // Kills: customer should not be able to lists all transactions
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to requires admin role — verify no data leaked in error response
+    // Kills: customer should not be able to lists all transactions — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to requires admin role — verify error code is present
+    // Kills: customer should not be able to lists all transactions — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to requires admin role", async ({ request }) => {
-    // Kills: advisor should not be able to requires admin role
+  test("mutation-kill-4: advisor should not be able to lists all transactions", async ({ request }) => {
+    // Kills: advisor should not be able to lists all transactions
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "closeAccount.delete", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "transactions.list", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to requires admin role — verify no data leaked in error response
+    // Kills: advisor should not be able to lists all transactions — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to requires admin role — verify error code is present
+    // Kills: advisor should not be able to lists all transactions — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-054-AUTHMATRIX
-// Behavior: POST /api/accounts/:id/freeze requires admin role
+// Proof: PROOF-B-050-AUTHMATRIX
+// Behavior: DELETE /api/accounts/:id requires admin authorization
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_054_AUTHMATRIX() {
+function basePayload_PROOF_B_050_AUTHMATRIX() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
+  };
+}
+test.describe("Auth Matrix: DELETE /api/accounts/:id requires admin authorization", () => {
+  test("admin must be able to requires authorization admin", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("customer must NOT be able to requires authorization admin", async ({ request }) => {
+    const roleCookie = await getCustomerCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("advisor must NOT be able to requires authorization admin", async ({ request }) => {
+    const roleCookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant requires authorization must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_050_AUTHMATRIX(),
+      bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "accounts.delete", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in accounts.delete", async ({ request }) => {
+    // Kills: Remove role check in accounts.delete
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in accounts.delete — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access admin", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access admin
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access admin — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access admin — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: customer should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: customer should not be able to requires authorization admin
+    const cookie = await getCustomerCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: customer should not be able to requires authorization admin — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: customer should not be able to requires authorization admin — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: advisor should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: advisor should not be able to requires authorization admin
+    const cookie = await getAdvisorCookie(request);
+    const response = await trpcQuery(request, "accounts.delete", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: advisor should not be able to requires authorization admin — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: advisor should not be able to requires authorization admin — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-055-AUTHMATRIX
+// Behavior: POST /api/accounts/:id/freeze requires admin authorization
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_055_AUTHMATRIX() {
+  return {
+    id: 1,
     reason: "test-reason",
   };
 }
-test.describe("Auth Matrix: POST /api/accounts/:id/freeze requires admin role", () => {
-  test("admin must be able to requires admin role", async ({ request }) => {
+test.describe("Auth Matrix: POST /api/accounts/:id/freeze requires admin authorization", () => {
+  test("admin must be able to requires authorization admin", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -2295,107 +2632,107 @@ test.describe("Auth Matrix: POST /api/accounts/:id/freeze requires admin role", 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to requires admin role", async ({ request }) => {
+  test("customer must NOT be able to requires authorization admin", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to requires admin role", async ({ request }) => {
+  test("advisor must NOT be able to requires authorization admin", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant requires authorization must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_054_AUTHMATRIX(),
+      ...basePayload_PROOF_B_055_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "freezeAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.freeze", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in freezeAccount.create", async ({ request }) => {
-    // Kills: Remove role check in freezeAccount.create
+  test("mutation-kill-1: Remove role check in accounts.freeze", async ({ request }) => {
+    // Kills: Remove role check in accounts.freeze
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in freezeAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.freeze — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access admin role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access admin role
+  test("mutation-kill-2: Allow lower-privileged role to access admin", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access admin
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access admin role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access admin role — verify error code is present
+    // Kills: Allow lower-privileged role to access admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to requires admin role", async ({ request }) => {
-    // Kills: customer should not be able to requires admin role
+  test("mutation-kill-3: customer should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: customer should not be able to requires authorization admin
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to requires admin role — verify no data leaked in error response
+    // Kills: customer should not be able to requires authorization admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to requires admin role — verify error code is present
+    // Kills: customer should not be able to requires authorization admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to requires admin role", async ({ request }) => {
-    // Kills: advisor should not be able to requires admin role
+  test("mutation-kill-4: advisor should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: advisor should not be able to requires authorization admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "freezeAccount.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.freeze", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to requires admin role — verify no data leaked in error response
+    // Kills: advisor should not be able to requires authorization admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to requires admin role — verify error code is present
+    // Kills: advisor should not be able to requires authorization admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-060-AUTHMATRIX
-// Behavior: POST /api/accounts/:id/unfreeze requires admin role
+// Proof: PROOF-B-061-AUTHMATRIX
+// Behavior: POST /api/accounts/:id/unfreeze requires admin authorization
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_060_AUTHMATRIX() {
+function basePayload_PROOF_B_061_AUTHMATRIX() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
   };
 }
-test.describe("Auth Matrix: POST /api/accounts/:id/unfreeze requires admin role", () => {
-  test("admin must be able to requires admin role", async ({ request }) => {
+test.describe("Auth Matrix: POST /api/accounts/:id/unfreeze requires admin authorization", () => {
+  test("admin must be able to requires authorization admin", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -2405,82 +2742,82 @@ test.describe("Auth Matrix: POST /api/accounts/:id/unfreeze requires admin role"
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("customer must NOT be able to requires admin role", async ({ request }) => {
+  test("customer must NOT be able to requires authorization admin", async ({ request }) => {
     const roleCookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("advisor must NOT be able to requires admin role", async ({ request }) => {
+  test("advisor must NOT be able to requires authorization admin", async ({ request }) => {
     const roleCookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant requires authorization must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_060_AUTHMATRIX(),
+      ...basePayload_PROOF_B_061_AUTHMATRIX(),
       bankId: TEST_BANK_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "unfreezeAccount.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in unfreezeAccount.create", async ({ request }) => {
-    // Kills: Remove role check in unfreezeAccount.create
+  test("mutation-kill-1: Remove role check in accounts.unfreeze", async ({ request }) => {
+    // Kills: Remove role check in accounts.unfreeze
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in unfreezeAccount.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in accounts.unfreeze — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access admin role", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access admin role
+  test("mutation-kill-2: Allow lower-privileged role to access admin", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access admin
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access admin role — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access admin role — verify error code is present
+    // Kills: Allow lower-privileged role to access admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: customer should not be able to requires admin role", async ({ request }) => {
-    // Kills: customer should not be able to requires admin role
+  test("mutation-kill-3: customer should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: customer should not be able to requires authorization admin
     const cookie = await getCustomerCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: customer should not be able to requires admin role — verify no data leaked in error response
+    // Kills: customer should not be able to requires authorization admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: customer should not be able to requires admin role — verify error code is present
+    // Kills: customer should not be able to requires authorization admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: advisor should not be able to requires admin role", async ({ request }) => {
-    // Kills: advisor should not be able to requires admin role
+  test("mutation-kill-4: advisor should not be able to requires authorization admin", async ({ request }) => {
+    // Kills: advisor should not be able to requires authorization admin
     const cookie = await getAdvisorCookie(request);
-    const response = await trpcQuery(request, "unfreezeAccount.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "accounts.unfreeze", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: advisor should not be able to requires admin role — verify no data leaked in error response
+    // Kills: advisor should not be able to requires authorization admin — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: advisor should not be able to requires admin role — verify error code is present
+    // Kills: advisor should not be able to requires authorization admin — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });

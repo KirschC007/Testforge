@@ -3,14 +3,14 @@ import { BASE_URL, trpcMutation, trpcQuery } from "../../helpers/api";
 import { getAdminCookie } from "../../helpers/auth";
 import { TEST_BANK_ID } from "../../helpers/factories";
 
-// Proof: PROOF-B-053-IDEMPOTENCY
+// Proof: PROOF-B-054-IDEMPOTENCY
 // Behavior: DELETE /api/accounts/:id returns 409 if account is already closed
 // Risk: high
-// Kills: Remove duplicate-check before returns 409 ALREADY_CLOSED in closeAccount.delete | Not returning existing resource on duplicate returns 409 ALREADY_CLOSED | Creating second record instead of returning existing one
+// Kills: Remove duplicate-check before returns 409 in accounts.delete | Not returning existing resource on duplicate returns 409 | Creating second record instead of returning existing one
 
-function basePayload_PROOF_B_053_IDEMPOTENCY() {
+function basePayload_PROOF_B_054_IDEMPOTENCY() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
   };
 }
 
@@ -21,14 +21,14 @@ test.describe("Idempotency: DELETE /api/accounts/:id returns 409 if account is a
     cookie = await getAdminCookie(request);
   });
 
-  test("duplicate returns 409 ALREADY_CLOSED request must not create a second if account is already closed", async ({ request }) => {
-    const payload = basePayload_PROOF_B_053_IDEMPOTENCY();
+  test("duplicate returns 409 request must not create a second response", async ({ request }) => {
+    const payload = basePayload_PROOF_B_054_IDEMPOTENCY();
     // First request
-    const response1 = await trpcMutation(request, "closeAccount.delete", payload, cookie);
+    const response1 = await trpcMutation(request, "accounts.delete", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201]);
     const id1 = response1.data?.result?.data?.id;
     // Second identical request
-    const response2 = await trpcMutation(request, "closeAccount.delete", payload, cookie);
+    const response2 = await trpcMutation(request, "accounts.delete", payload, cookie);
     // Must succeed or return conflict — never 500
     expect(response2.status).toBeOneOf([200, 201, 409]);
     if (response2.status === 200 || response2.status === 201) {
@@ -40,13 +40,13 @@ test.describe("Idempotency: DELETE /api/accounts/:id returns 409 if account is a
     }
   });
 
-  test("repeated returns 409 ALREADY_CLOSED must not multiply side effects", async ({ request }) => {
-    const payload = basePayload_PROOF_B_053_IDEMPOTENCY();
+  test("repeated returns 409 must not multiply side effects", async ({ request }) => {
+    const payload = basePayload_PROOF_B_054_IDEMPOTENCY();
     // Perform the operation twice
-    await trpcMutation(request, "closeAccount.delete", payload, cookie);
-    await trpcMutation(request, "closeAccount.delete", payload, cookie);
+    await trpcMutation(request, "accounts.delete", payload, cookie);
+    await trpcMutation(request, "accounts.delete", payload, cookie);
     // Verify the list endpoint does not contain duplicates
-    const listResponse = await trpcQuery(request, "closeAccount.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "accounts.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     if (Array.isArray(items)) {
@@ -59,14 +59,14 @@ test.describe("Idempotency: DELETE /api/accounts/:id returns 409 if account is a
     }
   });
 
-  test("returns 409 ALREADY_CLOSED with idempotency key must return same result", async ({ request }) => {
+  test("returns 409 with idempotency key must return same result", async ({ request }) => {
     const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const payload = { ...basePayload_PROOF_B_053_IDEMPOTENCY(), idempotencyKey };
+    const payload = { ...basePayload_PROOF_B_054_IDEMPOTENCY(), idempotencyKey };
     // First call
-    const response1 = await trpcMutation(request, "closeAccount.delete", payload, cookie);
+    const response1 = await trpcMutation(request, "accounts.delete", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201, 422]); // 422 if idempotencyKey not supported
     // Second call with same key
-    const response2 = await trpcMutation(request, "closeAccount.delete", payload, cookie);
+    const response2 = await trpcMutation(request, "accounts.delete", payload, cookie);
     expect(response2.status).toBeOneOf([200, 201, 409, 422]);
     // If both succeed, they must return identical data
     if ((response1.status === 200 || response1.status === 201) &&
@@ -80,33 +80,33 @@ test.describe("Idempotency: DELETE /api/accounts/:id returns 409 if account is a
   });
 });
 
-// Proof: PROOF-B-058-IDEMPOTENCY
-// Behavior: POST /api/accounts/:id/freeze returns 409 if already frozen
+// Proof: PROOF-B-059-IDEMPOTENCY
+// Behavior: POST /api/accounts/:id/freeze returns 409 if account is already frozen
 // Risk: high
-// Kills: Remove duplicate-check before returns 409 ALREADY_FROZEN in freezeAccount.create | Not returning existing resource on duplicate returns 409 ALREADY_FROZEN | Creating second record instead of returning existing one
+// Kills: Remove duplicate-check before returns 409 in accounts.freeze | Not returning existing resource on duplicate returns 409 | Creating second record instead of returning existing one
 
-function basePayload_PROOF_B_058_IDEMPOTENCY() {
+function basePayload_PROOF_B_059_IDEMPOTENCY() {
   return {
-    id: TEST_BANK_ID,
+    id: 1,
     reason: "test-reason",
   };
 }
 
-test.describe("Idempotency: POST /api/accounts/:id/freeze returns 409 if already frozen", () => {
+test.describe("Idempotency: POST /api/accounts/:id/freeze returns 409 if account is already frozen", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
     cookie = await getAdminCookie(request);
   });
 
-  test("duplicate returns 409 ALREADY_FROZEN request must not create a second if account is already frozen", async ({ request }) => {
-    const payload = basePayload_PROOF_B_058_IDEMPOTENCY();
+  test("duplicate returns 409 request must not create a second response", async ({ request }) => {
+    const payload = basePayload_PROOF_B_059_IDEMPOTENCY();
     // First request
-    const response1 = await trpcMutation(request, "freezeAccount.create", payload, cookie);
+    const response1 = await trpcMutation(request, "accounts.freeze", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201]);
     const id1 = response1.data?.result?.data?.id;
     // Second identical request
-    const response2 = await trpcMutation(request, "freezeAccount.create", payload, cookie);
+    const response2 = await trpcMutation(request, "accounts.freeze", payload, cookie);
     // Must succeed or return conflict — never 500
     expect(response2.status).toBeOneOf([200, 201, 409]);
     if (response2.status === 200 || response2.status === 201) {
@@ -118,13 +118,13 @@ test.describe("Idempotency: POST /api/accounts/:id/freeze returns 409 if already
     }
   });
 
-  test("repeated returns 409 ALREADY_FROZEN must not multiply side effects", async ({ request }) => {
-    const payload = basePayload_PROOF_B_058_IDEMPOTENCY();
+  test("repeated returns 409 must not multiply side effects", async ({ request }) => {
+    const payload = basePayload_PROOF_B_059_IDEMPOTENCY();
     // Perform the operation twice
-    await trpcMutation(request, "freezeAccount.create", payload, cookie);
-    await trpcMutation(request, "freezeAccount.create", payload, cookie);
+    await trpcMutation(request, "accounts.freeze", payload, cookie);
+    await trpcMutation(request, "accounts.freeze", payload, cookie);
     // Verify the list endpoint does not contain duplicates
-    const listResponse = await trpcQuery(request, "freezeAccount.list", { bankId: TEST_BANK_ID }, cookie);
+    const listResponse = await trpcQuery(request, "accounts.list", { bankId: TEST_BANK_ID }, cookie);
     expect(listResponse.status).toBe(200);
     const items = listResponse.data?.result?.data;
     if (Array.isArray(items)) {
@@ -137,14 +137,14 @@ test.describe("Idempotency: POST /api/accounts/:id/freeze returns 409 if already
     }
   });
 
-  test("returns 409 ALREADY_FROZEN with idempotency key must return same result", async ({ request }) => {
+  test("returns 409 with idempotency key must return same result", async ({ request }) => {
     const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const payload = { ...basePayload_PROOF_B_058_IDEMPOTENCY(), idempotencyKey };
+    const payload = { ...basePayload_PROOF_B_059_IDEMPOTENCY(), idempotencyKey };
     // First call
-    const response1 = await trpcMutation(request, "freezeAccount.create", payload, cookie);
+    const response1 = await trpcMutation(request, "accounts.freeze", payload, cookie);
     expect(response1.status).toBeOneOf([200, 201, 422]); // 422 if idempotencyKey not supported
     // Second call with same key
-    const response2 = await trpcMutation(request, "freezeAccount.create", payload, cookie);
+    const response2 = await trpcMutation(request, "accounts.freeze", payload, cookie);
     expect(response2.status).toBeOneOf([200, 201, 409, 422]);
     // If both succeed, they must return identical data
     if ((response1.status === 200 || response1.status === 201) &&

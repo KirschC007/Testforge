@@ -16,24 +16,24 @@ test.beforeAll(async ({ request }) => {
   );
 });
 
-// PROOF-B-001-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-001-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create tasks
 
 test("PROOF-B-001-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.create query
+  // Kills: Remove workspaceId filter in tasks.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -42,9 +42,9 @@ test("PROOF-B-001-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via routers.create", async ({ request }) => {
+test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via tasks.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -53,8 +53,8 @@ test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.create
-  const crossTenant = await trpcMutation(request, "routers.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.create
+  const crossTenant = await trpcMutation(request, "tasks.create",
     {
         workspaceId: TEST_WORKSPACE_B_ID,
         title: "test-title",
@@ -67,34 +67,34 @@ test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.create
-  // Kills: Allow cross-tenant mutations on routers.create
+  // Kills: Missing tenant ownership check in tasks.create
+  // Kills: Allow cross-tenant mutations on tasks.create
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-002-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-002-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get tasks
 
 test("PROOF-B-002-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.list query
+  // Kills: Remove workspaceId filter in tasks.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -105,7 +105,7 @@ test("PROOF-B-002-IDORa — Tenant A cannot list Tenant B resources", async ({ r
 
 test("PROOF-B-002-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -114,34 +114,34 @@ test("PROOF-B-002-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.list
-  const crossTenant = await trpcQuery(request, "routers.list",
+  // Attack: Tenant A tries to read specific Tenant B resource via tasks.list
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { id: resourceId, workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.list
+  // Kills: Missing tenant ownership check in tasks.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-003-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-003-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get tasks
 
 test("PROOF-B-003-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.getById query
+  // Kills: Remove workspaceId filter in tasks.getById query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -152,7 +152,7 @@ test("PROOF-B-003-IDORa — Tenant A cannot list Tenant B resources", async ({ r
 
 test("PROOF-B-003-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -161,34 +161,34 @@ test("PROOF-B-003-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.getById
-  const crossTenant = await trpcQuery(request, "routers.getById",
+  // Attack: Tenant A tries to read specific Tenant B resource via tasks.getById
+  const crossTenant = await trpcQuery(request, "tasks.getById",
     { id: resourceId, workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.getById
+  // Kills: Missing tenant ownership check in tasks.getById
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-004-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-004-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Update routers
+// Behavior: Update tasks
 
 test("PROOF-B-004-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.update query
+  // Kills: Remove workspaceId filter in tasks.update query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -197,9 +197,9 @@ test("PROOF-B-004-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-004-IDORb — Tenant A cannot mutate Tenant B resource via routers.update", async ({ request }) => {
+test("PROOF-B-004-IDORb — Tenant A cannot mutate Tenant B resource via tasks.update", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -208,8 +208,8 @@ test("PROOF-B-004-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.update
-  const crossTenant = await trpcMutation(request, "routers.update",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.update
+  const crossTenant = await trpcMutation(request, "tasks.update",
     {
         id: resourceId,
         workspaceId: TEST_WORKSPACE_B_ID,
@@ -223,34 +223,34 @@ test("PROOF-B-004-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.update
-  // Kills: Allow cross-tenant mutations on routers.update
+  // Kills: Missing tenant ownership check in tasks.update
+  // Kills: Allow cross-tenant mutations on tasks.update
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-005-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-005-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Update routers
+// Behavior: Update tasks
 
 test("PROOF-B-005-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.updateStatus query
+  // Kills: Remove workspaceId filter in tasks.updateStatus query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -259,9 +259,9 @@ test("PROOF-B-005-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via routers.updateStatus", async ({ request }) => {
+test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via tasks.updateStatus", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -270,8 +270,8 @@ test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.updateStatus
-  const crossTenant = await trpcMutation(request, "routers.updateStatus",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.updateStatus
+  const crossTenant = await trpcMutation(request, "tasks.updateStatus",
     {
         id: resourceId,
         workspaceId: TEST_WORKSPACE_B_ID,
@@ -279,34 +279,34 @@ test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.updateStatus
-  // Kills: Allow cross-tenant mutations on routers.updateStatus
+  // Kills: Missing tenant ownership check in tasks.updateStatus
+  // Kills: Allow cross-tenant mutations on tasks.updateStatus
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-006-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-006-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Delete routers
+// Behavior: Delete tasks
 
 test("PROOF-B-006-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.delete query
+  // Kills: Remove workspaceId filter in tasks.delete query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -315,9 +315,9 @@ test("PROOF-B-006-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-006-IDORb — Tenant A cannot mutate Tenant B resource via routers.delete", async ({ request }) => {
+test("PROOF-B-006-IDORb — Tenant A cannot mutate Tenant B resource via tasks.delete", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -326,42 +326,42 @@ test("PROOF-B-006-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.delete
-  const crossTenant = await trpcMutation(request, "routers.delete",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.delete
+  const crossTenant = await trpcMutation(request, "tasks.delete",
     {
         id: resourceId,
         workspaceId: TEST_WORKSPACE_B_ID,
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.delete
-  // Kills: Allow cross-tenant mutations on routers.delete
+  // Kills: Missing tenant ownership check in tasks.delete
+  // Kills: Allow cross-tenant mutations on tasks.delete
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-007-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-007-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Bulk operation on routers
+// Behavior: Bulk operation on tasks
 
 test("PROOF-B-007-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.bulkDelete query
+  // Kills: Remove workspaceId filter in tasks.bulkDelete query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -370,9 +370,9 @@ test("PROOF-B-007-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-007-IDORb — Tenant A cannot mutate Tenant B resource via routers.bulkDelete", async ({ request }) => {
+test("PROOF-B-007-IDORb — Tenant A cannot mutate Tenant B resource via tasks.bulkDelete", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -381,42 +381,42 @@ test("PROOF-B-007-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.bulkDelete
-  const crossTenant = await trpcMutation(request, "routers.bulkDelete",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.bulkDelete
+  const crossTenant = await trpcMutation(request, "tasks.bulkDelete",
     {
         taskIds: [resourceId],
         workspaceId: TEST_WORKSPACE_B_ID,
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.bulkDelete
-  // Kills: Allow cross-tenant mutations on routers.bulkDelete
+  // Kills: Missing tenant ownership check in tasks.bulkDelete
+  // Kills: Allow cross-tenant mutations on tasks.bulkDelete
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-008-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-008-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Bulk operation on routers
+// Behavior: Bulk operation on tasks
 
 test("PROOF-B-008-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.bulkUpdateStatus query
+  // Kills: Remove workspaceId filter in tasks.bulkUpdateStatus query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -425,9 +425,9 @@ test("PROOF-B-008-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-008-IDORb — Tenant A cannot mutate Tenant B resource via routers.bulkUpdateStatus", async ({ request }) => {
+test("PROOF-B-008-IDORb — Tenant A cannot mutate Tenant B resource via tasks.bulkUpdateStatus", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -436,42 +436,42 @@ test("PROOF-B-008-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.bulkUpdateStatus
-  const crossTenant = await trpcMutation(request, "routers.bulkUpdateStatus",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.bulkUpdateStatus
+  const crossTenant = await trpcMutation(request, "tasks.bulkUpdateStatus",
     {
         taskIds: [resourceId],
         workspaceId: TEST_WORKSPACE_B_ID,
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.bulkUpdateStatus
-  // Kills: Allow cross-tenant mutations on routers.bulkUpdateStatus
+  // Kills: Missing tenant ownership check in tasks.bulkUpdateStatus
+  // Kills: Allow cross-tenant mutations on tasks.bulkUpdateStatus
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-009-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-009-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create tasks
 
 test("PROOF-B-009-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.create query
+  // Kills: Remove workspaceId filter in tasks.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -480,9 +480,9 @@ test("PROOF-B-009-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-009-IDORb — Tenant A cannot mutate Tenant B resource via routers.create", async ({ request }) => {
+test("PROOF-B-009-IDORb — Tenant A cannot mutate Tenant B resource via tasks.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -491,8 +491,8 @@ test("PROOF-B-009-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.create
-  const crossTenant = await trpcMutation(request, "routers.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.create
+  const crossTenant = await trpcMutation(request, "tasks.create",
     {
         workspaceId: TEST_WORKSPACE_B_ID,
         title: "test-title",
@@ -505,34 +505,34 @@ test("PROOF-B-009-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.create
-  // Kills: Allow cross-tenant mutations on routers.create
+  // Kills: Missing tenant ownership check in tasks.create
+  // Kills: Allow cross-tenant mutations on tasks.create
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-010-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-010-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get tasks
 
 test("PROOF-B-010-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.list query
+  // Kills: Remove workspaceId filter in tasks.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -543,7 +543,7 @@ test("PROOF-B-010-IDORa — Tenant A cannot list Tenant B resources", async ({ r
 
 test("PROOF-B-010-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -552,34 +552,34 @@ test("PROOF-B-010-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.list
-  const crossTenant = await trpcQuery(request, "routers.list",
+  // Attack: Tenant A tries to read specific Tenant B resource via tasks.list
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { id: resourceId, workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.list
+  // Kills: Missing tenant ownership check in tasks.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-011-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-011-IDOR — IDOR: Cross-tenant access to tasks must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Delete routers
+// Behavior: Delete tasks
 
 test("PROOF-B-011-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
+  const ownData = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
+  const crossTenant = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove workspaceId filter in routers.delete query
+  // Kills: Remove workspaceId filter in tasks.delete query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -588,9 +588,9 @@ test("PROOF-B-011-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-011-IDORb — Tenant A cannot mutate Tenant B resource via routers.delete", async ({ request }) => {
+test("PROOF-B-011-IDORb — Tenant A cannot mutate Tenant B resource via tasks.delete", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
+  const tenantBList = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
@@ -599,19 +599,19 @@ test("PROOF-B-011-IDORb — Tenant A cannot mutate Tenant B resource via routers
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.delete
-  const crossTenant = await trpcMutation(request, "routers.delete",
+  // Attack: Tenant A tries to mutate Tenant B resource via tasks.delete
+  const crossTenant = await trpcMutation(request, "tasks.delete",
     {
         id: resourceId,
         workspaceId: TEST_WORKSPACE_B_ID,
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.delete
-  // Kills: Allow cross-tenant mutations on routers.delete
+  // Kills: Missing tenant ownership check in tasks.delete
+  // Kills: Allow cross-tenant mutations on tasks.delete
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
+  const verify = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact

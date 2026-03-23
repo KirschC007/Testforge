@@ -1,7 +1,7 @@
 import { invokeLLM } from "../_core/llm";
 import { generateProofs } from "./proof-generator";
 import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
-import { parseSpec } from "./llm-parser";
+import { parseSpec, withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { parseSpecSmart } from "./smart-parser";
 import { runLLMChecker, assessSpecHealth, buildRiskModel } from "./risk-model";
 import { generateHelpers } from "./helpers-generator";
@@ -104,6 +104,41 @@ export async function runAnalysisJob(
       }
     }
   }
+
+  // Universal endpoint normalization — applied after ALL parser paths
+  // Ensures no "createAccount.create", "routers.list", or "auth.list" fallbacks reach the generators
+  analysisResult.ir.apiEndpoints = analysisResult.ir.apiEndpoints.map(ep => {
+    const raw = ep.name;
+    // Already correct simple dot-notation: resource.action (all lowercase, simple words)
+    if (/^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/.test(raw)) return ep;
+    // Delegate to the same logic as in llm-parser normalizeEndpointName
+    // Inline here to avoid circular imports — keep in sync with llm-parser.ts
+    let normalized = raw;
+    // Duplicate-verb: "createAccount.create" → "accounts.create"
+    const dupMatch = raw.match(/^(create|list|get|update|delete|find|add|remove)([A-Z]\w*)\.(\1)$/i);
+    if (dupMatch) {
+      const res = dupMatch[2].toLowerCase();
+      normalized = `${res.endsWith("s") ? res : res + "s"}.${dupMatch[1].toLowerCase()}`;
+    } else if (/^[a-z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(raw)) {
+      // camelCase left side: "listAccounts.list" → "accounts.list"
+      const [left, right] = raw.split(".");
+      const verbs = ["create","list","get","update","delete","add","remove","find","fetch","patch",
+        "set","freeze","unfreeze","cancel","approve","reject","complete","archive","send",
+        "export","import","anonymize","void","mark","close","open","start","stop","pause","resume","skip","scan"];
+      const mv = verbs.find(v => left.toLowerCase().startsWith(v) && left.length > v.length);
+      if (mv) {
+        const resourceRaw = left.slice(mv.length);
+        const resourceBase = resourceRaw.replace(/([A-Z][a-z]+)/g, m => m.toLowerCase() + "-").replace(/-+$/, "").split("-")[0];
+        const resource = resourceBase.endsWith("s") ? resourceBase : resourceBase + "s";
+        let action = right;
+        const extra = resourceRaw.includes("-") ? resourceRaw.split("-").slice(1).join("") : "";
+        if (extra && extra.toLowerCase() !== "s") action = right + extra.charAt(0).toUpperCase() + extra.slice(1).toLowerCase();
+        if (resourceRaw.toUpperCase().includes("GDPR")) action = "gdpr" + right.charAt(0).toUpperCase() + right.slice(1);
+        normalized = `${resource}.${action}`;
+      }
+    }
+    return { ...ep, name: normalized };
+  });
 
   // Assess spec health (all paths)
   analysisResult.specHealth = assessSpecHealth(analysisResult.ir);

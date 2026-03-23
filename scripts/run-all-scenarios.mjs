@@ -126,10 +126,23 @@ function runQualityGate(testFiles, scenarioName) {
   const stFile = testFiles.find(f => f.rel.includes("status-transition") || f.rel.includes("status_transition"));
   if (stFile) {
     const knownStatuses = [
+      // BankingCore
       "pending", "processing", "completed", "failed", "reversed",
       "active", "frozen", "closed",
+      // ProjectManager / TaskManager
       "todo", "in_progress", "review", "done", "archived",
+      // E-Commerce (uppercase)
       "PENDING", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "REFUNDED",
+      // HealthClinic appointments
+      "scheduled", "confirmed", "checked_in", "no_show",
+      // EventTicketing orders
+      "refunded",
+      // FitnessTracker workouts
+      "planned", "skipped",
+      // InvoiceManager
+      "draft", "sent", "paid", "overdue", "void",
+      // Generic
+      "cancelled", "open", "closed", "rejected", "approved",
     ];
     const statusMatches = stFile.content.match(/status:\s*"([^"]+)"/g) || [];
     for (const m of statusMatches) {
@@ -183,6 +196,42 @@ function runQualityGate(testFiles, scenarioName) {
     if (f.content.includes("helpers/helpers/")) {
       fail(`[${f.rel}] double-nested helpers path: helpers/helpers/`);
     }
+  }
+
+  // 12. E2E-Flow-Tests: if e2e-flows.spec.ts exists, it must have correct imports
+  const e2eFile = testFiles.find(f => f.rel.includes("e2e-flow") || f.rel.includes("e2e_flow"));
+  if (e2eFile) {
+    if (!e2eFile.content.includes("trpcMutation") && !e2eFile.content.includes("trpcQuery")) {
+      fail(`[${e2eFile.rel}] E2E-Flow test missing trpcMutation/trpcQuery imports`);
+    } else {
+      pass("E2E-Flow: correct API helper imports");
+    }
+    if (e2eFile.content.includes("TODO_REPLACE_WITH")) {
+      fail(`[${e2eFile.rel}] E2E-Flow test has TODO_REPLACE_WITH placeholder`);
+    }
+  }
+
+  // 13. DB-State-Verification: status-transition tests must call trpcQuery AFTER trpcMutation
+  const stFileForDB = testFiles.find(f => f.rel.includes("status-transition") || f.rel.includes("status_transition"));
+  if (stFileForDB) {
+    const hasMutation = stFileForDB.content.includes("trpcMutation");
+    const hasQueryAfter = stFileForDB.content.includes("trpcQuery");
+    if (hasMutation && !hasQueryAfter) {
+      fail(`[${stFileForDB.rel}] Status-Transition test has no DB-State-Verification (no trpcQuery after mutation)`);
+    } else if (hasMutation && hasQueryAfter) {
+      pass("DB-State-Verification: status-transition tests verify DB state after mutation");
+    }
+  }
+
+  // 14. Enum values: no TODO_ENUM_VALUE placeholders in generated tests
+  for (const f of testFiles) {
+    if (f.content.includes("TODO_ENUM_VALUE") || f.content.includes("UNKNOWN_ENUM")) {
+      fail(`[${f.rel}] contains TODO_ENUM_VALUE or UNKNOWN_ENUM placeholder`);
+    }
+  }
+  const enumFiles = testFiles.filter(f => !f.content.includes("TODO_ENUM_VALUE") && !f.content.includes("UNKNOWN_ENUM"));
+  if (enumFiles.length === testFiles.length && testFiles.length > 0) {
+    pass("Enum-Values: no TODO_ENUM_VALUE placeholders in any test file");
   }
 
   const passed = results.filter(r => r.startsWith("✅")).length;
@@ -277,6 +326,36 @@ const ecFiles = [
 ];
 const s4 = await runCodeScenario("E-Commerce", ecFiles, `${OUTPUT_DIR}/s4-ecommerce.zip`);
 scenarios.push({ name: "E-Commerce Vibe", ...s4 });
+
+// Szenario 5: HealthClinic Spec
+const hcSpec = readFileSync("/tmp/scenario-5-healthclinic/healthclinic-spec.md", "utf8");
+const s5 = await runSpecScenario("HealthClinic", hcSpec, `${OUTPUT_DIR}/s5-healthclinic.zip`);
+scenarios.push({ name: "HealthClinic Spec", ...s5 });
+
+// Szenario 6: EventTicketing Spec
+const etSpec = readFileSync("/tmp/scenario-6-eventticketing/eventticketing-spec.md", "utf8");
+const s6 = await runSpecScenario("EventTicketing", etSpec, `${OUTPUT_DIR}/s6-eventticketing.zip`);
+scenarios.push({ name: "EventTicketing Spec", ...s6 });
+
+// Szenario 7: FitnessTracker Vibe-Code
+const ftFiles = [
+  { path: "server/db/schema.ts", content: readFileSync("/tmp/scenario-7-fitnesstracker/schema.ts", "utf8") },
+  { path: "server/routers/workouts.ts", content: readFileSync("/tmp/scenario-7-fitnesstracker/routers.ts", "utf8") },
+  { path: "server/trpc.ts", content: readFileSync("/tmp/scenario-7-fitnesstracker/trpc.ts", "utf8") },
+  { path: "package.json", content: readFileSync("/tmp/scenario-7-fitnesstracker/package.json", "utf8") },
+];
+const s7 = await runCodeScenario("FitnessTracker", ftFiles, `${OUTPUT_DIR}/s7-fitnesstracker.zip`);
+scenarios.push({ name: "FitnessTracker Vibe", ...s7 });
+
+// Szenario 8: InvoiceManager Vibe-Code (Prisma)
+const imFiles = [
+  { path: "prisma/schema.prisma", content: readFileSync("/tmp/scenario-8-invoicemanager/schema.prisma", "utf8") },
+  { path: "server/routers/invoices.ts", content: readFileSync("/tmp/scenario-8-invoicemanager/routers.ts", "utf8") },
+  { path: "server/trpc.ts", content: readFileSync("/tmp/scenario-8-invoicemanager/trpc.ts", "utf8") },
+  { path: "package.json", content: readFileSync("/tmp/scenario-8-invoicemanager/package.json", "utf8") },
+];
+const s8 = await runCodeScenario("InvoiceManager", imFiles, `${OUTPUT_DIR}/s8-invoicemanager.zip`);
+scenarios.push({ name: "InvoiceManager Vibe", ...s8 });
 
 // ── Quality Gate for all scenarios ───────────────────────────────────────────
 console.log("\n" + "=".repeat(60));

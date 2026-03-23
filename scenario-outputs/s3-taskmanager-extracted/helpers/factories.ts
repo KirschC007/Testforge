@@ -25,7 +25,7 @@ export async function createTestResource(
   cookieHeader: string,
   opts: CreateTestResourceOpts = {}
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcMutation(request, "routers.create", {
+  const { data, error } = await trpcMutation(request, "tasks.create", {
     workspaceId: opts.workspaceId ?? TEST_WORKSPACE_ID,
     title: opts.title ?? "Test title-${Date.now()}",
     description: opts.description ?? "test-description-${Date.now()}",
@@ -47,7 +47,7 @@ export async function getResource(
   id: number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcQuery(request, "routers.getById",
+  const { data, error } = await trpcQuery(request, "tasks.getById",
     { id, workspaceId: TEST_WORKSPACE_ID }, cookieHeader);
   if (error) throw new Error(`getResource failed: ${JSON.stringify(error)}`);
   return data as Record<string, unknown>;
@@ -60,7 +60,7 @@ export async function listResources(
   cookieHeader: string,
   extra: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>[]> {
-  const { data } = await trpcQuery(request, "routers.list",
+  const { data } = await trpcQuery(request, "tasks.list",
     { workspaceId: TEST_WORKSPACE_ID, ...extra }, cookieHeader);
   return (data as Record<string, unknown>[]) ?? [];
 }
@@ -72,7 +72,7 @@ export async function getResourceByIdentifier(
   identifier: string | number,
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await trpcQuery(request, "routers.getById",
+  const { data, error } = await trpcQuery(request, "tasks.getById",
     { workspaceId: TEST_WORKSPACE_ID, id: identifier }, cookieHeader);
   if (error) throw new Error(`getResourceByIdentifier failed: ${JSON.stringify(error)}`);
   return data as Record<string, unknown>;

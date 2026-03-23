@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { loginAndGetCookie, trpcMutation, trpcQuery } from "../../helpers/api";
 import { getAdminCookie } from "../../helpers/auth";
-import { TEST_WORKSPACE_B_ID, TEST_WORKSPACE_ID, createTestResource } from "../../helpers/factories";
+import { TEST_SHOP_B_ID, TEST_SHOP_ID, createTestResource } from "../../helpers/factories";
 
 let tenantACookie: string;
 let tenantBCookie: string;
@@ -16,47 +16,47 @@ test.beforeAll(async ({ request }) => {
   );
 });
 
-// PROOF-B-001-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-001-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create products
 
 test("PROOF-B-001-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.create query
+  // Kills: Remove shopId filter in products.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via routers.create", async ({ request }) => {
+test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via products.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.create
-  const crossTenant = await trpcMutation(request, "routers.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.create
+  const crossTenant = await trpcMutation(request, "products.create",
     {
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
         name: "test-title",
         description: "test-description",
         sku: "test-sku",
@@ -69,105 +69,105 @@ test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.create
-  // Kills: Allow cross-tenant mutations on routers.create
+  // Kills: Missing tenant ownership check in products.create
+  // Kills: Allow cross-tenant mutations on products.create
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-002-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-002-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get products
 
 test("PROOF-B-002-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.list query
+  // Kills: Remove shopId filter in products.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-002-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.list
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.list
+  const crossTenant = await trpcQuery(request, "products.list",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.list
+  // Kills: Missing tenant ownership check in products.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-003-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-003-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Update routers
+// Behavior: Update products
 
 test("PROOF-B-003-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.update query
+  // Kills: Remove shopId filter in products.update query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-003-IDORb — Tenant A cannot mutate Tenant B resource via routers.update", async ({ request }) => {
+test("PROOF-B-003-IDORb — Tenant A cannot mutate Tenant B resource via products.update", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.update
-  const crossTenant = await trpcMutation(request, "routers.update",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.update
+  const crossTenant = await trpcMutation(request, "products.update",
     {
         id: resourceId,
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
         name: "test-title",
         description: "test-description",
         price: 1,
@@ -177,112 +177,112 @@ test("PROOF-B-003-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.update
-  // Kills: Allow cross-tenant mutations on routers.update
+  // Kills: Missing tenant ownership check in products.update
+  // Kills: Allow cross-tenant mutations on products.update
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-004-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-004-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Delete routers
+// Behavior: Delete products
 
 test("PROOF-B-004-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.delete query
+  // Kills: Remove shopId filter in products.delete query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-004-IDORb — Tenant A cannot mutate Tenant B resource via routers.delete", async ({ request }) => {
+test("PROOF-B-004-IDORb — Tenant A cannot mutate Tenant B resource via products.delete", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.delete
-  const crossTenant = await trpcMutation(request, "routers.delete",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.delete
+  const crossTenant = await trpcMutation(request, "products.delete",
     {
         id: resourceId,
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.delete
-  // Kills: Allow cross-tenant mutations on routers.delete
+  // Kills: Missing tenant ownership check in products.delete
+  // Kills: Allow cross-tenant mutations on products.delete
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-005-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-005-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create products
 
 test("PROOF-B-005-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.create query
+  // Kills: Remove shopId filter in products.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via routers.create", async ({ request }) => {
+test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via products.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.create
-  const crossTenant = await trpcMutation(request, "routers.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.create
+  const crossTenant = await trpcMutation(request, "products.create",
     {
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
         name: "test-title",
         description: "test-description",
         sku: "test-sku",
@@ -295,256 +295,256 @@ test("PROOF-B-005-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.create
-  // Kills: Allow cross-tenant mutations on routers.create
+  // Kills: Missing tenant ownership check in products.create
+  // Kills: Allow cross-tenant mutations on products.create
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-006-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-006-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get products
 
 test("PROOF-B-006-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.list query
+  // Kills: Remove shopId filter in products.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-006-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.list
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.list
+  const crossTenant = await trpcQuery(request, "products.list",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.list
+  // Kills: Missing tenant ownership check in products.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-007-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-007-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get products
 
 test("PROOF-B-007-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.getById query
+  // Kills: Remove shopId filter in products.getById query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-007-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.getById
-  const crossTenant = await trpcQuery(request, "routers.getById",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.getById
+  const crossTenant = await trpcQuery(request, "products.getById",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.getById
+  // Kills: Missing tenant ownership check in products.getById
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-008-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-008-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Update routers
+// Behavior: Update products
 
 test("PROOF-B-008-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.updateStatus query
+  // Kills: Remove shopId filter in products.updateStatus query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-008-IDORb — Tenant A cannot mutate Tenant B resource via routers.updateStatus", async ({ request }) => {
+test("PROOF-B-008-IDORb — Tenant A cannot mutate Tenant B resource via products.updateStatus", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.updateStatus
-  const crossTenant = await trpcMutation(request, "routers.updateStatus",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.updateStatus
+  const crossTenant = await trpcMutation(request, "products.updateStatus",
     {
         id: resourceId,
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
         status: "active",
         trackingNumber: "test-trackingNumber",
         cancelReason: "test-cancelReason",
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.updateStatus
-  // Kills: Allow cross-tenant mutations on routers.updateStatus
+  // Kills: Missing tenant ownership check in products.updateStatus
+  // Kills: Allow cross-tenant mutations on products.updateStatus
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-009-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-009-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Mutate routers
+// Behavior: Mutate products
 
 test("PROOF-B-009-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.cancel query
+  // Kills: Remove shopId filter in products.cancel query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-009-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.cancel
-  const crossTenant = await trpcQuery(request, "routers.cancel",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.cancel
+  const crossTenant = await trpcQuery(request, "products.cancel",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.cancel
+  // Kills: Missing tenant ownership check in products.cancel
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-010-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-010-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Create routers
+// Behavior: Create products
 
 test("PROOF-B-010-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.create query
+  // Kills: Remove shopId filter in products.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-010-IDORb — Tenant A cannot mutate Tenant B resource via routers.create", async ({ request }) => {
+test("PROOF-B-010-IDORb — Tenant A cannot mutate Tenant B resource via products.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.create
-  const crossTenant = await trpcMutation(request, "routers.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.create
+  const crossTenant = await trpcMutation(request, "products.create",
     {
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
         name: "test-title",
         description: "test-description",
         sku: "test-sku",
@@ -557,208 +557,208 @@ test("PROOF-B-010-IDORb — Tenant A cannot mutate Tenant B resource via routers
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.create
-  // Kills: Allow cross-tenant mutations on routers.create
+  // Kills: Missing tenant ownership check in products.create
+  // Kills: Allow cross-tenant mutations on products.create
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-011-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-011-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get products
 
 test("PROOF-B-011-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.list query
+  // Kills: Remove shopId filter in products.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-011-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.list
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.list
+  const crossTenant = await trpcQuery(request, "products.list",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.list
+  // Kills: Missing tenant ownership check in products.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-012-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-012-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Mutate routers
+// Behavior: Mutate products
 
 test("PROOF-B-012-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.block query
+  // Kills: Remove shopId filter in products.block query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-012-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.block
-  const crossTenant = await trpcQuery(request, "routers.block",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.block
+  const crossTenant = await trpcQuery(request, "products.block",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.block
+  // Kills: Missing tenant ownership check in products.block
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-013-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-013-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Mutate routers
+// Behavior: Mutate products
 
 test("PROOF-B-013-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.gdprDelete query
+  // Kills: Remove shopId filter in products.gdprDelete query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-013-IDORb — Tenant A cannot mutate Tenant B resource via routers.gdprDelete", async ({ request }) => {
+test("PROOF-B-013-IDORb — Tenant A cannot mutate Tenant B resource via products.gdprDelete", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via routers.gdprDelete
-  const crossTenant = await trpcMutation(request, "routers.gdprDelete",
+  // Attack: Tenant A tries to mutate Tenant B resource via products.gdprDelete
+  const crossTenant = await trpcMutation(request, "products.gdprDelete",
     {
         id: resourceId,
-        shopId: TEST_WORKSPACE_B_ID,
+        shopId: TEST_SHOP_B_ID,
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.gdprDelete
-  // Kills: Allow cross-tenant mutations on routers.gdprDelete
+  // Kills: Missing tenant ownership check in products.gdprDelete
+  // Kills: Allow cross-tenant mutations on products.gdprDelete
 
   // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const verify = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(verify.status).toBe(200);
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-014-IDOR — IDOR: Cross-tenant access to routers must be rejected
+// PROOF-B-014-IDOR — IDOR: Cross-tenant access to products must be rejected
 // Risk: CRITICAL
 // Spec: Security
-// Behavior: Get routers
+// Behavior: Get products
 
 test("PROOF-B-014-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const ownData = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   expect(ownData.status).toBe(200);
   // Kills: Block all cross-tenant access including legitimate access
 
   // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  const crossTenant = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove shopId filter in routers.gdprExport query
+  // Kills: Remove shopId filter in products.gdprExport query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_WORKSPACE_B_ID));
+  expect(responseText).not.toContain(String(TEST_SHOP_B_ID));
   // Kills: Return empty array instead of 403 on cross-tenant access
   // Kills: Return all records without tenant isolation
 });
 
 test("PROOF-B-014-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "routers.list",
-    { shopId: TEST_WORKSPACE_B_ID }, tenantBCookie);
+  const tenantBList = await trpcQuery(request, "products.list",
+    { shopId: TEST_SHOP_B_ID }, tenantBCookie);
   let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
   if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_WORKSPACE_B_ID });
+    const created = await createTestResource(request, tenantBCookie, { shopId: TEST_SHOP_B_ID });
     resourceId = (created as Record<string, unknown>)?.id;
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via routers.gdprExport
-  const crossTenant = await trpcQuery(request, "routers.gdprExport",
-    { id: resourceId, shopId: TEST_WORKSPACE_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via products.gdprExport
+  const crossTenant = await trpcQuery(request, "products.gdprExport",
+    { id: resourceId, shopId: TEST_SHOP_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in routers.gdprExport
+  // Kills: Missing tenant ownership check in products.gdprExport
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });

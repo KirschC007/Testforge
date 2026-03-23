@@ -247,6 +247,23 @@ function parsePrismaSchemas(files: CodeFile[]): ParsedTable[] {
     if (!file.path.endsWith(".prisma")) continue;
     const content = file.content;
 
+    // ISSUE 3 FIX: First, extract all Prisma enum definitions
+    // Pattern: enum StatusEnum { VALUE_A VALUE_B VALUE_C }
+    const prismaEnums: Record<string, string[]> = {};
+    const enumBlockRegex = /enum\s+(\w+)\s*\{([^}]+)\}/g;
+    let enumMatch;
+    while ((enumMatch = enumBlockRegex.exec(content)) !== null) {
+      const enumName = enumMatch[1];
+      const enumBody = enumMatch[2];
+      const values = enumBody
+        .split(/[\n,\s]+/)
+        .map(v => v.trim())
+        .filter(v => v && !v.startsWith("//") && !v.startsWith("@") && !v.startsWith("@@"));
+      if (values.length > 0) {
+        prismaEnums[enumName] = values;
+      }
+    }
+
     // Match: model ModelName { ... }
     const modelRegex = /model\s+(\w+)\s*\{([\s\S]*?)\}/g;
     let match;
@@ -258,9 +275,11 @@ function parsePrismaSchemas(files: CodeFile[]): ParsedTable[] {
       let tenantKey: string | null = null;
       let statusEnum: string[] | null = null;
 
-      const fieldLines = body.split("\n").filter(l => l.trim() && !l.trim().startsWith("//") && !l.trim().startsWith("@"));
+      const fieldLines = body.split("\n").filter(l => l.trim() && !l.trim().startsWith("//"));
       for (const line of fieldLines) {
-        const parts = line.trim().split(/\s+/);
+        const trimmed = line.trim();
+        if (trimmed.startsWith("@") || trimmed.startsWith("@@") || trimmed.startsWith("//")) continue;
+        const parts = trimmed.split(/\s+/);
         if (parts.length < 2) continue;
         const [fname, ftype] = parts;
         if (fname.startsWith("@") || fname.startsWith("//")) continue;
@@ -270,16 +289,27 @@ function parsePrismaSchemas(files: CodeFile[]): ParsedTable[] {
         const isArray = ftype.includes("[]");
 
         let fieldType: EndpointField["type"] = "string";
+        let enumValues: string[] | undefined;
+
         if (baseType === "Int" || baseType === "Float" || baseType === "Decimal") fieldType = "number";
         else if (baseType === "Boolean") fieldType = "boolean";
         else if (baseType === "DateTime") fieldType = "date";
         else if (isArray) fieldType = "array";
+        else if (prismaEnums[baseType]) {
+          // ISSUE 3 FIX: Resolve Prisma enum reference
+          fieldType = "enum";
+          enumValues = prismaEnums[baseType];
+          // Track status enum
+          if (fname === "status" && !statusEnum) {
+            statusEnum = enumValues;
+          }
+        }
 
         const lowerName = fname.toLowerCase();
         if (PII_FIELD_NAMES.has(lowerName)) hasPII = true;
         if (TENANT_KEY_NAMES.has(fname)) tenantKey = fname;
 
-        fields.push({ name: fname, type: fieldType, required: !isOptional });
+        fields.push({ name: fname, type: fieldType, required: !isOptional, enumValues });
       }
 
       tables.push({ name: modelName, tableName: modelName.toLowerCase(), fields, hasPII, tenantKey, statusEnum });
@@ -355,8 +385,23 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
     if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx")) continue;
     const content = file.content;
 
-    // Detect router name from file path
-    const fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
+    // ISSUE 2 FIX: Detect router name from export const <name> = createTRPCRouter(...)
+    // Pattern: export const accountsRouter = createTRPCRouter({...}) → "accounts"
+    // Pattern: export const shopRouter = router({...}) → "shop"
+    // Fallback: use filename (e.g. accounts.ts → "accounts")
+    let fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
+    const routerExportMatch = content.match(
+      /export\s+const\s+(\w+)\s*=\s*(?:createTRPCRouter|router|createRouter|t\.router)\s*\(/
+    );
+    if (routerExportMatch) {
+      const exportName = routerExportMatch[1]; // e.g. "accountsRouter", "shopRouter", "appRouter"
+      // Strip common suffixes: Router, router, Route, route, Handler
+      const stripped = exportName.replace(/(?:Router|router|Route|route|Handler|handler)$/, "");
+      // Only use if non-empty and not generic names
+      if (stripped && stripped !== "app" && stripped !== "api" && stripped !== "trpc" && stripped !== "main") {
+        fileBase = stripped; // "accounts", "shop", "tasks"
+      }
+    }
 
     // Match procedure definitions: name: (protectedProcedure|publicProcedure|requireXxx|xxxProcedure).input(...).query/mutation
     // Covers all middleware patterns: requireShopAuth, requireShopAdmin, requireWorkspaceAuth, etc.
@@ -606,7 +651,33 @@ function buildIRFromCode(
     }
   }
 
-  // Build status machine from first table with status enum
+  // Fix 3B: Back-propagate enum values from Zod input schemas into table fields
+  // This handles Prisma scenarios where status fields are String @db.VarChar(20) with @default("draft")
+  // but the actual enum values are defined in the Zod .input() schemas of the router
+  for (const ep of apiEndpoints) {
+    for (const field of ep.inputFields) {
+      if (field.type === "enum" && field.enumValues?.length) {
+        // Write enum values back into matching table fields
+        for (const table of tables) {
+          const tableField = table.fields.find(f => f.name === field.name);
+          if (tableField && (!tableField.enumValues || tableField.enumValues.length === 0)) {
+            tableField.enumValues = field.enumValues;
+            tableField.type = "enum";
+            // Update statusEnum on table if this is a status field
+            if (field.name === "status" && !table.statusEnum) {
+              table.statusEnum = field.enumValues;
+            }
+          }
+        }
+        // Write into global enums by field name (not table-qualified) for easy lookup
+        if (!enums[field.name]) {
+          enums[field.name] = field.enumValues;
+        }
+      }
+    }
+  }
+
+  // Build status machine from first table with status enum (after back-propagation)
   const statusTable = tables.find(t => t.statusEnum);
   const statusMachine = statusTable?.statusEnum ? {
     states: statusTable.statusEnum,
@@ -640,7 +711,12 @@ function buildIRFromCode(
     invariants: [],
     ambiguities: [],
     contradictions: [],
-    tenantModel: globalTenantKey ? { tenantEntity: "workspace", tenantIdField: globalTenantKey } : null,
+    tenantModel: globalTenantKey ? {
+      // ISSUE 4 FIX: Derive tenantEntity from tenantIdField
+      // "shopId" → "shop", "gymId" → "gym", "organizationId" → "organization", "workspaceId" → "workspace"
+      tenantEntity: globalTenantKey.replace(/Id$/, "").replace(/([A-Z])/g, (m) => m.toLowerCase()),
+      tenantIdField: globalTenantKey,
+    } : null,
     resources,
     apiEndpoints,
     authModel,
