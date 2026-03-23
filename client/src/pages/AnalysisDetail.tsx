@@ -7,7 +7,7 @@ import {
   Loader2, Shield, ArrowLeft, Download, CheckCircle2, XCircle, Clock,
   AlertCircle, ChevronDown, ChevronUp, Ban, RotateCcw, FileText,
   Package, GitBranch, Zap, Lock, Scale, Activity, Search,
-  RefreshCw, Database, Star, ChevronRight, Layers
+  RefreshCw, Database, Star, ChevronRight, Layers, GitCompare
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
@@ -414,7 +414,12 @@ export default function AnalysisDetail() {
               </Button>
             )}
             {analysis.status === "completed" && analysis.outputZipUrl && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Link href={`/analysis/${id}/diff`}>
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <GitCompare className="w-3.5 h-3.5" /> Compare Versions
+                  </Button>
+                </Link>
                 <Button
                   variant="outline"
                   size="sm"

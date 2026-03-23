@@ -23,7 +23,7 @@ import { storagePut, storageGet } from "./storage";
 const runningJobs = new Set<number>();
 const cancelledJobs = new Set<number>(); // Jobs that should stop at next checkpoint
 
-async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string) {
+async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string, industryPack?: IndustryPack) {
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
 
@@ -67,7 +67,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         if (data?.analysisResult) update.layer1Json = data.analysisResult as any;
         if (data?.riskModel) update.layer2Json = data.riskModel as any;
         await updateAnalysis(analysisId, update as any);
-      });
+      }, industryPack);
 
       // Store report and test files in S3
       const reportKey = `analyses/${analysisId}/testforge-report.md`;
@@ -233,6 +233,7 @@ export const appRouter = router({
         specKey: z.string().min(1),   // S3 key from /api/upload-spec or /api/upload-spec-text
         specFileName: z.string().optional(),
         githubUrl: z.string().url().optional(),
+        industryPack: z.enum(["fintech", "healthtech", "ecommerce", "saas"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // ─── Plan-Based Rate Limit ────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ export const appRouter = router({
         });
 
         // Start async job — fetch spec text from S3 inside the job
-        startAnalysisJobFromKey(analysisId, input.specKey, input.projectName);
+        startAnalysisJobFromKey(analysisId, input.specKey, input.projectName, input.industryPack as IndustryPack | undefined);
 
         return { id: analysisId };
       }),

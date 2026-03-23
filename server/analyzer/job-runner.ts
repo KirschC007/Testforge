@@ -8,6 +8,7 @@ import { generateHelpers } from "./helpers-generator";
 import { validateProofs, runIndependentChecker, mergeProofsToFile } from "./validator";
 import { generateReport } from "./report";
 import { generateExtendedTestSuite } from "./extended-suite";
+import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -20,7 +21,8 @@ export type ProgressCallback = (layer: number, message: string, data?: {
 export async function runAnalysisJob(
   specText: string,
   projectName: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  industryPack?: IndustryPack
 ): Promise<AnalysisJobResult> {
   const jobStart = Date.now();
   console.log(`[TestForge] Job START v3.0 — ${specText.length} chars, project: ${projectName}`);
@@ -94,6 +96,29 @@ export async function runAnalysisJob(
 
   await progress(2, `Layer 2 fertig: ${riskModel.proofTargets.length} Proof-Targets, ${riskModel.idorVectors} IDOR-Vektoren`, { analysisResult, riskModel });
 
+  // Industry Pack: inject domain-specific proof types and risk hints
+  if (industryPack) {
+    // Get current proof types from all targets
+    const currentProofTypes = Array.from(new Set(riskModel.proofTargets.map(t => t.proofType)));
+    const packResult = applyProofPack(industryPack, currentProofTypes);
+    const addedTypes = packResult.proofTypes.filter(pt => !currentProofTypes.includes(pt as any));
+    // For each added proof type, create a new proof target from the highest-priority behavior
+    const topBehavior = riskModel.proofTargets[0];
+    if (topBehavior && addedTypes.length > 0) {
+      const newTargets = addedTypes.map(pt => ({
+        ...topBehavior,
+        id: `${topBehavior.id}_pack_${pt}`,
+        proofType: pt as import("./types").ProofType,
+        description: `[${industryPack.toUpperCase()} Pack] ${pt} compliance test — ${packResult.complianceFrameworks.join(", ")}`,
+        preconditions: topBehavior.preconditions,
+        assertions: topBehavior.assertions,
+        mutationTargets: topBehavior.mutationTargets,
+      }));
+      riskModel.proofTargets = [...riskModel.proofTargets, ...newTargets];
+    }
+    console.log(`[TestForge] Industry Pack '${industryPack}' applied — +${addedTypes.length} proof types, frameworks: ${packResult.complianceFrameworks.join(", ")}`);
+    await progress(2, `Industry Pack '${industryPack}' angewendet: +${addedTypes.length} Proof-Typen (${packResult.complianceFrameworks.join(", ")})`);
+  }
   // Helpers Generator
   const helpers = generateHelpers(analysisResult);
   console.log(`[TestForge] Helpers generated — ${Object.keys(helpers).length} files`);

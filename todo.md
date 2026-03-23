@@ -536,3 +536,8 @@
 - [ ] Alle Tests grün verifizieren
 - [ ] Checkpoint speichern
 - [ ] ZIP erstellen
+
+
+## Features (23.03.2026)
+- [x] Spec-Diff UI: Vergleichsseite /analysis/:id/diff mit grün/rot/gelb Darstellung
+- [x] Industry Pack Auswahl im NewAnalysis-Wizard (FinTech/HealthTech/eCommerce/SaaS)

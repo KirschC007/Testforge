@@ -128,6 +128,7 @@ export default function NewAnalysis() {
   const [specFileName, setSpecFileName] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [inputMode, setInputMode] = useState<"paste" | "github">("paste");
+  const [industryPack, setIndustryPack] = useState<"" | "fintech" | "healthtech" | "ecommerce" | "saas">("");
   const [fileError, setFileError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -185,7 +186,7 @@ export default function NewAnalysis() {
     if (!specText.trim() || specText.length < 100) { toast.error("Spec content is too short (minimum 100 characters)"); return; }
 
     if (specKey) {
-      createMutation.mutate({ projectName: projectName.trim(), specKey, specFileName: specFileName || undefined, githubUrl: githubUrl.trim() || undefined });
+      createMutation.mutate({ projectName: projectName.trim(), specKey, specFileName: specFileName || undefined, githubUrl: githubUrl.trim() || undefined, industryPack: industryPack || undefined });
       return;
     }
 
@@ -202,7 +203,7 @@ export default function NewAnalysis() {
         return;
       }
       const data = await resp.json();
-      createMutation.mutate({ projectName: projectName.trim(), specKey: data.specKey, specFileName: specFileName || undefined, githubUrl: githubUrl.trim() || undefined });
+      createMutation.mutate({ projectName: projectName.trim(), specKey: data.specKey, specFileName: specFileName || undefined, githubUrl: githubUrl.trim() || undefined, industryPack: industryPack || undefined });
     } catch (err: any) {
       toast.error("Upload failed: " + (err.message || "Unknown error"));
     } finally {
@@ -372,6 +373,45 @@ export default function NewAnalysis() {
                       </div>
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Industry Pack Selector */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5" /> Industry Pack <span className="font-normal normal-case text-muted-foreground/60">(optional)</span>
+                </Label>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { id: "", label: "None", icon: "—", desc: "Generic" },
+                    { id: "fintech", label: "FinTech", icon: "💳", desc: "PSD2, KYC/AML, SEPA" },
+                    { id: "healthtech", label: "HealthTech", icon: "🏥", desc: "HIPAA, FHIR, PHI" },
+                    { id: "ecommerce", label: "eCommerce", icon: "🛒", desc: "PCI-DSS, inventory" },
+                    { id: "saas", label: "SaaS", icon: "☁️", desc: "Multi-tenant, billing" },
+                  ].map(pack => (
+                    <button
+                      key={pack.id}
+                      type="button"
+                      onClick={() => setIndustryPack(pack.id as any)}
+                      className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-center transition-all ${
+                        industryPack === pack.id
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span className="text-lg leading-none">{pack.icon}</span>
+                      <span className="text-xs font-semibold">{pack.label}</span>
+                      <span className="text-[10px] leading-tight opacity-70">{pack.desc}</span>
+                    </button>
+                  ))}
+                </div>
+                {industryPack && (
+                  <p className="text-xs text-muted-foreground">
+                    ✓ {industryPack === "fintech" && "Adds PSD2, KYC/AML, SEPA, fraud detection proof types"}
+                    {industryPack === "healthtech" && "Adds HIPAA, HL7/FHIR, PHI access, audit trail proof types"}
+                    {industryPack === "ecommerce" && "Adds PCI-DSS, inventory race conditions, coupon abuse proof types"}
+                    {industryPack === "saas" && "Adds multi-tenancy, subscription billing, feature gate proof types"}
+                  </p>
                 )}
               </div>
 
