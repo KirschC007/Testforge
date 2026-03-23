@@ -631,3 +631,8 @@
 - [x] Teil 9: Packaging-Bug bereits behoben (helpers/ + configs/ korrekt in ZIP)
 - [x] Teil 8: TravelAgency 18/18 Checks bestanden (29 Behaviors, 26 Test-Dateien, 11 E2E-Dateien)
 - [x] Vitest 546/546 Tests grün, 0 TS-Fehler
+
+## v5.2: KANN-Teile aus Briefing
+
+- [ ] Teil 4: NestJS Support — @Controller/@Get/@Post/@Roles Decorator-Parser, DTO-Feld-Extraktion aus class-validator, extractDtoFields(), Integration in parseCodeToIR() [v2]
+- [x] Teil 6: LLM-Prompt aufteilen — Pass 1 jetzt 4 parallele fokussierte Calls (A: Endpoints+Tenant, B: Status+Enums, C: Auth+Roles, D: Chapters+PII), deterministisches Merge, 0 TS-Fehler, 546/546 Tests grün

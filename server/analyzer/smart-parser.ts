@@ -277,43 +277,180 @@ export interface StructuralMap {
   chapters: Array<{ title: string; topics: string[] }>;
 }
 
+/**
+ * Pass 1 (Parallel) — Build structural map using 4 focused LLM calls in parallel.
+ *
+ * Instead of one 24KB monolith prompt asking for everything at once, we fire
+ * 4 smaller, focused calls simultaneously:
+ *   Call A — Endpoints + Tenant Model   (what does the API expose?)
+ *   Call B — Status Machine + Enums     (what states/values exist?)
+ *   Call C — Auth Model + Roles         (who can do what?)
+ *   Call D — Chapters + PII Tables      (structure map for Pass 2 routing)
+ *
+ * Benefits:
+ *   - Each LLM call has ONE job → less hallucination, higher recall
+ *   - All 4 run in parallel → same wall-clock time as 1 call
+ *   - Deterministic merge → no data loss from context overflow
+ */
 async function buildStructuralMap(compressedSpec: string): Promise<StructuralMap> {
   const t0 = Date.now();
-  console.log(`[TestForge] Pass 1: Building structural map from ${compressedSpec.length} chars...`);
+  console.log(`[TestForge] Pass 1 (4-parallel): Building structural map from ${compressedSpec.length} chars...`);
 
-  const prompt = `You are a spec analyzer. Read this compressed system specification and extract a STRUCTURAL MAP.
-Do NOT extract individual behaviors yet — only the high-level structure.
-
-Extract:
-1. endpoints: ALL API endpoints/procedures mentioned (name, HTTP method, auth level, which chapter)
-2. statusMachine: If a status/state machine exists — ALL states, ALL allowed transitions, ALL forbidden transitions, initial state, terminal states
-3. tenantModel: The multi-tenant entity and its ID field (e.g. {entity: "restaurant", idField: "restaurantId"})
-4. authModel: Login endpoint, CSRF endpoint/pattern, ALL user roles with their permission levels
-5. enums: ALL fields with fixed allowed values (status enums, type enums, etc.)
-6. piiTables: Tables/entities that contain personal data (name, email, phone, address)
-7. chapters: List of chapter titles with their main topics (for targeted extraction later)
-
-Return JSON with these exact keys. Be thorough — list EVERY endpoint, EVERY enum, EVERY transition.
+  const baseSystem = `You are a spec analyzer. Read this system specification and extract ONLY what is asked.
 The spec may be in German — extract values in their original language/format.
-
 Output ONLY valid JSON. No markdown, no explanation.`;
 
-  const response = await invokeLLM({
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: compressedSpec },
-    ],
-    response_format: { type: "json_object" },
-    thinkingBudget: 4096,   // Give it thinking time for this important extraction
-    maxTokens: 16384,
-  });
+  // ── Call A: Endpoints + Tenant Model ──────────────────────────────────────
+  const promptA = `${baseSystem}
 
-  const content = response.choices[0].message.content as string;
-  const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  const rawMap = JSON.parse(cleaned) as Record<string, unknown>;
-  const map = normalizeStructuralMap(rawMap);
+YOUR TASK: Extract ALL API endpoints and the tenant model.
 
-  console.log(`[TestForge] Pass 1 done in ${Date.now() - t0}ms — ${map.endpoints?.length || 0} endpoints, ${map.statusMachine?.states?.length || 0} states, ${map.enums ? Object.keys(map.enums).length : 0} enums`);
+Return JSON with EXACTLY these keys:
+{
+  "endpoints": [
+    { "name": "resource.action", "method": "GET|POST|PUT|PATCH|DELETE", "auth": "public|user|admin|manager", "chapter": "chapter title where this endpoint is described" }
+  ],
+  "tenantModel": { "entity": "restaurant|agency|shop|...", "idField": "restaurantId|agencyId|..." } | null
+}
+
+Rules:
+- Normalize endpoint names to resource.action format (e.g. "bookings.create", "auth.login", "customers.gdprDelete")
+- Include EVERY endpoint mentioned, even if only in examples
+- auth: "public" if no auth required, "user" for authenticated users, "admin" for admin-only, "manager" for manager-only
+- tenantModel: the multi-tenant entity (the entity that "owns" data). null if single-tenant.`;
+
+  // ── Call B: Status Machine + Enums ────────────────────────────────────────
+  const promptB = `${baseSystem}
+
+YOUR TASK: Extract the status/state machine and ALL enum fields.
+
+Return JSON with EXACTLY these keys:
+{
+  "statusMachine": {
+    "entity": "booking|order|trip|...",
+    "states": ["PENDING", "CONFIRMED", ...],
+    "transitions": [["PENDING", "CONFIRMED"], ["CONFIRMED", "CANCELLED"], ...],
+    "forbidden": [["CANCELLED", "CONFIRMED"], ...],
+    "initialState": "PENDING",
+    "terminalStates": ["COMPLETED", "CANCELLED"]
+  } | null,
+  "enums": {
+    "fieldName": ["VALUE_1", "VALUE_2", ...],
+    "status": ["PENDING", "CONFIRMED", ...]
+  }
+}
+
+Rules:
+- transitions: array of [fromState, toState] tuples for ALLOWED transitions
+- forbidden: array of [fromState, toState] tuples for EXPLICITLY FORBIDDEN transitions
+- enums: ALL fields with fixed allowed values (not just status — also type, category, role, etc.)
+- If no state machine exists, set statusMachine to null`;
+
+  // ── Call C: Auth Model + Roles ────────────────────────────────────────────
+  const promptC = `${baseSystem}
+
+YOUR TASK: Extract the authentication model and all user roles with their permissions.
+
+Return JSON with EXACTLY these keys:
+{
+  "authModel": {
+    "loginEndpoint": "auth.login",
+    "csrfEndpoint": "auth.csrf | null",
+    "csrfPattern": "X-CSRF-Token header | null",
+    "roles": [
+      { "name": "admin", "permissions": ["can create", "can delete", "can view all"] },
+      { "name": "customer", "permissions": ["can view own", "can create booking"] }
+    ]
+  } | null
+}
+
+Rules:
+- loginEndpoint: the endpoint used to authenticate (e.g. "auth.login", "POST /api/auth/login")
+- csrfEndpoint: the endpoint that issues CSRF tokens, or null
+- csrfPattern: the header/cookie pattern for CSRF protection, or null
+- roles: ALL user roles mentioned, with their key permissions as plain English strings
+- If no auth system is described, set authModel to null`;
+
+  // ── Call D: Chapters + PII Tables ─────────────────────────────────────────
+  const promptD = `${baseSystem}
+
+YOUR TASK: Extract the document structure (chapters) and identify tables/entities containing personal data (PII).
+
+Return JSON with EXACTLY these keys:
+{
+  "chapters": [
+    { "title": "Chapter title", "topics": ["endpoints", "status", "auth", "dsgvo", "business-logic", "schema", "edge-cases", "user-flows", "other"] }
+  ],
+  "piiTables": ["customers", "users", "guests", ...]
+}
+
+Rules:
+- chapters: list ALL sections/chapters in order with their main topics
+- topics per chapter: choose from: endpoints, status, auth, dsgvo, business-logic, schema, edge-cases, user-flows, other
+- piiTables: entities/tables that contain personal data (name, email, phone, address, payment info, etc.)
+- A chapter can have multiple topics`;
+
+  // ── Fire all 4 calls in parallel ──────────────────────────────────────────
+  const [resA, resB, resC, resD] = await Promise.all([
+    withTimeout(
+      invokeLLM({ messages: [{ role: "system", content: promptA }, { role: "user", content: compressedSpec }], response_format: { type: "json_object" }, thinkingBudget: 1024, maxTokens: 8192 }),
+      LLM_TIMEOUT_MS,
+      null,
+    ),
+    withTimeout(
+      invokeLLM({ messages: [{ role: "system", content: promptB }, { role: "user", content: compressedSpec }], response_format: { type: "json_object" }, thinkingBudget: 1024, maxTokens: 8192 }),
+      LLM_TIMEOUT_MS,
+      null,
+    ),
+    withTimeout(
+      invokeLLM({ messages: [{ role: "system", content: promptC }, { role: "user", content: compressedSpec }], response_format: { type: "json_object" }, thinkingBudget: 512, maxTokens: 4096 }),
+      LLM_TIMEOUT_MS,
+      null,
+    ),
+    withTimeout(
+      invokeLLM({ messages: [{ role: "system", content: promptD }, { role: "user", content: compressedSpec }], response_format: { type: "json_object" }, thinkingBudget: 512, maxTokens: 4096 }),
+      LLM_TIMEOUT_MS,
+      null,
+    ),
+  ]);
+
+  // ── Parse each response safely ────────────────────────────────────────────
+  function parseResponse(res: Awaited<ReturnType<typeof invokeLLM>> | null, label: string): Record<string, unknown> {
+    if (!res) { console.warn(`[TestForge] Pass 1 Call ${label}: timeout/null`); return {}; }
+    try {
+      const raw = res.choices[0].message.content as string;
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      return JSON.parse(cleaned) as Record<string, unknown>;
+    } catch (e) {
+      console.warn(`[TestForge] Pass 1 Call ${label}: parse error`, e);
+      return {};
+    }
+  }
+
+  const dataA = parseResponse(resA, "A (endpoints+tenant)");
+  const dataB = parseResponse(resB, "B (status+enums)");
+  const dataC = parseResponse(resC, "C (auth+roles)");
+  const dataD = parseResponse(resD, "D (chapters+pii)");
+
+  // ── Deterministic merge ───────────────────────────────────────────────────
+  const merged: Record<string, unknown> = {
+    endpoints: dataA.endpoints ?? [],
+    tenantModel: dataA.tenantModel ?? null,
+    statusMachine: dataB.statusMachine ?? null,
+    enums: dataB.enums ?? {},
+    authModel: dataC.authModel ?? null,
+    chapters: dataD.chapters ?? [],
+    piiTables: dataD.piiTables ?? [],
+  };
+
+  const map = normalizeStructuralMap(merged);
+  console.log(
+    `[TestForge] Pass 1 done in ${Date.now() - t0}ms — ` +
+    `${map.endpoints?.length || 0} endpoints, ` +
+    `${map.statusMachine?.states?.length || 0} states, ` +
+    `${map.enums ? Object.keys(map.enums).length : 0} enums, ` +
+    `${map.authModel?.roles?.length || 0} roles`
+  );
   return map;
 }
 
