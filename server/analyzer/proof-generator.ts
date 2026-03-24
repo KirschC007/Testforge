@@ -328,9 +328,17 @@ export function findBoundaryFieldForBehavior(
  */
 function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
   if (!authModel?.roles?.length) return undefined;
-  return authModel.roles.find((r: { name: string }) => r.name.toLowerCase().includes("admin"))
-    || authModel.roles.find((r: { name: string }) => r.name.toLowerCase().includes("owner"))
-    || authModel.roles[0];
+  // Filter out roles with empty/undefined names (LLM sometimes returns empty strings)
+  const validRoles = authModel.roles.filter(
+    (r: { name: string }) => r && typeof r.name === "string" && r.name.trim().length > 0
+  );
+  if (validRoles.length === 0) {
+    // Fallback: return a default admin role
+    return { name: "admin" };
+  }
+  return validRoles.find((r: { name: string }) => r.name.toLowerCase().includes("admin"))
+    || validRoles.find((r: { name: string }) => r.name.toLowerCase().includes("owner"))
+    || validRoles[0];
 }
 
 /**

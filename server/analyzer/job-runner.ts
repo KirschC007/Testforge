@@ -15,6 +15,7 @@ import { discoverAPI } from "./api-discovery";
 import { normalizeEndpointName } from "./normalize";
 import { sanitizeIR } from "./llm-sanitizer";
 import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
+import { extractRoles } from "./spec-regex-extractor";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -205,6 +206,32 @@ export async function runAnalysisJob(
     console.log(`[TestForge] Sanitizer: ${sanitizeReport.fieldsFixed} deterministic fixes, ${sanitizeReport.llmRepairCalls} LLM repairs`);
   } catch (e) {
     console.warn(`[TestForge] Sanitizer failed (non-fatal):`, e);
+  }
+
+  // Fix 2: Filter empty/undefined role names from IR (LLM sometimes returns empty strings)
+  if (analysisResult.ir.authModel?.roles) {
+    analysisResult.ir.authModel.roles = analysisResult.ir.authModel.roles.filter(
+      (r: { name: string }) => r && typeof r.name === "string" && r.name.trim().length > 0
+    );
+  }
+
+  // Fix 3: Regex-Fallback for roles when LLM returns no valid roles
+  const hasValidRoles = (analysisResult.ir.authModel?.roles?.length ?? 0) > 0;
+  if (!hasValidRoles && specText && specText.length > 100) {
+    const regexRoles = extractRoles(specText);
+    if (regexRoles.length > 0) {
+      console.log(`[RegexFallback] Roles from spec text: ${regexRoles.join(", ")}`);
+      if (!analysisResult.ir.authModel) {
+        analysisResult.ir.authModel = { roles: [], loginEndpoint: "", csrfEndpoint: "" };
+      }
+      analysisResult.ir.authModel!.roles = regexRoles.map((name: string) => ({
+        name,
+        envUserVar: `E2E_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_USER`,
+        envPassVar: `E2E_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_PASS`,
+        defaultUser: `${name}@test.com`,
+        defaultPass: "TestPass2026x",
+      }));
+    }
   }
 
   // Assess spec health (all paths)

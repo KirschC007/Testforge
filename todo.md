@@ -759,3 +759,13 @@
 - States (primary): 0 für TodoApp/EventTicketing/ProjectTracker (Status-Machine nicht erkannt bei Standard-Parser < 8KB)
 - Spec Health: ?/100 in summary.json (ir.specHealth liegt unter analysisResult.ir.specHealth)
 - TenantKey: none für SupplyChainOps + FleetManager (companyId/fleetId in JWT aber nicht als tenantModel erkannt)
+
+## Fix-Briefing 8 — Hey-Listen Fix v7.2 (24.03.2026)
+
+- [x] Fix 1: getPreferredRole() in proof-generator.ts defensiv machen (validRoles filter + default admin fallback)
+- [x] Fix 2: Leere Rollen aus IR filtern in job-runner.ts (nach LLM-Parse)
+- [x] Fix 3: Regex-Fallback für Rollen wenn LLM versagt (extractRoles() aus spec-regex-extractor.ts)
+- [x] Fix 4: Pass 3 Status-Machine-Overwrite Guard in smart-parser.ts (Pass 1 States erhalten wenn Pass 2 nichts liefert)
+- [x] Vitest 599/599 + TypeScript 0 Fehler
+- [ ] Hey-Listen: 0 Crashes, Rollen erkannt, >= 300 Proofs, 6 States (LLM-Kontingent erschöpft — ausstehend)
+- [ ] Checkpoint + ZIP liefern

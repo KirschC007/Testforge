@@ -675,8 +675,19 @@ export function enrichFromStructuralMap(ir: AnalysisIR, structuralMap: Structura
   // 3. Ensure status machine is complete
   if (structuralMap.statusMachine && ir.statusMachine) {
     // Guard: ensure arrays exist before using .some()
+    if (!Array.isArray(ir.statusMachine.states)) ir.statusMachine.states = [];
     if (!Array.isArray(ir.statusMachine.transitions)) ir.statusMachine.transitions = [];
     if (!Array.isArray(ir.statusMachine.forbidden)) ir.statusMachine.forbidden = [];
+    // Fix 4: If Pass 2 found a statusMachine but with empty states, use Pass 1 states
+    if (ir.statusMachine.states.length === 0 && (structuralMap.statusMachine.states || []).length > 0) {
+      ir.statusMachine.states = structuralMap.statusMachine.states || [];
+      if (!ir.statusMachine.initialState) ir.statusMachine.initialState = structuralMap.statusMachine.initialState;
+      if (!ir.statusMachine.terminalStates?.length) ir.statusMachine.terminalStates = structuralMap.statusMachine.terminalStates || [];
+    }
+    // Add any states from structural map that Pass 2 missed
+    for (const s of (structuralMap.statusMachine.states || [])) {
+      if (!ir.statusMachine.states.includes(s)) ir.statusMachine.states.push(s);
+    }
     // Add any transitions from structural map that Pass 2 missed
     for (const t of (structuralMap.statusMachine.transitions || [])) {
       const exists = ir.statusMachine.transitions.some(x => x[0] === t[0] && x[1] === t[1]);
