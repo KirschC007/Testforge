@@ -30,6 +30,7 @@
 import { invokeLLM } from "../_core/llm";
 import type { EndpointField, AnalysisIR, AnalysisResult, Behavior, APIEndpoint, AuthModel } from "./types";
 import { sanitizeLLMOutput, sanitizeBehavior, sanitizeEndpoint, sanitizeUserFlow } from "./normalize";
+import { extractTenantModel } from "./spec-regex-extractor";
 
 export const LLM_TIMEOUT_MS = 90000;
 const SMART_PARSER_THRESHOLD = 50000; // Use smart parser for specs > 50KB
@@ -908,6 +909,18 @@ export async function parseSpecSmart(specText: string): Promise<AnalysisResult> 
 
   // Step 3e: Enrich from structural map
   enrichFromStructuralMap(merged, structuralMap);
+
+  // Step 3f: Tenant regex fallback — if LLM + structural map both missed the tenant key
+  if (!merged.tenantModel) {
+    const regexTenant = extractTenantModel(specText);
+    if (regexTenant) {
+      merged.tenantModel = {
+        tenantEntity: regexTenant.entity,
+        tenantIdField: regexTenant.idField,
+      };
+      console.log(`[SmartParser] Tenant regex fallback: ${regexTenant.entity} (${regexTenant.idField})`);
+    }
+  }
 
   const elapsed = Date.now() - t0;
   console.log(`[TestForge] Smart Parser done in ${elapsed}ms — ${merged.behaviors.length} behaviors, ${merged.apiEndpoints.length} endpoints`);

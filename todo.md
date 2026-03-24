@@ -769,3 +769,16 @@
 - [x] Vitest 599/599 + TypeScript 0 Fehler
 - [ ] Hey-Listen: 0 Crashes, Rollen erkannt, >= 300 Proofs, 6 States (LLM-Kontingent erschöpft — ausstehend)
 - [ ] Checkpoint + ZIP liefern
+
+## Fix-Briefing 9 — Perfektion v7.3 (24.03.2026)
+
+- [x] Fix 1: extractTenantModel() Pattern 7 — Frequenz-Heuristik (häufigstes xId gesamt + INDEX-Bonus)
+- [x] Fix 1b: extractTenantModel() Pattern 8 — "Alle Tabellen ... haben `xId`" (deutsch)
+- [x] Fix 2: extractStates() + extractTransitions() — Lowercase State-Pattern (confirmed → CONFIRMED)
+- [x] Fix 3: extractRoles() ROLE_NOISE_BLOCKLIST (idx_, _sessions, _login, _logout, _locked, _unlocked)
+- [x] Fix 4: specHealth immer in resultJson speichern (top-level + getSpecHealth-Fallback)
+- [x] Fix 5: Smart-Parser Tenant-Regex-Fallback nach enrichFromStructuralMap() in smart-parser.ts
+- [x] Fix 6: Rollen-Noise im Regex-Fallback filtern (job-runner.ts: nur echte Rollen aus extractRoles)
+- [x] Vitest 611/611 + TypeScript 0 Fehler (12 neue Tests)
+- [ ] Hey-Listen Pipeline-Test (wenn LLM-Kontingent verfügbar)
+- [ ] Checkpoint + ZIP liefern

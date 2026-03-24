@@ -215,12 +215,22 @@ export async function runAnalysisJob(
     );
   }
 
-  // Fix 3: Regex-Fallback for roles when LLM returns no valid roles
+  // Fix 3+6: Regex-Fallback for roles when LLM returns no valid roles
+  // Applies additional noise filter to avoid SQL artifacts / audit log event names
   const hasValidRoles = (analysisResult.ir.authModel?.roles?.length ?? 0) > 0;
   if (!hasValidRoles && specText && specText.length > 100) {
-    const regexRoles = extractRoles(specText);
+    const rawRegexRoles = extractRoles(specText);
+    // Additional noise filter: remove strings that contain SQL/event-name patterns
+    const regexRoles = rawRegexRoles.filter((name: string) => {
+      if (name.startsWith("idx_")) return false;
+      if (/_(login|logout|locked|unlocked|failed|action|sessions?)$/.test(name)) return false;
+      if (/_(?:id|key|secret|token)$/.test(name)) return false;
+      if (/^(users|clients|members|admins|managers|operators)$/.test(name)) return false;
+      if (name.length < 2 || name.length > 30) return false;
+      return true;
+    });
     if (regexRoles.length > 0) {
-      console.log(`[RegexFallback] Roles from spec text: ${regexRoles.join(", ")}`);
+      console.log(`[RegexFallback] Roles from spec text (${rawRegexRoles.length} raw → ${regexRoles.length} filtered): ${regexRoles.join(", ")}`);
       if (!analysisResult.ir.authModel) {
         analysisResult.ir.authModel = { roles: [], loginEndpoint: "", csrfEndpoint: "" };
       }

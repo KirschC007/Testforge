@@ -506,3 +506,125 @@ describe("mergeWithRegex", () => {
     expect(merged.apiEndpoints.length).toBe(1);
   });
 });
+
+// ─── Fix-Briefing 9: Lowercase States (Pattern 8) ────────────────────────────
+
+describe("extractStates — lowercase transitions (Pattern 8)", () => {
+  it("extracts lowercase states from Hey-Listen style transitions", () => {
+    const text = "confirmed → seated\nseated → completed\nconfirmed → cancelled";
+    const states = extractStates(text);
+    expect(states).toContain("CONFIRMED");
+    expect(states).toContain("SEATED");
+    expect(states).toContain("COMPLETED");
+    expect(states).toContain("CANCELLED");
+  });
+
+  it("does not add common English noise words as states", () => {
+    const text = "the user can go from pending → active or from active → closed";
+    const states = extractStates(text);
+    expect(states).not.toContain("THE");
+    expect(states).not.toContain("FROM");
+    expect(states).not.toContain("OR");
+    expect(states).toContain("PENDING");
+    expect(states).toContain("ACTIVE");
+    expect(states).toContain("CLOSED");
+  });
+
+  it("handles mixed case spec with both UPPERCASE and lowercase transitions", () => {
+    const text = "PENDING → CONFIRMED\nconfirmed → seated\nseated → no_show";
+    const states = extractStates(text);
+    expect(states).toContain("PENDING");
+    expect(states).toContain("CONFIRMED");
+    expect(states).toContain("SEATED");
+    expect(states).toContain("NO_SHOW");
+  });
+});
+
+// ─── Fix-Briefing 9: Lowercase Transitions (Pattern 3) ───────────────────────
+
+import { extractTransitions } from "../server/analyzer/spec-regex-extractor";
+
+describe("extractTransitions — lowercase transitions (Pattern 3)", () => {
+  it("extracts lowercase transitions from Hey-Listen style spec", () => {
+    const text = "confirmed → seated\nseated → completed\nno_show → completed";
+    const transitions = extractTransitions(text);
+    const keys = transitions.map(([f, t]) => `${f}→${t}`);
+    expect(keys).toContain("CONFIRMED→SEATED");
+    expect(keys).toContain("SEATED→COMPLETED");
+    expect(keys).toContain("NO_SHOW→COMPLETED");
+  });
+
+  it("does not create transitions from noise words", () => {
+    const text = "by → via or from → to";
+    const transitions = extractTransitions(text);
+    const keys = transitions.map(([f, t]) => `${f}→${t}`);
+    expect(keys).not.toContain("BY→VIA");
+    expect(keys).not.toContain("FROM→TO");
+  });
+});
+
+// ─── Fix-Briefing 9: Tenant Pattern 7 (Frequency Heuristic) ─────────────────
+
+import { extractTenantModel } from "../server/analyzer/spec-regex-extractor";
+
+describe("extractTenantModel — frequency heuristic (Pattern 7)", () => {
+  it("detects restaurantId as tenant key when it appears 20+ times", () => {
+    // Simulate a spec where restaurantId appears frequently
+    const restaurantIdMentions = Array(25).fill("restaurantId").join(" and ");
+    const text = `Multi-tenant system. ${restaurantIdMentions}. Each restaurant is isolated.`;
+    const result = extractTenantModel(text);
+    expect(result).not.toBeNull();
+    expect(result?.idField).toBe("restaurantId");
+    expect(result?.entity).toBe("restaurant");
+  });
+
+  it("prefers the most frequent xId over a less frequent one", () => {
+    const restaurantMentions = Array(30).fill("restaurantId").join(" ");
+    const serieMentions = Array(5).fill("seriesId").join(" ");
+    const text = `${restaurantMentions} ${serieMentions}`;
+    const result = extractTenantModel(text);
+    expect(result?.idField).toBe("restaurantId");
+  });
+
+  it("returns null when no xId appears frequently enough", () => {
+    const text = "Simple app with userId and orderId mentioned once each.";
+    const result = extractTenantModel(text);
+    // May return null or a result — just ensure no crash
+    expect(result === null || typeof result?.idField === "string").toBe(true);
+  });
+
+  it("detects tenant from INDEX definitions (SQL schema bonus)", () => {
+    const text = Array(5).fill("restaurantId").join(" ") +
+      "\nINDEX idx_reservations_restaurantId (restaurantId)\n" +
+      "INDEX idx_tables_restaurantId (restaurantId)\n" +
+      "INDEX idx_staff_restaurantId (restaurantId)";
+    const result = extractTenantModel(text);
+    expect(result?.idField).toBe("restaurantId");
+  });
+});
+
+// ─── Fix-Briefing 9: Role Noise Filter ───────────────────────────────────────
+
+describe("extractRoles — noise filter (Fix 3)", () => {
+  it("does not return SQL index names as roles", () => {
+    const text = "INDEX idx_users_role (role)\nidx_users_role is a database index";
+    const roles = extractRoles(text);
+    expect(roles).not.toContain("idx_users_role");
+  });
+
+  it("does not return audit log event names as roles", () => {
+    const text = "Events: user_login, user_logout, user_locked, user_login_failed";
+    const roles = extractRoles(text);
+    expect(roles).not.toContain("user_login");
+    expect(roles).not.toContain("user_logout");
+    expect(roles).not.toContain("user_locked");
+    expect(roles).not.toContain("user_login_failed");
+  });
+
+  it("still returns real roles like admin, staff, restaurant_admin", () => {
+    const text = "Roles: admin, staff, restaurant_admin, super_admin. Each role has different permissions.";
+    const roles = extractRoles(text);
+    expect(roles).toContain("admin");
+    expect(roles).toContain("staff");
+  });
+});

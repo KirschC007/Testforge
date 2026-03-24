@@ -152,6 +152,8 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
           validatedSuite: suite,
           report: result.report,
           testFileCount: result.testFiles.length,
+          // Fix 4: Always store specHealth at top level for easy retrieval
+          specHealth: result.analysisResult.specHealth,
         } as any,
         outputZipUrl: zipUrl,
         outputZipKey: zipKey,
@@ -349,7 +351,8 @@ export const appRouter = router({
         const layer1Json = (analysis.layer1Json as any);
         const analysisResult = resultJson?.analysisResult || layer1Json;
         if (!analysisResult?.ir) return null;
-        // Return cached specHealth if available, otherwise compute on the fly
+        // Return cached specHealth: check top-level (Fix 4), then nested, then compute on the fly
+        if (resultJson?.specHealth) return resultJson.specHealth;
         if (analysisResult.specHealth) return analysisResult.specHealth;
         return assessSpecHealth(analysisResult.ir as AnalysisIR);
       }),

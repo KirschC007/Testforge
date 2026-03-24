@@ -125,9 +125,23 @@ export function extractStates(text: string): string[] {
 
   // Pattern 7: "Jeder Status → X" or "All states → X" — wildcard source
   // These don't add states but we capture the target
-  const wildcardPattern = /(?:jeder status|alle zust.nde|all states?)\s*(?:\u2192|->)\s*([A-Z][A-Z_]{2,})/gi;
+  const wildcardPattern = /(?:jeder status|alle zust.nde|all states?)\s*(?:→|->)\s*([A-Z][A-Z_]{2,})/gi;
   while ((match = wildcardPattern.exec(text)) !== null) {
     states.add(match[1].toUpperCase());
+  }
+
+  // Pattern 8: lowercase transition lines — "confirmed → seated" (Hey-Listen style)
+  // Captures lowercase state names from arrow lines and uppercases them
+  for (const line of lines) {
+    if (/→|->/.test(line)) {
+      const lcWordPattern = /\b([a-z][a-z_]{2,})\b/g;
+      while ((match = lcWordPattern.exec(line)) !== null) {
+        const word = match[1];
+        if (!LOWERCASE_NOISE.has(word) && word.length >= 3) {
+          states.add(word.toUpperCase());
+        }
+      }
+    }
   }
 
   return Array.from(states).filter(s => s.length >= 3);
@@ -161,6 +175,18 @@ export function extractTransitions(text: string): [string, string][] {
         const key = `${f}→${to}`;
         transitions.set(key, [f, to]);
       }
+    }
+  }
+
+  // Pattern 3: lowercase transitions — "confirmed → seated" (Hey-Listen style)
+  const lcArrowPattern = /\b([a-z][a-z_]{2,})\s*(?:→|->)\s*([a-z][a-z_]{2,})\b/g;
+  while ((match = lcArrowPattern.exec(text)) !== null) {
+    const from = match[1].toUpperCase();
+    const to = match[2].toUpperCase();
+    if (!HTTP_METHODS.has(from) && !HTTP_METHODS.has(to)
+        && !LOWERCASE_NOISE.has(match[1]) && !LOWERCASE_NOISE.has(match[2])) {
+      const key = `${from}→${to}`;
+      transitions.set(key, [from, to]);
     }
   }
 
@@ -298,7 +324,8 @@ export function extractRoles(text: string): string[] {
     }
   }
 
-  return Array.from(roles);
+  // Final filter: remove known noise words
+  return Array.from(roles).filter(r => !ROLE_NOISE_BLOCKLIST.has(r));
 }
 
 // ─── PII Fields ───────────────────────────────────────────────────────────
@@ -553,6 +580,15 @@ export function mergeWithRegex(llmIR: AnalysisIR, regexResult: RegexExtractionRe
 
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
+// Common words that appear in lowercase transition lines but are NOT state names
+const LOWERCASE_NOISE = new Set([
+  "by", "via", "or", "and", "the", "a", "an", "is", "are", "was", "were",
+  "to", "from", "at", "in", "on", "of", "for", "with", "not", "if", "when",
+  "then", "after", "before", "durch", "nach", "von", "mit", "oder", "und",
+  "nur", "auch", "als", "bei", "per", "bis", "alle", "jede", "jeder",
+  "automatisch", "manuell", "korrektur", "reaktivierung", "gast",
+]);
+
 const GENERIC_WORDS = new Set([
   "API", "URL", "HTTP", "JSON", "REST", "AUTH", "JWT", "UUID", "ID", "OK",
   "NULL", "TRUE", "FALSE", "AND", "OR", "NOT", "THE", "FOR", "WITH",
@@ -577,6 +613,22 @@ const ROLE_KEYWORDS = [
 const COMMON_ROLES = new Set([
   "admin", "user", "guest", "owner", "viewer", "editor", "moderator",
   "staff", "member", "customer", "client", "manager", "operator",
+]);
+
+// Words that look like roles but are NOT roles (SQL artifacts, event names, etc.)
+const ROLE_NOISE_BLOCKLIST = new Set([
+  // SQL index names
+  "idx_users_role", "idx_role",
+  // Database/session artifacts
+  "user_sessions", "users",
+  // Audit log event types (not roles)
+  "user_login", "user_login_failed", "user_logout",
+  "user_locked", "user_unlocked",
+  "manual_admin_action",
+  // Field names
+  "username", "stripe_user_id",
+  // Generic words that happen to contain role keywords
+  "client_secret", "client_id", "client_credentials",
 ]);
 
 const PII_INDICATORS = [
@@ -631,6 +683,46 @@ export function extractTenantModel(text: string): { entity: string; idField: str
   const eachMatch2 = text.match(eachPattern2);
   if (eachMatch2) {
     return { entity: eachMatch2[1].toLowerCase(), idField: eachMatch2[2] };
+  }
+
+  // Pattern 7: Frequency heuristic — xId appearing most frequently overall → likely tenant key
+  // Uses total occurrences (not just backtick) + INDEX bonus for SQL schemas
+  // Handles: "Alle Tabellen mit Restaurant-Bezug haben `restaurantId`" (99 occurrences)
+  const anyIdPattern = /\b(\w+Id)\b/g;
+  const idTotalFreq = new Map<string, number>();
+  let bm;
+  while ((bm = anyIdPattern.exec(text)) !== null) {
+    const id = bm[1];
+    // Skip very generic IDs that are not tenant keys
+    if (id === "userId" || id === "Id") continue;
+    idTotalFreq.set(id, (idTotalFreq.get(id) || 0) + 1);
+  }
+  // Bonus: xId appearing in INDEX definitions (SQL schema) is a strong tenant signal
+  const indexIdPattern = /INDEX\s+idx_\w+_(\w+Id)/g;
+  while ((bm = indexIdPattern.exec(text)) !== null) {
+    const id = bm[1];
+    idTotalFreq.set(id, (idTotalFreq.get(id) || 0) + 10); // bonus weight
+  }
+  // Find the most frequent xId (min 15 occurrences total) — that's the tenant key
+  let bestId: string | null = null;
+  let bestCount = 14; // minimum threshold
+  for (const entry of Array.from(idTotalFreq.entries())) {
+    const [id, count] = entry;
+    if (count > bestCount) {
+      bestCount = count;
+      bestId = id;
+    }
+  }
+  if (bestId) {
+    return { entity: bestId.replace(/Id$/, ""), idField: bestId };
+  }
+
+  // Pattern 8: "Alle Tabellen ... haben `xId`" (German: all tables have xId)
+  const alleTabPattern = /[Aa]lle\s+Tabellen\s+.*?haben\s+[`'"']?(\w+Id)[`'"']?/;
+  const alleMatch = text.match(alleTabPattern);
+  if (alleMatch) {
+    const idField = alleMatch[1];
+    return { entity: idField.replace(/Id$/, ""), idField };
   }
 
   return null;
