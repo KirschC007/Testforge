@@ -22,7 +22,14 @@ export function normalizeEndpointName(raw: string, method?: string): string {
       .filter(s => !s.startsWith(":") && s.length > 0);  // Remove :id params and empty
     if (segments.length >= 1) {
       const resource = segments[0].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-      if (segments.length === 1) return `${resource}.list`;
+      if (segments.length === 1) {
+        // Use HTTP method to determine action for simple paths like POST /api/devices
+        const m = (method || 'GET').toUpperCase();
+        const methodActionMap: Record<string, string> = {
+          GET: 'list', POST: 'create', PUT: 'update', PATCH: 'update', DELETE: 'delete'
+        };
+        return `${resource}.${methodActionMap[m] || 'list'}`;
+      }
       const action = segments[segments.length - 1].toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       // Map common actions
       if (action === "gdpr") return `${resource}.gdprDelete`;
@@ -48,8 +55,24 @@ export function normalizeEndpointName(raw: string, method?: string): string {
     }
   }
   // Already correct: simple resource.action dot-notation
-  const simpleResource = /^[a-z][a-z0-9]*s?\.[a-z][a-z0-9]*$/;
-  if (simpleResource.test(raw)) return raw;
+  // But normalize action synonyms: add/new/insert/store/register → create, download/getExport → export
+  const simpleResource = /^[a-z][a-z0-9]*s?\.([a-z][a-z0-9]*)$/;
+  const simpleMatch = simpleResource.exec(raw);
+  if (simpleMatch) {
+    const resource = raw.split('.')[0];
+    const action = simpleMatch[1].toLowerCase();
+    const actionSynonyms: Record<string, string> = {
+      add: 'create', new: 'create', insert: 'create', store: 'create', post: 'create',
+      register: 'create', book: 'create', generate: 'create', start: 'create',
+      download: 'export', getexport: 'export', exportdata: 'export',
+      remove: 'delete', destroy: 'delete',
+      fetch: 'getById', retrieve: 'getById', show: 'getById',
+      modify: 'update', edit: 'update', patch: 'update', put: 'update',
+      all: 'list', find: 'list', search: 'list',
+    };
+    const normalizedAction = actionSynonyms[action] || action;
+    return `${resource}.${normalizedAction}`;
+  }
   // Pattern: "createAccount.create" → verb-duplicate → "accounts.create"
   const dupMatch = raw.match(/^(create|list|get|update|delete|find|add|remove)([A-Z]\w*)\.(\1)$/i);
   if (dupMatch) {
@@ -106,7 +129,17 @@ export function normalizeEndpointName(raw: string, method?: string): string {
       update: "update", patch: "update",
       delete: "delete", remove: "delete", close: "delete",
     };
-    const action = verbMap[verb] || verb;
+    // Verb-Synonyme: domain-spezifische Verben → generische Actions
+    const verbSynonyms: Record<string, string> = {
+      register: "create",   // registerPatient → patients.create
+      book: "create",       // bookRental → rentals.create
+      generate: "create",   // generateInvoice → invoices.create
+      record: "create",     // recordMaintenance → devices.create (overridden by sub-action if present)
+      submit: "create",
+      enroll: "create",
+      invite: "create",
+    };
+    const action = verbMap[verb] || verbSynonyms[verb] || verb;
     if (verbFirst[2].includes("Status")) return `${resource}.updateStatus`;
     if (verbFirst[2].toUpperCase().includes("GDPR")) return `${resource}.gdprDelete`;
     return `${resource}.${action}`;
@@ -138,6 +171,14 @@ export function normalizeEndpointName(raw: string, method?: string): string {
       const resource = segments[0];
       const subAction = segments.length > 1 ? segments[segments.length - 1] : null;
       const hasIdParam = path.includes(":") || path.includes("{");
+      // If subAction is a meaningful verb (not just a resource name), use it directly
+      const meaningfulSubActions = ['export', 'import', 'gdpr', 'freeze', 'unfreeze', 'cancel',
+        'approve', 'reject', 'complete', 'archive', 'maintenance', 'status', 'extend', 'return',
+        'payment', 'utilization', 'anonymize', 'delete', 'restore', 'publish', 'unpublish'];
+      if (subAction && meaningfulSubActions.includes(subAction.toLowerCase())) {
+        const actionMap: Record<string, string> = { gdpr: 'gdprDelete' };
+        return `${resource}.${actionMap[subAction.toLowerCase()] || subAction.toLowerCase()}`;
+      }
       const methodMap: Record<string, string> = {
         GET: hasIdParam ? "getById" : "list",
         POST: subAction || "create",
@@ -148,5 +189,121 @@ export function normalizeEndpointName(raw: string, method?: string): string {
       return `${resource}.${methodMap[httpMethod] || subAction || "call"}`;
     }
   }
+  // "patients.gdpr" → "patients.gdprDelete" (wenn kein Suffix nach gdpr)
+  if (raw.endsWith(".gdpr")) return raw + "Delete";
   return raw;
+}
+// ─── LLM Output Sanitization ─────────────────────────────────────────────────
+
+/**
+ * Ensures a value is a string array. Handles all LLM hallucination patterns:
+ * - undefined/null → []
+ * - "single string" → ["single string"]
+ * - 123 → ["123"]
+ * - {object} → []
+ * - ["already", "array"] → ["already", "array"]
+ * - [123, "mixed"] → ["123", "mixed"]
+ */
+export function ensureArray(val: unknown): string[] {
+  if (Array.isArray(val)) return val.map(v => typeof v === "string" ? v : String(v));
+  if (typeof val === "string" && val.length > 0) return [val];
+  if (typeof val === "number") return [String(val)];
+  return [];
+}
+
+/**
+ * Ensures a value is a string. Handles:
+ * - undefined/null → fallback
+ * - number → "number"
+ * - ["array"] → "array[0]"
+ * - {object} → fallback
+ */
+export function ensureString(val: unknown, fallback = ""): string {
+  if (typeof val === "string") return val;
+  if (typeof val === "number") return String(val);
+  if (Array.isArray(val) && val.length > 0) return String(val[0]);
+  return fallback;
+}
+
+/**
+ * Sanitize a single Behavior object from LLM output.
+ * Ensures every field has the correct type regardless of what the LLM returned.
+ */
+export function sanitizeBehavior(raw: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...raw,
+    id: ensureString(raw.id, `B-${Date.now()}`),
+    title: ensureString(raw.title, "Untitled behavior"),
+    subject: ensureString(raw.subject, "System"),
+    action: ensureString(raw.action, "handles"),
+    object: ensureString(raw.object, "request"),
+    preconditions: ensureArray(raw.preconditions),
+    postconditions: ensureArray(raw.postconditions),
+    errorCases: ensureArray(raw.errorCases),
+    errorCodes: ensureArray(raw.errorCodes),
+    tags: ensureArray(raw.tags),
+    riskHints: ensureArray(raw.riskHints),
+    relatedBehaviors: ensureArray(raw.relatedBehaviors),
+    outputFields: ensureArray(raw.outputFields),
+    chapter: ensureString(raw.chapter, ""),
+    specAnchor: ensureString(raw.specAnchor, ""),
+    structuredSideEffects: Array.isArray(raw.structuredSideEffects) ? raw.structuredSideEffects : [],
+  };
+}
+
+/**
+ * Sanitize a UserFlow object from LLM output.
+ */
+export function sanitizeUserFlow(raw: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...raw,
+    id: ensureString(raw.id, `UF-${Date.now()}`),
+    name: ensureString(raw.name, "Unnamed flow"),
+    actor: ensureString(raw.actor, "user"),
+    steps: ensureArray(raw.steps),
+    successCriteria: ensureArray(raw.successCriteria),
+    errorScenarios: ensureArray(raw.errorScenarios),
+    relatedEndpoints: ensureArray(raw.relatedEndpoints),
+  };
+}
+
+/**
+ * Sanitize an APIEndpoint object from LLM output.
+ */
+export function sanitizeEndpoint(raw: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...raw,
+    name: ensureString(raw.name, "unknown.endpoint"),
+    method: ensureString(raw.method, "POST"),
+    auth: ensureString(raw.auth, "requireAuth"),
+    relatedBehaviors: ensureArray(raw.relatedBehaviors),
+    inputFields: Array.isArray(raw.inputFields) ? raw.inputFields : [],
+    outputFields: Array.isArray(raw.outputFields)
+      ? raw.outputFields
+      : (typeof raw.outputFields === "string" ? [raw.outputFields] : []),
+  };
+}
+
+/**
+ * Sanitize the complete IR from LLM output.
+ * Call this ONCE after parsing, BEFORE anything else touches the data.
+ */
+export function sanitizeLLMOutput(raw: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...raw,
+    behaviors: Array.isArray(raw.behaviors)
+      ? raw.behaviors.map(b => sanitizeBehavior(b as Record<string, unknown>))
+      : [],
+    apiEndpoints: Array.isArray(raw.apiEndpoints)
+      ? raw.apiEndpoints.map(e => sanitizeEndpoint(e as Record<string, unknown>))
+      : [],
+    userFlows: Array.isArray(raw.userFlows)
+      ? raw.userFlows.map(f => sanitizeUserFlow(f as Record<string, unknown>))
+      : [],
+    invariants: Array.isArray(raw.invariants) ? raw.invariants : ensureArray(raw.invariants),
+    ambiguities: Array.isArray(raw.ambiguities) ? raw.ambiguities : ensureArray(raw.ambiguities),
+    contradictions: Array.isArray(raw.contradictions) ? raw.contradictions : ensureArray(raw.contradictions),
+    services: Array.isArray(raw.services) ? raw.services : [],
+    dataModels: Array.isArray(raw.dataModels) ? raw.dataModels : [],
+  };
 }

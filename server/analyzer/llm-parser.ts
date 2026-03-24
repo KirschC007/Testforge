@@ -1,7 +1,7 @@
 import { invokeLLM } from "../_core/llm";
 import type { EndpointField, AnalysisIR, AnalysisResult } from "./types";
 import { jsonrepair } from "jsonrepair";
-import { normalizeEndpointName } from "./normalize";
+import { normalizeEndpointName, sanitizeLLMOutput, sanitizeBehavior, sanitizeEndpoint, sanitizeUserFlow } from "./normalize";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,8 @@ Return JSON with these exact keys:
 - apiEndpoints: [{name, method, auth, relatedBehaviors, inputFields: EndpointField[], outputFields: string[]}]
 - authModel: {loginEndpoint, csrfEndpoint, csrfPattern, roles: [{name, envUserVar, envPassVar, defaultUser, defaultPass}]} or null
 - enums: object mapping field names to their allowed string values, e.g. {"status": ["todo","in_progress","done"], "priority": ["low","medium","high"]}
-- statusMachine: {states: string[], transitions: [[from,to],...], forbidden: [[from,to],...], initialState: string, terminalStates: string[]} or null
+- statusMachine: {states: string[], transitions: [[from,to],...], forbidden: [[from,to],...], initialState: string, terminalStates: string[]} or null (use for single status machine; for multiple status machines use statusMachines array instead)
+- statusMachines: [{resource: string, states: string[], transitions: [[from,to],...], forbidden: [[from,to],...], initialState: string, terminalStates: string[]}] — use when spec defines multiple status machines for different resources (e.g. devices AND rentals each have their own status machine). Leave empty array [] if only one or zero status machines.
 - services: [{name, description, techStack, dependencies: [{from, to, via, critical}]}] — extract microservices/modules if mentioned, else []
 - userFlows: [{id, name, actor, steps, successCriteria, errorScenarios, relatedEndpoints}] — extract user journeys/flows/stories, else []
 - dataModels: [{name, fields: [{name, type, required, unique, pii}], relations: [{to, type}], hasPII}] — extract data models/entities/tables, else []
@@ -106,14 +107,15 @@ Output ONLY valid JSON. No markdown, no explanation.`;
   const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   // Robust JSON parsing: try direct parse first, then jsonrepair for truncated/malformed LLM output
   try {
-    return JSON.parse(cleaned);
+    const rawParsed = JSON.parse(cleaned);
+    return sanitizeLLMOutput(rawParsed as Record<string, unknown>);
   } catch (_parseErr) {
     console.warn(`[TestForge] Chunk ${chunkIndex}: JSON.parse failed (truncated output?), attempting jsonrepair...`);
     try {
       const repaired = jsonrepair(cleaned);
       const result = JSON.parse(repaired);
       console.log(`[TestForge] Chunk ${chunkIndex}: jsonrepair succeeded — recovered partial behaviors`);
-      return result;
+      return sanitizeLLMOutput(result as Record<string, unknown>);
     } catch (repairErr) {
       console.error(`[TestForge] Chunk ${chunkIndex}: jsonrepair also failed:`, repairErr);
       throw _parseErr; // throw original error so caller can log it properly
@@ -145,14 +147,23 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
 
   const results = await Promise.all(
     chunks.map(async (chunk, i) => {
-      try {
-        const result = await withTimeout(parseSpecChunk(chunk, i, chunks.length), LLM_TIMEOUT_MS, emptyChunk);
-        console.log(`[TestForge] Chunk ${i + 1}/${chunks.length} done in ${Date.now() - t0}ms`);
-        return result;
-      } catch (err) {
-        console.error(`[TestForge] Chunk ${i} failed:`, err);
-        return emptyChunk;
+      // Retry up to 2 times on LLM failure (500 errors, timeouts, etc.)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const result = await withTimeout(parseSpecChunk(chunk, i, chunks.length), LLM_TIMEOUT_MS, emptyChunk);
+          console.log(`[TestForge] Chunk ${i + 1}/${chunks.length} done in ${Date.now() - t0}ms`);
+          return result;
+        } catch (err) {
+          if (attempt < 2) {
+            console.warn(`[TestForge] Chunk ${i} attempt ${attempt + 1} failed, retrying in 3s...`, (err as Error).message);
+            await new Promise(r => setTimeout(r, 3000));
+          } else {
+            console.error(`[TestForge] Chunk ${i} failed after 3 attempts:`, err);
+            return emptyChunk;
+          }
+        }
       }
+      return emptyChunk;
     })
   );
 
@@ -192,17 +203,43 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
         }
       }
     }
+    // Merge statusMachines array (multiple status machines)
+    if ((r as any).statusMachines && Array.isArray((r as any).statusMachines)) {
+      if (!merged.statusMachines) merged.statusMachines = [];
+      for (const sm of (r as any).statusMachines) {
+        if (sm && sm.resource) {
+          const existing = merged.statusMachines.find(x => x.resource === sm.resource);
+          if (!existing) {
+            merged.statusMachines.push(sm);
+          } else {
+            // Merge states and transitions
+            for (const s of (sm.states || [])) { if (!existing.states.includes(s)) existing.states.push(s); }
+            for (const t of (sm.transitions || [])) {
+              if (!existing.transitions.some((x: [string,string]) => x[0] === t[0] && x[1] === t[1])) existing.transitions.push(t);
+            }
+          }
+        }
+      }
+    }
     // Merge statusMachine: first non-null wins, but merge transitions
     if (r.statusMachine) {
       if (!merged.statusMachine) {
         merged.statusMachine = r.statusMachine as AnalysisIR["statusMachine"];
       } else {
-        // Merge states
-        for (const s of (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).states || []) {
+        // Merge states — guard against LLM returning string instead of array
+        const incomingStates = (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).states || [];
+        const statesArr = Array.isArray(incomingStates) ? incomingStates : String(incomingStates).split(/[,;\s]+/).filter(Boolean);
+        if (!Array.isArray(merged.statusMachine!.states)) {
+          merged.statusMachine!.states = String(merged.statusMachine!.states).split(/[,;\s]+/).filter(Boolean);
+        }
+        for (const s of statesArr) {
           if (!merged.statusMachine!.states.includes(s)) merged.statusMachine!.states.push(s);
         }
-        // Merge transitions
-        for (const t of (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).transitions || []) {
+        // Merge transitions — guard against LLM returning non-array
+        const incomingTransitions = (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).transitions || [];
+        const transitionsArr = Array.isArray(incomingTransitions) ? incomingTransitions : [];
+        if (!Array.isArray(merged.statusMachine!.transitions)) merged.statusMachine!.transitions = [];
+        for (const t of transitionsArr) {
           const exists = merged.statusMachine!.transitions.some(x => x[0] === t[0] && x[1] === t[1]);
           if (!exists) merged.statusMachine!.transitions.push(t);
         }
@@ -217,6 +254,21 @@ export async function parseSpec(specText: string): Promise<AnalysisResult> {
     seenBehaviors.add(b.id);
     return true;
   });
+
+  // Global array guard: LLM may return strings instead of arrays for these fields
+  const toArray = (v: unknown): string[] => {
+    if (Array.isArray(v)) return v.map(String);
+    if (typeof v === "string" && v.trim()) return v.split(/[;,\n]+/).map(s => s.trim()).filter(Boolean);
+    return [];
+  };
+  merged.behaviors = merged.behaviors.map(b => ({
+    ...b,
+    errorCases: toArray(b.errorCases),
+    preconditions: toArray(b.preconditions),
+    postconditions: toArray(b.postconditions),
+    tags: toArray(b.tags),
+    riskHints: toArray(b.riskHints),
+  }));
 
   const seenEndpoints = new Set<string>();
   merged.apiEndpoints = merged.apiEndpoints.filter(e => {

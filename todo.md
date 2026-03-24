@@ -644,3 +644,22 @@
 - [x] AnalysisDetail.tsx: E2E Layer 3 auf 5 Typen A-E, helpers/browser.ts, playwright.config.ts 2 Projekte, testforge.yml
 - [x] NewAnalysis.tsx: Express + Next.js App Router in Code-Scan Beschreibung
 - [x] 546/546 Vitest-Tests grün, 0 TS-Fehler
+
+## MedRental: Ultimativer Testcase (24.03.2026)
+- [x] MedRental-Spec durch TestForge-Pipeline laufen lassen
+- [x] Alle Verifikations-Checks bestanden (Endpoints, Tenant, DSGVO, Auth-Matrix, Status-Machines, Browser, CI/CD)
+- [x] Output-ZIP mit Zusammenfassung liefern
+
+## v5.4: normalize.ts Verb-Synonyme + MedRental 48/48
+
+- [x] normalize.ts: verbSynonyms (register/book/generate/record/submit/add/enroll/invite → create) + gdprDelete-Suffix-Fix
+- [x] normalize.ts: segments.length===1 nutzt HTTP-Methode (POST→create, GET→list, PATCH→update, DELETE→delete)
+- [x] llm-sanitizer.ts: Stufe 1 REST-Endpoint-Extraktion aus Spec-Text (### POST /api/devices → devices.create)
+- [x] llm-sanitizer.ts: dynamic import entfernt (normalizeEndpointName direkt importiert)
+- [x] proof-generator.ts: roleToCookieFn handles spaces in role names (billing user → getBillingUserCookie)
+- [x] helpers-generator.ts: tenantEntity detection verbessert (clinicId → TEST_CLINIC_ID)
+- [x] types.ts: statusMachines array für multiple State-Machines
+- [x] risk-model.ts: determineProofTypes akzeptiert endpoint + ir Parameter
+- [x] MedRental Pipeline: 48/48 Checks bestanden ✅
+- [x] Vitest: 546/546 Tests grün, 0 TS-Fehler
+- [x] Checkpoint + ZIP

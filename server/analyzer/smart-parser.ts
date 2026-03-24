@@ -29,6 +29,7 @@
 
 import { invokeLLM } from "../_core/llm";
 import type { EndpointField, AnalysisIR, AnalysisResult, Behavior, APIEndpoint, AuthModel } from "./types";
+import { sanitizeLLMOutput, sanitizeBehavior, sanitizeEndpoint, sanitizeUserFlow } from "./normalize";
 
 export const LLM_TIMEOUT_MS = 90000;
 const SMART_PARSER_THRESHOLD = 50000; // Use smart parser for specs > 50KB
@@ -315,6 +316,9 @@ Return JSON with EXACTLY these keys:
 
 Rules:
 - Normalize endpoint names to resource.action format (e.g. "bookings.create", "auth.login", "customers.gdprDelete")
+- HTTP verb → action mapping: POST→create, GET (no :id)→list, GET (with :id)→getById, PUT/PATCH (no sub-action)→update, DELETE (no sub-action)→delete
+- Sub-actions override verb mapping: POST /rentals/:id/extend → rentals.extend, POST /devices/:id/maintenance → devices.maintenance, DELETE /patients/:id/gdpr → patients.gdprDelete
+- NEVER use 'list' for POST endpoints. NEVER use 'create' for GET endpoints.
 - Include EVERY endpoint mentioned, even if only in examples
 - auth: "public" if no auth required, "user" for authenticated users, "admin" for admin-only, "manager" for manager-only
 - tenantModel: the multi-tenant entity (the entity that "owns" data). null if single-tenant.`;
@@ -816,12 +820,20 @@ export async function parseSpecSmart(specText: string): Promise<AnalysisResult> 
   let totalQuality = 0;
 
   for (const r of extractionResults) {
-    if (r.behaviors) merged.behaviors.push(...r.behaviors);
+    if (r.behaviors) {
+      const sanitized = (Array.isArray(r.behaviors) ? r.behaviors : [])
+        .map(b => sanitizeBehavior(b as unknown as Record<string, unknown>));
+      merged.behaviors.push(...sanitized as unknown as Behavior[]);
+    }
     if (r.invariants) merged.invariants.push(...r.invariants);
     if (r.ambiguities) merged.ambiguities.push(...r.ambiguities);
     if (r.contradictions) merged.contradictions.push(...r.contradictions);
     if (r.resources) merged.resources.push(...r.resources);
-    if (r.apiEndpoints) merged.apiEndpoints.push(...r.apiEndpoints);
+    if (r.apiEndpoints) {
+      const sanitized = (Array.isArray(r.apiEndpoints) ? r.apiEndpoints : [])
+        .map(e => sanitizeEndpoint(e as unknown as Record<string, unknown>));
+      merged.apiEndpoints.push(...sanitized as unknown as APIEndpoint[]);
+    }
     if (!merged.tenantModel && r.tenantModel) merged.tenantModel = r.tenantModel;
     if (!merged.authModel && r.authModel) merged.authModel = r.authModel;
     if (r.qualityScore) totalQuality += r.qualityScore;

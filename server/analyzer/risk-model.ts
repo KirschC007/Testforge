@@ -1,7 +1,7 @@
 import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { getValidDefault } from "./proof-generator";
-import type { Behavior, EndpointField, AnalysisIR, SpecHealthDimension, SpecHealth, AnalysisResult, CheckResult, RiskLevel, ProofType, ScoredBehavior, FieldConstraint, ProofTarget, RiskModel } from "./types";
+import type { Behavior, EndpointField, AnalysisIR, APIEndpoint, SpecHealthDimension, SpecHealth, AnalysisResult, CheckResult, RiskLevel, ProofType, ScoredBehavior, FieldConstraint, ProofTarget, RiskModel } from "./types";
 import { evaluateRiskRules } from "./risk-rules";
 
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
@@ -357,10 +357,13 @@ export function assessSpecHealthFromResult(analysis: AnalysisResult): SpecHealth
 export function buildRiskModel(analysis: AnalysisResult): RiskModel {
   const behaviors: ScoredBehavior[] = analysis.ir.behaviors.map(b => {
     const riskLevel = assessRiskLevel(b);
+    // Pass the endpoint and IR so hasFields checks (e.g. IDOR on clinicId) work correctly
+    const endpoint = analysis.ir.apiEndpoints.find(e => e.relatedBehaviors.includes(b.id))
+      || analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes(b.object?.toLowerCase() || ''));
     return {
       behavior: b,
       riskLevel,
-      proofTypes: determineProofTypes(b),
+      proofTypes: determineProofTypes(b, endpoint, analysis.ir),
       priority: riskLevel === "critical" || riskLevel === "high" ? 0 : riskLevel === "medium" ? 1 : 2,
       rationale: buildRationale(b, riskLevel),
     };
@@ -428,9 +431,9 @@ function assessRiskLevel(b: Behavior): RiskLevel {
   return "low";
 }
 
-export function determineProofTypes(b: Behavior): ProofType[] {
+export function determineProofTypes(b: Behavior, endpoint?: APIEndpoint, ir?: AnalysisIR): ProofType[] {
   // Delegated to risk-rules.ts — declarative rule engine (replaces 200-line if-chain)
-  return Array.from(evaluateRiskRules(b));
+  return Array.from(evaluateRiskRules(b, endpoint, ir));
 }
 
 function buildRationale(b: Behavior, level: RiskLevel): string {

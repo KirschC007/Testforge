@@ -12,6 +12,7 @@ import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 import { parseCodeToIR, type CodeFile } from "./code-parser";
 import { discoverAPI } from "./api-discovery";
 import { normalizeEndpointName } from "./normalize";
+import { sanitizeIR } from "./llm-sanitizer";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -146,6 +147,20 @@ export async function runAnalysisJob(
     ...ep,
     name: normalizeEndpointName(ep.name, ep.method),
   }));
+
+  // v5.3: Sanitizer — deterministic type fixes (ensureArray etc.) for all LLM output
+  // enableLLMRepair=false: only free deterministic fixes, no extra LLM calls
+  try {
+    const { ir: sanitizedIR, report: sanitizeReport } = await sanitizeIR(
+      analysisResult.ir,
+      specText,
+      { enableLLMRepair: false }
+    );
+    analysisResult.ir = sanitizedIR;
+    console.log(`[TestForge] Sanitizer: ${sanitizeReport.fieldsFixed} deterministic fixes, ${sanitizeReport.llmRepairCalls} LLM repairs`);
+  } catch (e) {
+    console.warn(`[TestForge] Sanitizer failed (non-fatal):`, e);
+  }
 
   // Assess spec health (all paths)
   analysisResult.specHealth = assessSpecHealth(analysisResult.ir);

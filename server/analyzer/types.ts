@@ -129,6 +129,14 @@ export interface AnalysisIR {
     initialState?: string;
     terminalStates?: string[];
   } | null;
+  statusMachines?: Array<{
+    resource: string;
+    states: string[];
+    transitions: [string, string][];
+    forbidden: [string, string][];
+    initialState?: string;
+    terminalStates?: string[];
+  }>;
   services?: Array<{ name: string; description: string; techStack?: string; dependencies: ServiceDep[] }>;
   userFlows?: UserFlow[];
   dataModels?: DataModel[];

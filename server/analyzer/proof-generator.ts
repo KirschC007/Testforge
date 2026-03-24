@@ -339,7 +339,7 @@ function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name:
  */
 function roleToCookieFn(role: { name: string } | undefined): string {
   if (!role) return "getAdminCookie";
-  return `get${role.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
+  return `get${role.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
 }
 
 function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string {
@@ -890,7 +890,21 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
 
   // Goldstandard: Use statusMachine from IR if available, otherwise fall back to text extraction
   // Defensive normalization: LLM may return states as object or transitions as non-array
-  const rawSm = analysis.ir.statusMachine;
+  // If multiple status machines exist, pick the one matching the endpoint/behavior resource
+  let rawSm = analysis.ir.statusMachine;
+  if (analysis.ir.statusMachines && analysis.ir.statusMachines.length > 0) {
+    // Try to match by endpoint resource name (e.g. 'devices.status' → 'devices')
+    const epResource = (target.endpoint || '').split('.')[0].toLowerCase();
+    const behaviorText = ((behavior?.title || '') + ' ' + (behavior?.object || '')).toLowerCase();
+    const matchedSm = analysis.ir.statusMachines.find(sm =>
+      epResource && sm.resource && sm.resource.toLowerCase().includes(epResource)
+    ) || analysis.ir.statusMachines.find(sm =>
+      sm.resource && behaviorText.includes(sm.resource.toLowerCase())
+    ) || analysis.ir.statusMachines[target.transitionIndex !== undefined
+      ? target.transitionIndex % analysis.ir.statusMachines.length
+      : 0];
+    if (matchedSm) rawSm = matchedSm;
+  }
   const sm = rawSm ? {
     ...rawSm,
     states: Array.isArray(rawSm.states)
@@ -2297,6 +2311,103 @@ test("${target.id}o — INVALID_DATE_RANGE: endDate before startDate must fail",
     }
   }
 
+  // Pattern: DEVICE_IN_USE / DEVICE_NOT_AVAILABLE — rental of already-rented device
+  if (allErrorText.includes("device_in_use") || allErrorText.includes("device_not_available") || allErrorText.includes("not available") || allErrorText.includes("already rented") || allErrorText.includes("device must be available")) {
+    const deviceField = epFields.find(f => f.name.toLowerCase().includes("device"));
+    constraintTests.push(`
+test("${target.id}p \u2014 DEVICE_NOT_AVAILABLE: rental of already-rented device must fail", async ({ request }) => {
+  // Arrange: Create a device and rent it first
+  const device = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  // First rental (should succeed)
+  const { status: first } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${deviceField ? `${deviceField.name}: device.id as number,` : `deviceId: device.id as number,`}
+    ${epFields.filter(f => f.name !== (deviceField?.name || 'deviceId') && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join('\\n    ')}
+  }, adminCookie);
+  expect([200, 201]).toContain(first);
+  // Second rental of same device (should fail)
+  const { status: second } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${deviceField ? `${deviceField.name}: device.id as number,` : `deviceId: device.id as number,`}
+    ${epFields.filter(f => f.name !== (deviceField?.name || 'deviceId') && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join('\\n    ')}
+  }, adminCookie);
+  expect(second).toBe(422); // DEVICE_NOT_AVAILABLE or DEVICE_IN_USE
+  // Kills: Allow double-booking of same device
+});`);
+  }
+  // Pattern: RENTAL_TOO_LONG — rental duration exceeds max days
+  if (allErrorText.includes("rental_too_long") || allErrorText.includes("365 days") || allErrorText.includes("max.*days") || allErrorText.includes("duration")) {
+    const startField = epFields.find(f => f.name.toLowerCase().includes("start"));
+    const endField = epFields.find(f => f.name.toLowerCase().includes("return") || f.name.toLowerCase().includes("end"));
+    constraintTests.push(`
+test("${target.id}q \u2014 RENTAL_TOO_LONG: rental duration > 365 days must be rejected", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${startField ? `${startField.name}: "2030-01-01",` : 'startDate: "2030-01-01",'}
+    ${endField ? `${endField.name}: "2031-06-01",` : 'expectedReturnDate: "2031-06-01",'} // > 365 days!
+    ${epFields.filter(f => f.name !== (startField?.name || 'startDate') && f.name !== (endField?.name || 'expectedReturnDate') && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join('\\n    ')}
+  }, adminCookie);
+  expect(status).toBe(400); // RENTAL_TOO_LONG
+  // Kills: Allow rental duration > 365 days
+});`);
+  }
+  // Pattern: MISSING_PRE_AUTH — insurance claim without pre-auth code
+  if (allErrorText.includes("missing_pre_auth") || allErrorText.includes("preauthcode") || allErrorText.includes("pre_auth") || allErrorText.includes("insurance")) {
+    const insuranceField = epFields.find(f => f.name.toLowerCase().includes("insurance"));
+    const preAuthField = epFields.find(f => f.name.toLowerCase().includes("preauth") || f.name.toLowerCase().includes("pre_auth"));
+    constraintTests.push(`
+test("${target.id}r \u2014 MISSING_PRE_AUTH: insurance claim without pre-auth code must fail", async ({ request }) => {
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    ${insuranceField ? `${insuranceField.name}: true,` : 'insuranceClaim: true,'} // Insurance claim = true
+    // ${preAuthField ? preAuthField.name : 'insurancePreAuthCode'}: omitted intentionally
+    ${epFields.filter(f => f.name !== (insuranceField?.name || 'insuranceClaim') && f.name !== (preAuthField?.name || 'insurancePreAuthCode') && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join('\\n    ')}
+  }, adminCookie);
+  expect(status).toBe(400); // MISSING_PRE_AUTH
+  // Kills: Allow insurance claim without pre-authorization code
+});`);
+  }
+  // Pattern: MAX_EXTENSIONS / MAX_EXTENSIONS_REACHED — rental extension limit
+  if (allErrorText.includes("max_extensions") || allErrorText.includes("maximum 3 extensions") || allErrorText.includes("max.*extension")) {
+    constraintTests.push(`
+test("${target.id}s \u2014 MAX_EXTENSIONS: exceeding maximum rental extensions must fail", async ({ request }) => {
+  const rental = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  // Extend 3 times (max allowed)
+  for (let i = 0; i < 3; i++) {
+    const { status } = await trpcMutation(request, "rentals.extend", {
+      ${tenantField}: ${tenantConst},
+      id: rental.id as number,
+      additionalDays: 7,
+    }, adminCookie);
+    expect([200, 201]).toContain(status);
+  }
+  // 4th extension must fail
+  const { status: fourth } = await trpcMutation(request, "rentals.extend", {
+    ${tenantField}: ${tenantConst},
+    id: rental.id as number,
+    additionalDays: 7,
+  }, adminCookie);
+  expect(fourth).toBe(422); // MAX_EXTENSIONS_REACHED
+  // Kills: Allow more than 3 rental extensions
+});`);
+  }
+  // Pattern: OVERPAYMENT — payment exceeds remaining balance
+  if (allErrorText.includes("overpayment") || allErrorText.includes("remaining.*balance") || allErrorText.includes("amount.*exceed") || allErrorText.includes("remainingbalance")) {
+    const amountField = epFields.find(f => f.name.toLowerCase().includes("amount"));
+    constraintTests.push(`
+test("${target.id}t \u2014 OVERPAYMENT: payment exceeding remaining balance must fail", async ({ request }) => {
+  const invoice = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  // Try to pay more than the invoice amount
+  const { status } = await trpcMutation(request, "${ep}", {
+    ${tenantField}: ${tenantConst},
+    id: invoice.id as number,
+    ${amountField ? `${amountField.name}: 9999999, // Way more than invoice total` : 'amount: 9999999, // Way more than invoice total'}
+    ${epFields.filter(f => f.name !== (amountField?.name || 'amount') && !f.isTenantKey && f.required).map(f => `${f.name}: ${getValidDefault(f, tenantConst)},`).join('\\n    ')}
+  }, adminCookie);
+  expect(status).toBe(400); // OVERPAYMENT
+  // Kills: Allow payment exceeding remaining balance
+});`);
+  }
   return constraintTests.join("\\n");
 })()}
 `;
@@ -2842,7 +2953,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const adminRole = roles.find((r: { name: string }) => r.name.toLowerCase().includes("admin")) || roles[0];
   const nonAdminRoles = roles.filter((r: { name: string }) => r !== adminRole);
   const adminFnName = adminRole
-    ? "get" + adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    ? "get" + adminRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
     : "getAdminCookie";
   const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
@@ -2869,7 +2980,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const fnSuffix = target.id.replace(/-/g, "_");
   // Build role cookie imports
   const roleFnNames = roles.map((r: { name: string }) =>
-    "get" + r.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    "get" + r.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
   );
   const uniqueRoleFns = Array.from(new Set([adminFnName, ...roleFnNames]));
   // ── MUTATION KILL TESTS ─────────────────────────────────────────────────────
@@ -2885,7 +2996,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
       ? nonAdminRoles.find((r: { name: string }) => killDesc.toLowerCase().includes(r.name.toLowerCase()))
       : null;
     const roleFn = targetRole
-      ? "get" + targetRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+      ? "get" + targetRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
       : adminFnName;
     const isPrivilegeEscalation = killDesc.toLowerCase().includes("lower-privileged") ||
       killDesc.toLowerCase().includes("should not") || isRoleSpecific;
@@ -2921,7 +3032,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   }).join("\n");
   // ── NON-ADMIN ROLE TESTS (original) ─────────────────────────────────────────
   const nonAdminTests = nonAdminRoles.slice(0, 2).map((role: { name: string }) => {
-    const roleFn = "get" + role.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie";
+    const roleFn = "get" + role.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie";
     return `
   test("${role.name} must NOT be able to ${action} ${object}", async ({ request }) => {
     const roleCookie = await ${roleFn}(request);
@@ -3199,10 +3310,10 @@ export function generateFeatureGateTest(target: ProofTarget, analysis: AnalysisR
   const freeRole = roles.find(r => r.name.toLowerCase().includes("free") || r.name.toLowerCase().includes("guest") || r.name.toLowerCase().includes("user")) || roles[roles.length - 1];
 
   const adminFnName = adminRole
-    ? `get${adminRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    ? `get${adminRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
   const freeFnName = freeRole && freeRole !== adminRole
-    ? `get${freeRole.name.split("_").map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    ? `get${freeRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getUserCookie";
 
   // Resolve feature gate def from IR

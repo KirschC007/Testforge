@@ -5,7 +5,26 @@ import type { EndpointField, AnalysisResult, GeneratedHelpers, AuthRole } from "
 export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const ir = analysis.ir;
   const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  // Detect tenantEntity from IR or from apiEndpoints isTenantKey fields or resources tenantKey
+  let tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  if (tenantEntity === "tenant") {
+    // Try to infer from resources tenantKey (e.g. clinicId → clinic)
+    const resourceTenantKey = ir.resources.find(r => r.tenantKey)?.tenantKey;
+    if (resourceTenantKey) {
+      const stripped = resourceTenantKey.replace(/Id$/i, "").replace(/[_\s]+/g, "_");
+      if (stripped && stripped !== "tenant" && stripped.length > 2) tenantEntity = stripped;
+    }
+    // Try to infer from apiEndpoints isTenantKey fields
+    if (tenantEntity === "tenant") {
+      for (const ep of ir.apiEndpoints) {
+        const tkField = ep.inputFields?.find(f => f.isTenantKey);
+        if (tkField) {
+          const stripped = tkField.name.replace(/Id$/i, "").replace(/[_\s]+/g, "_");
+          if (stripped && stripped !== "tenant" && stripped.length > 2) { tenantEntity = stripped; break; }
+        }
+      }
+    }
+  }
   // Strip HTTP method prefix if present (e.g. "POST /api/trpc/auth.login" → "/api/trpc/auth.login")
   const rawLoginEndpoint = ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
   const loginEndpoint = rawLoginEndpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
@@ -119,7 +138,7 @@ import { loginAndGetCookie, BASE_URL } from "./api";
 ${roles.map((role, i) => `
 let _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie: string | null = null;
 
-export async function get${role.name.split("_").map(w => w[0].toUpperCase() + w.slice(1)).join("")}Cookie(request: any): Promise<string> {
+export async function get${role.name.split(/[_\s]+/).map(w => w[0].toUpperCase() + w.slice(1)).join("")}Cookie(request: any): Promise<string> {
   if (_${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie) return _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie;
   _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie = await loginAndGetCookie(
     request,
