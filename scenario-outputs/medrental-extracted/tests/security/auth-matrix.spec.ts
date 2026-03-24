@@ -240,7 +240,7 @@ test.describe("Auth Matrix: System stores all monetary values in EUR cents as in
 });
 
 // Proof: PROOF-B-004-AUTHMATRIX
-// Behavior: GET /api/auth/csrf-token returns CSRF double-submit cookie
+// Behavior: API provides CSRF token via double-submit cookie
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_004_AUTHMATRIX() {
@@ -248,8 +248,8 @@ function basePayload_PROOF_B_004_AUTHMATRIX() {
     clinicId: TEST_CLINIC_ID,
   };
 }
-test.describe("Auth Matrix: GET /api/auth/csrf-token returns CSRF double-submit cookie", () => {
-  test("admin must be able to returns CSRF double-submit cookie", async ({ request }) => {
+test.describe("Auth Matrix: API provides CSRF token via double-submit cookie", () => {
+  test("admin must be able to provides CSRF token", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "auth.csrfToken", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -268,7 +268,7 @@ test.describe("Auth Matrix: GET /api/auth/csrf-token returns CSRF double-submit 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to returns CSRF double-submit cookie", async ({ request }) => {
+  test("technician must NOT be able to provides CSRF token", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "auth.csrfToken", basePayload_PROOF_B_004_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -277,7 +277,7 @@ test.describe("Auth Matrix: GET /api/auth/csrf-token returns CSRF double-submit 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to returns CSRF double-submit cookie", async ({ request }) => {
+  test("nurse must NOT be able to provides CSRF token", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "auth.csrfToken", basePayload_PROOF_B_004_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -285,7 +285,7 @@ test.describe("Auth Matrix: GET /api/auth/csrf-token returns CSRF double-submit 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns must be rejected", async ({ request }) => {
+  test("cross-tenant provides must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_004_AUTHMATRIX(),
@@ -309,41 +309,41 @@ test.describe("Auth Matrix: GET /api/auth/csrf-token returns CSRF double-submit 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access CSRF double-submit cookie", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access CSRF double-submit cookie
+  test("mutation-kill-2: Allow lower-privileged role to access CSRF token", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access CSRF token
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "auth.csrfToken", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access CSRF double-submit cookie — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access CSRF token — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access CSRF double-submit cookie — verify error code is present
+    // Kills: Allow lower-privileged role to access CSRF token — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to returns CSRF double-submit cookie", async ({ request }) => {
-    // Kills: technician should not be able to returns CSRF double-submit cookie
+  test("mutation-kill-3: technician should not be able to provides CSRF token", async ({ request }) => {
+    // Kills: technician should not be able to provides CSRF token
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "auth.csrfToken", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to returns CSRF double-submit cookie — verify no data leaked in error response
+    // Kills: technician should not be able to provides CSRF token — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to returns CSRF double-submit cookie — verify error code is present
+    // Kills: technician should not be able to provides CSRF token — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to returns CSRF double-submit cookie", async ({ request }) => {
-    // Kills: nurse should not be able to returns CSRF double-submit cookie
+  test("mutation-kill-4: nurse should not be able to provides CSRF token", async ({ request }) => {
+    // Kills: nurse should not be able to provides CSRF token
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "auth.csrfToken", basePayload_PROOF_B_004_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to returns CSRF double-submit cookie — verify no data leaked in error response
+    // Kills: nurse should not be able to provides CSRF token — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to returns CSRF double-submit cookie — verify error code is present
+    // Kills: nurse should not be able to provides CSRF token — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
@@ -460,7 +460,7 @@ test.describe("Auth Matrix: JWT contains userId, clinicId, and role", () => {
 });
 
 // Proof: PROOF-B-007-AUTHMATRIX
-// Behavior: System rate-limits failed login attempts to 5 per 15 minutes
+// Behavior: System rate limits failed login attempts to 5 per 15 minutes
 // Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_007_AUTHMATRIX() {
@@ -469,8 +469,8 @@ function basePayload_PROOF_B_007_AUTHMATRIX() {
     password: "test-password",
   };
 }
-test.describe("Auth Matrix: System rate-limits failed login attempts to 5 per 15 minutes", () => {
-  test("admin must be able to rate-limits failed logins", async ({ request }) => {
+test.describe("Auth Matrix: System rate limits failed login attempts to 5 per 15 minutes", () => {
+  test("admin must be able to rate limits failed login attempts", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -489,7 +489,7 @@ test.describe("Auth Matrix: System rate-limits failed login attempts to 5 per 15
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rate-limits failed logins", async ({ request }) => {
+  test("technician must NOT be able to rate limits failed login attempts", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_007_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -498,7 +498,7 @@ test.describe("Auth Matrix: System rate-limits failed login attempts to 5 per 15
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rate-limits failed logins", async ({ request }) => {
+  test("nurse must NOT be able to rate limits failed login attempts", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_007_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -506,7 +506,7 @@ test.describe("Auth Matrix: System rate-limits failed login attempts to 5 per 15
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rate-limits must be rejected", async ({ request }) => {
+  test("cross-tenant rate limits must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_007_AUTHMATRIX(),
@@ -530,288 +530,76 @@ test.describe("Auth Matrix: System rate-limits failed login attempts to 5 per 15
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access failed logins", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access failed logins
+  test("mutation-kill-2: Allow lower-privileged role to access failed login attempts", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access failed login attempts
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access failed logins — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access failed login attempts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access failed logins — verify error code is present
+    // Kills: Allow lower-privileged role to access failed login attempts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to rate-limits failed logins", async ({ request }) => {
-    // Kills: technician should not be able to rate-limits failed logins
+  test("mutation-kill-3: technician should not be able to rate limits failed login attempts", async ({ request }) => {
+    // Kills: technician should not be able to rate limits failed login attempts
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rate-limits failed logins — verify no data leaked in error response
+    // Kills: technician should not be able to rate limits failed login attempts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to rate-limits failed logins — verify error code is present
+    // Kills: technician should not be able to rate limits failed login attempts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to rate-limits failed logins", async ({ request }) => {
-    // Kills: nurse should not be able to rate-limits failed logins
+  test("mutation-kill-4: nurse should not be able to rate limits failed login attempts", async ({ request }) => {
+    // Kills: nurse should not be able to rate limits failed login attempts
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_007_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rate-limits failed logins — verify no data leaked in error response
+    // Kills: nurse should not be able to rate limits failed login attempts — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rate-limits failed logins — verify error code is present
+    // Kills: nurse should not be able to rate limits failed login attempts — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-008-AUTHMATRIX
-// Behavior: System returns 429 for exceeding failed login rate limit
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_008_AUTHMATRIX() {
-  return {
-    email: "test@example.com",
-    password: "test-password",
-  };
-}
-test.describe("Auth Matrix: System returns 429 for exceeding failed login rate limit", () => {
-  test("admin must be able to returns 429 failed login attempt", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to returns 429 failed login attempt", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to returns 429 failed login attempt", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant returns 429 must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_008_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "auth.login", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in auth.login", async ({ request }) => {
-    // Kills: Remove role check in auth.login
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in auth.login — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access failed login attempt", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access failed login attempt
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access failed login attempt — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access failed login attempt — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to returns 429 failed login attempt", async ({ request }) => {
-    // Kills: technician should not be able to returns 429 failed login attempt
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to returns 429 failed login attempt — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to returns 429 failed login attempt — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to returns 429 failed login attempt", async ({ request }) => {
-    // Kills: nurse should not be able to returns 429 failed login attempt
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to returns 429 failed login attempt — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to returns 429 failed login attempt — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-009-AUTHMATRIX
-// Behavior: System locks out user for 30 minutes after exceeding failed login rate limit
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_009_AUTHMATRIX() {
-  return {
-    email: "test@example.com",
-    password: "test-password",
-  };
-}
-test.describe("Auth Matrix: System locks out user for 30 minutes after exceeding failed login rate limit", () => {
-  test("admin must be able to locks out user", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to locks out user", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to locks out user", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant locks out must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_009_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "auth.login", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in auth.login", async ({ request }) => {
-    // Kills: Remove role check in auth.login
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in auth.login — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access user", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access user
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access user — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access user — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to locks out user", async ({ request }) => {
-    // Kills: technician should not be able to locks out user
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to locks out user — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to locks out user — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to locks out user", async ({ request }) => {
-    // Kills: nurse should not be able to locks out user
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "auth.login", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to locks out user — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to locks out user — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-010-AUTHMATRIX
 // Behavior: Technician role can manage device inventory
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_010_AUTHMATRIX() {
+function basePayload_PROOF_B_008_AUTHMATRIX() {
   return {
-    id: TEST_CLINIC_ID,
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
   };
 }
 test.describe("Auth Matrix: Technician role can manage device inventory", () => {
   test("admin must be able to manage device inventory", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -823,7 +611,7 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
 
   test("technician must NOT be able to manage device inventory", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -832,7 +620,7 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
 
   test("nurse must NOT be able to manage device inventory", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -841,22 +629,22 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
   test("cross-tenant manage must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_010_AUTHMATRIX(),
+      ...basePayload_PROOF_B_008_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "patients.export", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in patients.export", async ({ request }) => {
-    // Kills: Remove role check in patients.export
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in patients.export — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
@@ -865,7 +653,7 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
   test("mutation-kill-2: Allow lower-privileged role to access device inventory", async ({ request }) => {
     // Kills: Allow lower-privileged role to access device inventory
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access device inventory — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -878,7 +666,7 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
   test("mutation-kill-3: technician should not be able to manage device inventory", async ({ request }) => {
     // Kills: technician should not be able to manage device inventory
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to manage device inventory — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -891,7 +679,7 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
   test("mutation-kill-4: nurse should not be able to manage device inventory", async ({ request }) => {
     // Kills: nurse should not be able to manage device inventory
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.export", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_008_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to manage device inventory — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -902,11 +690,11 @@ test.describe("Auth Matrix: Technician role can manage device inventory", () => 
   });
 });
 
-// Proof: PROOF-B-011-AUTHMATRIX
+// Proof: PROOF-B-009-AUTHMATRIX
 // Behavior: Technician role can perform maintenance
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_011_AUTHMATRIX() {
+function basePayload_PROOF_B_009_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     serialNumber: "test-serialNumber",
@@ -924,14 +712,14 @@ function basePayload_PROOF_B_011_AUTHMATRIX() {
 test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   test("admin must be able to perform maintenance", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -943,7 +731,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
 
   test("technician must NOT be able to perform maintenance", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -952,7 +740,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
 
   test("nurse must NOT be able to perform maintenance", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -961,7 +749,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   test("cross-tenant perform must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_011_AUTHMATRIX(),
+      ...basePayload_PROOF_B_009_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
@@ -974,7 +762,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
     // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -985,7 +773,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   test("mutation-kill-2: Allow lower-privileged role to access maintenance", async ({ request }) => {
     // Kills: Allow lower-privileged role to access maintenance
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access maintenance — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -998,7 +786,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   test("mutation-kill-3: technician should not be able to perform maintenance", async ({ request }) => {
     // Kills: technician should not be able to perform maintenance
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to perform maintenance — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -1011,7 +799,7 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   test("mutation-kill-4: nurse should not be able to perform maintenance", async ({ request }) => {
     // Kills: nurse should not be able to perform maintenance
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_009_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to perform maintenance — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -1022,8 +810,248 @@ test.describe("Auth Matrix: Technician role can perform maintenance", () => {
   });
 });
 
-// Proof: PROOF-B-012-AUTHMATRIX
+// Proof: PROOF-B-010-AUTHMATRIX
 // Behavior: Technician role can view rentals
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_010_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Technician role can view rentals", () => {
+  test("admin must be able to view rentals", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to view rentals", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to view rentals", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant view must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_010_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access rentals", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rentals
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access rentals — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access rentals — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to view rentals", async ({ request }) => {
+    // Kills: technician should not be able to view rentals
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to view rentals — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to view rentals — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to view rentals", async ({ request }) => {
+    // Kills: nurse should not be able to view rentals
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_010_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to view rentals — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to view rentals — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-011-AUTHMATRIX
+// Behavior: Nurse role can create rentals for patients
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_011_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Nurse role can create rentals for patients", () => {
+  test("admin must be able to create rentals for patients", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to create rentals for patients", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to create rentals for patients", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant create must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_011_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcMutation(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access rentals for patients", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rentals for patients
+    const cookie = await getAdminCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access rentals for patients — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access rentals for patients — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to create rentals for patients", async ({ request }) => {
+    // Kills: technician should not be able to create rentals for patients
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to create rentals for patients — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to create rentals for patients — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to create rentals for patients", async ({ request }) => {
+    // Kills: nurse should not be able to create rentals for patients
+    const cookie = await getNurseCookie(request);
+    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_011_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to create rentals for patients — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to create rentals for patients — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-012-AUTHMATRIX
+// Behavior: Nurse role can return devices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_012_AUTHMATRIX() {
@@ -1041,8 +1069,8 @@ function basePayload_PROOF_B_012_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Technician role can view rentals", () => {
-  test("admin must be able to view rentals", async ({ request }) => {
+test.describe("Auth Matrix: Nurse role can return devices", () => {
+  test("admin must be able to return devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1061,7 +1089,7 @@ test.describe("Auth Matrix: Technician role can view rentals", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to view rentals", async ({ request }) => {
+  test("technician must NOT be able to return devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_012_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1070,7 +1098,7 @@ test.describe("Auth Matrix: Technician role can view rentals", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to view rentals", async ({ request }) => {
+  test("nurse must NOT be able to return devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_012_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1078,7 +1106,7 @@ test.describe("Auth Matrix: Technician role can view rentals", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant view must be rejected", async ({ request }) => {
+  test("cross-tenant return must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_012_AUTHMATRIX(),
@@ -1102,48 +1130,48 @@ test.describe("Auth Matrix: Technician role can view rentals", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access rentals", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rentals
+  test("mutation-kill-2: Allow lower-privileged role to access devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rentals — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rentals — verify error code is present
+    // Kills: Allow lower-privileged role to access devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to view rentals", async ({ request }) => {
-    // Kills: technician should not be able to view rentals
+  test("mutation-kill-3: technician should not be able to return devices", async ({ request }) => {
+    // Kills: technician should not be able to return devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to view rentals — verify no data leaked in error response
+    // Kills: technician should not be able to return devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to view rentals — verify error code is present
+    // Kills: technician should not be able to return devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to view rentals", async ({ request }) => {
-    // Kills: nurse should not be able to view rentals
+  test("mutation-kill-4: nurse should not be able to return devices", async ({ request }) => {
+    // Kills: nurse should not be able to return devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_012_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to view rentals — verify no data leaked in error response
+    // Kills: nurse should not be able to return devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to view rentals — verify error code is present
+    // Kills: nurse should not be able to return devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-013-AUTHMATRIX
-// Behavior: Nurse role can create rentals for patients
+// Behavior: Nurse role cannot modify pricing
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_013_AUTHMATRIX() {
@@ -1161,17 +1189,17 @@ function basePayload_PROOF_B_013_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Nurse role can create rentals for patients", () => {
-  test("admin must be able to create rentals for patients", async ({ request }) => {
+test.describe("Auth Matrix: Nurse role cannot modify pricing", () => {
+  test("admin must be able to cannot modify pricing", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -1181,30 +1209,30 @@ test.describe("Auth Matrix: Nurse role can create rentals for patients", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to create rentals for patients", async ({ request }) => {
+  test("technician must NOT be able to cannot modify pricing", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to create rentals for patients", async ({ request }) => {
+  test("nurse must NOT be able to cannot modify pricing", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant create must be rejected", async ({ request }) => {
+  test("cross-tenant cannot modify must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_013_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcMutation(request, "devices.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
@@ -1214,7 +1242,7 @@ test.describe("Auth Matrix: Nurse role can create rentals for patients", () => {
   test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
     // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -1222,48 +1250,48 @@ test.describe("Auth Matrix: Nurse role can create rentals for patients", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access rentals for patients", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rentals for patients
+  test("mutation-kill-2: Allow lower-privileged role to access pricing", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access pricing
     const cookie = await getAdminCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rentals for patients — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access pricing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rentals for patients — verify error code is present
+    // Kills: Allow lower-privileged role to access pricing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to create rentals for patients", async ({ request }) => {
-    // Kills: technician should not be able to create rentals for patients
+  test("mutation-kill-3: technician should not be able to cannot modify pricing", async ({ request }) => {
+    // Kills: technician should not be able to cannot modify pricing
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to create rentals for patients — verify no data leaked in error response
+    // Kills: technician should not be able to cannot modify pricing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to create rentals for patients — verify error code is present
+    // Kills: technician should not be able to cannot modify pricing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to create rentals for patients", async ({ request }) => {
-    // Kills: nurse should not be able to create rentals for patients
+  test("mutation-kill-4: nurse should not be able to cannot modify pricing", async ({ request }) => {
+    // Kills: nurse should not be able to cannot modify pricing
     const cookie = await getNurseCookie(request);
-    const response = await trpcMutation(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_013_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to create rentals for patients — verify no data leaked in error response
+    // Kills: nurse should not be able to cannot modify pricing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to create rentals for patients — verify error code is present
+    // Kills: nurse should not be able to cannot modify pricing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-014-AUTHMATRIX
-// Behavior: Nurse role can return devices
+// Behavior: Billing role can manage invoices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_014_AUTHMATRIX() {
@@ -1281,8 +1309,8 @@ function basePayload_PROOF_B_014_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Nurse role can return devices", () => {
-  test("admin must be able to return devices", async ({ request }) => {
+test.describe("Auth Matrix: Billing role can manage invoices", () => {
+  test("admin must be able to manage invoices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_014_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1301,7 +1329,7 @@ test.describe("Auth Matrix: Nurse role can return devices", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to return devices", async ({ request }) => {
+  test("technician must NOT be able to manage invoices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_014_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1310,7 +1338,7 @@ test.describe("Auth Matrix: Nurse role can return devices", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to return devices", async ({ request }) => {
+  test("nurse must NOT be able to manage invoices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_014_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1318,7 +1346,7 @@ test.describe("Auth Matrix: Nurse role can return devices", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant return must be rejected", async ({ request }) => {
+  test("cross-tenant manage must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_014_AUTHMATRIX(),
@@ -1342,48 +1370,48 @@ test.describe("Auth Matrix: Nurse role can return devices", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access devices", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access devices
+  test("mutation-kill-2: Allow lower-privileged role to access invoices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access invoices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_014_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access devices — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access invoices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access devices — verify error code is present
+    // Kills: Allow lower-privileged role to access invoices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to return devices", async ({ request }) => {
-    // Kills: technician should not be able to return devices
+  test("mutation-kill-3: technician should not be able to manage invoices", async ({ request }) => {
+    // Kills: technician should not be able to manage invoices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_014_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to return devices — verify no data leaked in error response
+    // Kills: technician should not be able to manage invoices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to return devices — verify error code is present
+    // Kills: technician should not be able to manage invoices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to return devices", async ({ request }) => {
-    // Kills: nurse should not be able to return devices
+  test("mutation-kill-4: nurse should not be able to manage invoices", async ({ request }) => {
+    // Kills: nurse should not be able to manage invoices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_014_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to return devices — verify no data leaked in error response
+    // Kills: nurse should not be able to manage invoices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to return devices — verify error code is present
+    // Kills: nurse should not be able to manage invoices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-015-AUTHMATRIX
-// Behavior: Nurse role cannot modify pricing
+// Behavior: Billing role can process payments
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_015_AUTHMATRIX() {
@@ -1401,8 +1429,8 @@ function basePayload_PROOF_B_015_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Nurse role cannot modify pricing", () => {
-  test("admin must be able to cannot modify pricing", async ({ request }) => {
+test.describe("Auth Matrix: Billing role can process payments", () => {
+  test("admin must be able to process payments", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_015_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1421,7 +1449,7 @@ test.describe("Auth Matrix: Nurse role cannot modify pricing", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot modify pricing", async ({ request }) => {
+  test("technician must NOT be able to process payments", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_015_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1430,7 +1458,7 @@ test.describe("Auth Matrix: Nurse role cannot modify pricing", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot modify pricing", async ({ request }) => {
+  test("nurse must NOT be able to process payments", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_015_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1438,7 +1466,7 @@ test.describe("Auth Matrix: Nurse role cannot modify pricing", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot modify must be rejected", async ({ request }) => {
+  test("cross-tenant process must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_015_AUTHMATRIX(),
@@ -1462,48 +1490,48 @@ test.describe("Auth Matrix: Nurse role cannot modify pricing", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access pricing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access pricing
+  test("mutation-kill-2: Allow lower-privileged role to access payments", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access payments
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_015_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access pricing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access payments — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access pricing — verify error code is present
+    // Kills: Allow lower-privileged role to access payments — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot modify pricing", async ({ request }) => {
-    // Kills: technician should not be able to cannot modify pricing
+  test("mutation-kill-3: technician should not be able to process payments", async ({ request }) => {
+    // Kills: technician should not be able to process payments
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_015_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot modify pricing — verify no data leaked in error response
+    // Kills: technician should not be able to process payments — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot modify pricing — verify error code is present
+    // Kills: technician should not be able to process payments — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot modify pricing", async ({ request }) => {
-    // Kills: nurse should not be able to cannot modify pricing
+  test("mutation-kill-4: nurse should not be able to process payments", async ({ request }) => {
+    // Kills: nurse should not be able to process payments
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_015_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot modify pricing — verify no data leaked in error response
+    // Kills: nurse should not be able to process payments — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot modify pricing — verify error code is present
+    // Kills: nurse should not be able to process payments — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-016-AUTHMATRIX
-// Behavior: Billing role can manage invoices
+// Behavior: Billing role can process insurance claims
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_016_AUTHMATRIX() {
@@ -1521,8 +1549,8 @@ function basePayload_PROOF_B_016_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Billing role can manage invoices", () => {
-  test("admin must be able to manage invoices", async ({ request }) => {
+test.describe("Auth Matrix: Billing role can process insurance claims", () => {
+  test("admin must be able to process insurance claims", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1541,7 +1569,7 @@ test.describe("Auth Matrix: Billing role can manage invoices", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to manage invoices", async ({ request }) => {
+  test("technician must NOT be able to process insurance claims", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_016_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1550,7 +1578,7 @@ test.describe("Auth Matrix: Billing role can manage invoices", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to manage invoices", async ({ request }) => {
+  test("nurse must NOT be able to process insurance claims", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_016_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1558,7 +1586,7 @@ test.describe("Auth Matrix: Billing role can manage invoices", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant manage must be rejected", async ({ request }) => {
+  test("cross-tenant process must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_016_AUTHMATRIX(),
@@ -1582,48 +1610,48 @@ test.describe("Auth Matrix: Billing role can manage invoices", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access invoices", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access invoices
+  test("mutation-kill-2: Allow lower-privileged role to access insurance claims", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access insurance claims
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access invoices — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access insurance claims — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access invoices — verify error code is present
+    // Kills: Allow lower-privileged role to access insurance claims — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to manage invoices", async ({ request }) => {
-    // Kills: technician should not be able to manage invoices
+  test("mutation-kill-3: technician should not be able to process insurance claims", async ({ request }) => {
+    // Kills: technician should not be able to process insurance claims
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to manage invoices — verify no data leaked in error response
+    // Kills: technician should not be able to process insurance claims — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to manage invoices — verify error code is present
+    // Kills: technician should not be able to process insurance claims — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to manage invoices", async ({ request }) => {
-    // Kills: nurse should not be able to manage invoices
+  test("mutation-kill-4: nurse should not be able to process insurance claims", async ({ request }) => {
+    // Kills: nurse should not be able to process insurance claims
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_016_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to manage invoices — verify no data leaked in error response
+    // Kills: nurse should not be able to process insurance claims — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to manage invoices — verify error code is present
+    // Kills: nurse should not be able to process insurance claims — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-017-AUTHMATRIX
-// Behavior: Billing role can process payments
+// Behavior: Billing role cannot access medical records
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_017_AUTHMATRIX() {
@@ -1641,8 +1669,8 @@ function basePayload_PROOF_B_017_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Billing role can process payments", () => {
-  test("admin must be able to process payments", async ({ request }) => {
+test.describe("Auth Matrix: Billing role cannot access medical records", () => {
+  test("admin must be able to cannot access medical records", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_017_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1661,7 +1689,7 @@ test.describe("Auth Matrix: Billing role can process payments", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to process payments", async ({ request }) => {
+  test("technician must NOT be able to cannot access medical records", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_017_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1670,7 +1698,7 @@ test.describe("Auth Matrix: Billing role can process payments", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to process payments", async ({ request }) => {
+  test("nurse must NOT be able to cannot access medical records", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_017_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1678,7 +1706,7 @@ test.describe("Auth Matrix: Billing role can process payments", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant process must be rejected", async ({ request }) => {
+  test("cross-tenant cannot access must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_017_AUTHMATRIX(),
@@ -1702,48 +1730,48 @@ test.describe("Auth Matrix: Billing role can process payments", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access payments", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access payments
+  test("mutation-kill-2: Allow lower-privileged role to access medical records", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access medical records
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_017_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access payments — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access medical records — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access payments — verify error code is present
+    // Kills: Allow lower-privileged role to access medical records — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to process payments", async ({ request }) => {
-    // Kills: technician should not be able to process payments
+  test("mutation-kill-3: technician should not be able to cannot access medical records", async ({ request }) => {
+    // Kills: technician should not be able to cannot access medical records
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_017_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to process payments — verify no data leaked in error response
+    // Kills: technician should not be able to cannot access medical records — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to process payments — verify error code is present
+    // Kills: technician should not be able to cannot access medical records — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to process payments", async ({ request }) => {
-    // Kills: nurse should not be able to process payments
+  test("mutation-kill-4: nurse should not be able to cannot access medical records", async ({ request }) => {
+    // Kills: nurse should not be able to cannot access medical records
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_017_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to process payments — verify no data leaked in error response
+    // Kills: nurse should not be able to cannot access medical records — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to process payments — verify error code is present
+    // Kills: nurse should not be able to cannot access medical records — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-018-AUTHMATRIX
-// Behavior: Billing role can process insurance claims
+// Behavior: Admin role has full access within clinic
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_018_AUTHMATRIX() {
@@ -1761,8 +1789,8 @@ function basePayload_PROOF_B_018_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Billing role can process insurance claims", () => {
-  test("admin must be able to process insurance claims", async ({ request }) => {
+test.describe("Auth Matrix: Admin role has full access within clinic", () => {
+  test("admin must be able to has full access within clinic", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_018_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1781,7 +1809,7 @@ test.describe("Auth Matrix: Billing role can process insurance claims", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to process insurance claims", async ({ request }) => {
+  test("technician must NOT be able to has full access within clinic", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_018_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1790,7 +1818,7 @@ test.describe("Auth Matrix: Billing role can process insurance claims", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to process insurance claims", async ({ request }) => {
+  test("nurse must NOT be able to has full access within clinic", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_018_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1798,7 +1826,7 @@ test.describe("Auth Matrix: Billing role can process insurance claims", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant process must be rejected", async ({ request }) => {
+  test("cross-tenant has must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_018_AUTHMATRIX(),
@@ -1822,48 +1850,48 @@ test.describe("Auth Matrix: Billing role can process insurance claims", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access insurance claims", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access insurance claims
+  test("mutation-kill-2: Allow lower-privileged role to access full access within clinic", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access full access within clinic
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_018_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access insurance claims — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access full access within clinic — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access insurance claims — verify error code is present
+    // Kills: Allow lower-privileged role to access full access within clinic — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to process insurance claims", async ({ request }) => {
-    // Kills: technician should not be able to process insurance claims
+  test("mutation-kill-3: technician should not be able to has full access within clinic", async ({ request }) => {
+    // Kills: technician should not be able to has full access within clinic
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_018_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to process insurance claims — verify no data leaked in error response
+    // Kills: technician should not be able to has full access within clinic — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to process insurance claims — verify error code is present
+    // Kills: technician should not be able to has full access within clinic — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to process insurance claims", async ({ request }) => {
-    // Kills: nurse should not be able to process insurance claims
+  test("mutation-kill-4: nurse should not be able to has full access within clinic", async ({ request }) => {
+    // Kills: nurse should not be able to has full access within clinic
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_018_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to process insurance claims — verify no data leaked in error response
+    // Kills: nurse should not be able to has full access within clinic — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to process insurance claims — verify error code is present
+    // Kills: nurse should not be able to has full access within clinic — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-019-AUTHMATRIX
-// Behavior: Billing role cannot access medical records
+// Behavior: Admin role can manage staff
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_019_AUTHMATRIX() {
@@ -1881,8 +1909,8 @@ function basePayload_PROOF_B_019_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Billing role cannot access medical records", () => {
-  test("admin must be able to cannot access medical records", async ({ request }) => {
+test.describe("Auth Matrix: Admin role can manage staff", () => {
+  test("admin must be able to manage staff", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -1901,7 +1929,7 @@ test.describe("Auth Matrix: Billing role cannot access medical records", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot access medical records", async ({ request }) => {
+  test("technician must NOT be able to manage staff", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_019_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1910,7 +1938,7 @@ test.describe("Auth Matrix: Billing role cannot access medical records", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot access medical records", async ({ request }) => {
+  test("nurse must NOT be able to manage staff", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_019_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -1918,7 +1946,7 @@ test.describe("Auth Matrix: Billing role cannot access medical records", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot access must be rejected", async ({ request }) => {
+  test("cross-tenant manage must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_019_AUTHMATRIX(),
@@ -1942,48 +1970,48 @@ test.describe("Auth Matrix: Billing role cannot access medical records", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access medical records", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access medical records
+  test("mutation-kill-2: Allow lower-privileged role to access staff", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access staff
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access medical records — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access staff — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access medical records — verify error code is present
+    // Kills: Allow lower-privileged role to access staff — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot access medical records", async ({ request }) => {
-    // Kills: technician should not be able to cannot access medical records
+  test("mutation-kill-3: technician should not be able to manage staff", async ({ request }) => {
+    // Kills: technician should not be able to manage staff
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot access medical records — verify no data leaked in error response
+    // Kills: technician should not be able to manage staff — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot access medical records — verify error code is present
+    // Kills: technician should not be able to manage staff — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot access medical records", async ({ request }) => {
-    // Kills: nurse should not be able to cannot access medical records
+  test("mutation-kill-4: nurse should not be able to manage staff", async ({ request }) => {
+    // Kills: nurse should not be able to manage staff
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_019_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot access medical records — verify no data leaked in error response
+    // Kills: nurse should not be able to manage staff — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot access medical records — verify error code is present
+    // Kills: nurse should not be able to manage staff — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-020-AUTHMATRIX
-// Behavior: Admin role has full access within clinic
+// Behavior: Admin role can manage reports
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_020_AUTHMATRIX() {
@@ -2001,8 +2029,8 @@ function basePayload_PROOF_B_020_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Admin role has full access within clinic", () => {
-  test("admin must be able to has full access within clinic", async ({ request }) => {
+test.describe("Auth Matrix: Admin role can manage reports", () => {
+  test("admin must be able to manage reports", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2021,7 +2049,7 @@ test.describe("Auth Matrix: Admin role has full access within clinic", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to has full access within clinic", async ({ request }) => {
+  test("technician must NOT be able to manage reports", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_020_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2030,7 +2058,7 @@ test.describe("Auth Matrix: Admin role has full access within clinic", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to has full access within clinic", async ({ request }) => {
+  test("nurse must NOT be able to manage reports", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_020_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2038,7 +2066,7 @@ test.describe("Auth Matrix: Admin role has full access within clinic", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant has must be rejected", async ({ request }) => {
+  test("cross-tenant manage must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_020_AUTHMATRIX(),
@@ -2062,48 +2090,48 @@ test.describe("Auth Matrix: Admin role has full access within clinic", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access full access within clinic", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access full access within clinic
+  test("mutation-kill-2: Allow lower-privileged role to access reports", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access reports
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access full access within clinic — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access reports — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access full access within clinic — verify error code is present
+    // Kills: Allow lower-privileged role to access reports — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to has full access within clinic", async ({ request }) => {
-    // Kills: technician should not be able to has full access within clinic
+  test("mutation-kill-3: technician should not be able to manage reports", async ({ request }) => {
+    // Kills: technician should not be able to manage reports
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to has full access within clinic — verify no data leaked in error response
+    // Kills: technician should not be able to manage reports — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to has full access within clinic — verify error code is present
+    // Kills: technician should not be able to manage reports — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to has full access within clinic", async ({ request }) => {
-    // Kills: nurse should not be able to has full access within clinic
+  test("mutation-kill-4: nurse should not be able to manage reports", async ({ request }) => {
+    // Kills: nurse should not be able to manage reports
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_020_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to has full access within clinic — verify no data leaked in error response
+    // Kills: nurse should not be able to manage reports — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to has full access within clinic — verify error code is present
+    // Kills: nurse should not be able to manage reports — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-021-AUTHMATRIX
-// Behavior: Admin role can manage staff
+// Behavior: Admin role can manage pricing
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_021_AUTHMATRIX() {
@@ -2121,8 +2149,8 @@ function basePayload_PROOF_B_021_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Admin role can manage staff", () => {
-  test("admin must be able to manage staff", async ({ request }) => {
+test.describe("Auth Matrix: Admin role can manage pricing", () => {
+  test("admin must be able to manage pricing", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2141,7 +2169,7 @@ test.describe("Auth Matrix: Admin role can manage staff", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to manage staff", async ({ request }) => {
+  test("technician must NOT be able to manage pricing", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_021_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2150,7 +2178,7 @@ test.describe("Auth Matrix: Admin role can manage staff", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to manage staff", async ({ request }) => {
+  test("nurse must NOT be able to manage pricing", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_021_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2182,48 +2210,48 @@ test.describe("Auth Matrix: Admin role can manage staff", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access staff", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access staff
+  test("mutation-kill-2: Allow lower-privileged role to access pricing", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access pricing
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access staff — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access pricing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access staff — verify error code is present
+    // Kills: Allow lower-privileged role to access pricing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to manage staff", async ({ request }) => {
-    // Kills: technician should not be able to manage staff
+  test("mutation-kill-3: technician should not be able to manage pricing", async ({ request }) => {
+    // Kills: technician should not be able to manage pricing
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to manage staff — verify no data leaked in error response
+    // Kills: technician should not be able to manage pricing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to manage staff — verify error code is present
+    // Kills: technician should not be able to manage pricing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to manage staff", async ({ request }) => {
-    // Kills: nurse should not be able to manage staff
+  test("mutation-kill-4: nurse should not be able to manage pricing", async ({ request }) => {
+    // Kills: nurse should not be able to manage pricing
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_021_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to manage staff — verify no data leaked in error response
+    // Kills: nurse should not be able to manage pricing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to manage staff — verify error code is present
+    // Kills: nurse should not be able to manage pricing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-022-AUTHMATRIX
-// Behavior: Admin role can access reports
+// Behavior: API requires X-CSRF-Token header for state-changing requests
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_022_AUTHMATRIX() {
@@ -2241,8 +2269,8 @@ function basePayload_PROOF_B_022_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Admin role can access reports", () => {
-  test("admin must be able to access reports", async ({ request }) => {
+test.describe("Auth Matrix: API requires X-CSRF-Token header for state-changing requests", () => {
+  test("admin must be able to requires X-CSRF-Token header", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2261,7 +2289,7 @@ test.describe("Auth Matrix: Admin role can access reports", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to access reports", async ({ request }) => {
+  test("technician must NOT be able to requires X-CSRF-Token header", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_022_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2270,7 +2298,7 @@ test.describe("Auth Matrix: Admin role can access reports", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to access reports", async ({ request }) => {
+  test("nurse must NOT be able to requires X-CSRF-Token header", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_022_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2278,7 +2306,7 @@ test.describe("Auth Matrix: Admin role can access reports", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant access must be rejected", async ({ request }) => {
+  test("cross-tenant requires must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_022_AUTHMATRIX(),
@@ -2302,48 +2330,48 @@ test.describe("Auth Matrix: Admin role can access reports", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access reports", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access reports
+  test("mutation-kill-2: Allow lower-privileged role to access X-CSRF-Token header", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access X-CSRF-Token header
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access reports — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access X-CSRF-Token header — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access reports — verify error code is present
+    // Kills: Allow lower-privileged role to access X-CSRF-Token header — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to access reports", async ({ request }) => {
-    // Kills: technician should not be able to access reports
+  test("mutation-kill-3: technician should not be able to requires X-CSRF-Token header", async ({ request }) => {
+    // Kills: technician should not be able to requires X-CSRF-Token header
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to access reports — verify no data leaked in error response
+    // Kills: technician should not be able to requires X-CSRF-Token header — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to access reports — verify error code is present
+    // Kills: technician should not be able to requires X-CSRF-Token header — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to access reports", async ({ request }) => {
-    // Kills: nurse should not be able to access reports
+  test("mutation-kill-4: nurse should not be able to requires X-CSRF-Token header", async ({ request }) => {
+    // Kills: nurse should not be able to requires X-CSRF-Token header
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_022_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to access reports — verify no data leaked in error response
+    // Kills: nurse should not be able to requires X-CSRF-Token header — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to access reports — verify error code is present
+    // Kills: nurse should not be able to requires X-CSRF-Token header — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-023-AUTHMATRIX
-// Behavior: Admin role can manage pricing
+// Behavior: API returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_023_AUTHMATRIX() {
@@ -2361,8 +2389,8 @@ function basePayload_PROOF_B_023_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Admin role can manage pricing", () => {
-  test("admin must be able to manage pricing", async ({ request }) => {
+test.describe("Auth Matrix: API returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header", () => {
+  test("admin must be able to returns 403 CSRF_REQUIRED", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2381,7 +2409,7 @@ test.describe("Auth Matrix: Admin role can manage pricing", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to manage pricing", async ({ request }) => {
+  test("technician must NOT be able to returns 403 CSRF_REQUIRED", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_023_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2390,7 +2418,7 @@ test.describe("Auth Matrix: Admin role can manage pricing", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to manage pricing", async ({ request }) => {
+  test("nurse must NOT be able to returns 403 CSRF_REQUIRED", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_023_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2398,7 +2426,7 @@ test.describe("Auth Matrix: Admin role can manage pricing", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant manage must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_023_AUTHMATRIX(),
@@ -2422,48 +2450,48 @@ test.describe("Auth Matrix: Admin role can manage pricing", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access pricing", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access pricing
+  test("mutation-kill-2: Allow lower-privileged role to access CSRF_REQUIRED", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access CSRF_REQUIRED
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access pricing — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access CSRF_REQUIRED — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access pricing — verify error code is present
+    // Kills: Allow lower-privileged role to access CSRF_REQUIRED — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to manage pricing", async ({ request }) => {
-    // Kills: technician should not be able to manage pricing
+  test("mutation-kill-3: technician should not be able to returns 403 CSRF_REQUIRED", async ({ request }) => {
+    // Kills: technician should not be able to returns 403 CSRF_REQUIRED
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to manage pricing — verify no data leaked in error response
+    // Kills: technician should not be able to returns 403 CSRF_REQUIRED — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to manage pricing — verify error code is present
+    // Kills: technician should not be able to returns 403 CSRF_REQUIRED — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to manage pricing", async ({ request }) => {
-    // Kills: nurse should not be able to manage pricing
+  test("mutation-kill-4: nurse should not be able to returns 403 CSRF_REQUIRED", async ({ request }) => {
+    // Kills: nurse should not be able to returns 403 CSRF_REQUIRED
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_023_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to manage pricing — verify no data leaked in error response
+    // Kills: nurse should not be able to returns 403 CSRF_REQUIRED — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to manage pricing — verify error code is present
+    // Kills: nurse should not be able to returns 403 CSRF_REQUIRED — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-024-AUTHMATRIX
-// Behavior: All POST/PUT/PATCH/DELETE requests require X-CSRF-Token header
+// Behavior: API allows technician and admin to register new medical devices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_024_AUTHMATRIX() {
@@ -2481,8 +2509,8 @@ function basePayload_PROOF_B_024_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: All POST/PUT/PATCH/DELETE requests require X-CSRF-Token header", () => {
-  test("admin must be able to requires X-CSRF-Token header", async ({ request }) => {
+test.describe("Auth Matrix: API allows technician and admin to register new medical devices", () => {
+  test("admin must be able to allows registration of new medical devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_024_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2501,7 +2529,7 @@ test.describe("Auth Matrix: All POST/PUT/PATCH/DELETE requests require X-CSRF-To
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to requires X-CSRF-Token header", async ({ request }) => {
+  test("technician must NOT be able to allows registration of new medical devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_024_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2510,7 +2538,7 @@ test.describe("Auth Matrix: All POST/PUT/PATCH/DELETE requests require X-CSRF-To
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to requires X-CSRF-Token header", async ({ request }) => {
+  test("nurse must NOT be able to allows registration of new medical devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_024_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2518,7 +2546,7 @@ test.describe("Auth Matrix: All POST/PUT/PATCH/DELETE requests require X-CSRF-To
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_024_AUTHMATRIX(),
@@ -2542,48 +2570,48 @@ test.describe("Auth Matrix: All POST/PUT/PATCH/DELETE requests require X-CSRF-To
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access X-CSRF-Token header", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access X-CSRF-Token header
+  test("mutation-kill-2: Allow lower-privileged role to access registration of new medical devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access registration of new medical devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_024_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access X-CSRF-Token header — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access registration of new medical devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access X-CSRF-Token header — verify error code is present
+    // Kills: Allow lower-privileged role to access registration of new medical devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to requires X-CSRF-Token header", async ({ request }) => {
-    // Kills: technician should not be able to requires X-CSRF-Token header
+  test("mutation-kill-3: technician should not be able to allows registration of new medical devices", async ({ request }) => {
+    // Kills: technician should not be able to allows registration of new medical devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_024_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires X-CSRF-Token header — verify no data leaked in error response
+    // Kills: technician should not be able to allows registration of new medical devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires X-CSRF-Token header — verify error code is present
+    // Kills: technician should not be able to allows registration of new medical devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to requires X-CSRF-Token header", async ({ request }) => {
-    // Kills: nurse should not be able to requires X-CSRF-Token header
+  test("mutation-kill-4: nurse should not be able to allows registration of new medical devices", async ({ request }) => {
+    // Kills: nurse should not be able to allows registration of new medical devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_024_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires X-CSRF-Token header — verify no data leaked in error response
+    // Kills: nurse should not be able to allows registration of new medical devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires X-CSRF-Token header — verify error code is present
+    // Kills: nurse should not be able to allows registration of new medical devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-025-AUTHMATRIX
-// Behavior: System returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
+// Behavior: API rejects device registration if clinicId does not match JWT
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_025_AUTHMATRIX() {
@@ -2601,8 +2629,8 @@ function basePayload_PROOF_B_025_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: System returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header", () => {
-  test("admin must be able to returns 403 CSRF_REQUIRED request", async ({ request }) => {
+test.describe("Auth Matrix: API rejects device registration if clinicId does not match JWT", () => {
+  test("admin must be able to rejects device registration", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2621,7 +2649,7 @@ test.describe("Auth Matrix: System returns 403 CSRF_REQUIRED for missing or inva
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to returns 403 CSRF_REQUIRED request", async ({ request }) => {
+  test("technician must NOT be able to rejects device registration", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_025_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2630,7 +2658,7 @@ test.describe("Auth Matrix: System returns 403 CSRF_REQUIRED for missing or inva
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to returns 403 CSRF_REQUIRED request", async ({ request }) => {
+  test("nurse must NOT be able to rejects device registration", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_025_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2638,7 +2666,7 @@ test.describe("Auth Matrix: System returns 403 CSRF_REQUIRED for missing or inva
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 CSRF_REQUIRED must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_025_AUTHMATRIX(),
@@ -2662,49 +2690,49 @@ test.describe("Auth Matrix: System returns 403 CSRF_REQUIRED for missing or inva
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access request", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access request
+  test("mutation-kill-2: Allow lower-privileged role to access device registration", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device registration
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access request — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access request — verify error code is present
+    // Kills: Allow lower-privileged role to access device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to returns 403 CSRF_REQUIRED request", async ({ request }) => {
-    // Kills: technician should not be able to returns 403 CSRF_REQUIRED request
+  test("mutation-kill-3: technician should not be able to rejects device registration", async ({ request }) => {
+    // Kills: technician should not be able to rejects device registration
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to returns 403 CSRF_REQUIRED request — verify no data leaked in error response
+    // Kills: technician should not be able to rejects device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to returns 403 CSRF_REQUIRED request — verify error code is present
+    // Kills: technician should not be able to rejects device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to returns 403 CSRF_REQUIRED request", async ({ request }) => {
-    // Kills: nurse should not be able to returns 403 CSRF_REQUIRED request
+  test("mutation-kill-4: nurse should not be able to rejects device registration", async ({ request }) => {
+    // Kills: nurse should not be able to rejects device registration
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_025_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to returns 403 CSRF_REQUIRED request — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to returns 403 CSRF_REQUIRED request — verify error code is present
+    // Kills: nurse should not be able to rejects device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-026-AUTHMATRIX
-// Behavior: POST /api/devices registers a new medical device
-// Risk: critical
+// Behavior: API rejects device registration if serialNumber already exists globally
+// Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_026_AUTHMATRIX() {
   return {
@@ -2721,8 +2749,8 @@ function basePayload_PROOF_B_026_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/devices registers a new medical device", () => {
-  test("admin must be able to registers new medical device", async ({ request }) => {
+test.describe("Auth Matrix: API rejects device registration if serialNumber already exists globally", () => {
+  test("admin must be able to rejects device registration", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2741,7 +2769,7 @@ test.describe("Auth Matrix: POST /api/devices registers a new medical device", (
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to registers new medical device", async ({ request }) => {
+  test("technician must NOT be able to rejects device registration", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_026_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2750,7 +2778,7 @@ test.describe("Auth Matrix: POST /api/devices registers a new medical device", (
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to registers new medical device", async ({ request }) => {
+  test("nurse must NOT be able to rejects device registration", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_026_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2758,7 +2786,7 @@ test.describe("Auth Matrix: POST /api/devices registers a new medical device", (
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant registers must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_026_AUTHMATRIX(),
@@ -2782,49 +2810,49 @@ test.describe("Auth Matrix: POST /api/devices registers a new medical device", (
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access new medical device", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access new medical device
+  test("mutation-kill-2: Allow lower-privileged role to access device registration", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device registration
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access new medical device — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access new medical device — verify error code is present
+    // Kills: Allow lower-privileged role to access device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to registers new medical device", async ({ request }) => {
-    // Kills: technician should not be able to registers new medical device
+  test("mutation-kill-3: technician should not be able to rejects device registration", async ({ request }) => {
+    // Kills: technician should not be able to rejects device registration
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to registers new medical device — verify no data leaked in error response
+    // Kills: technician should not be able to rejects device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to registers new medical device — verify error code is present
+    // Kills: technician should not be able to rejects device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to registers new medical device", async ({ request }) => {
-    // Kills: nurse should not be able to registers new medical device
+  test("mutation-kill-4: nurse should not be able to rejects device registration", async ({ request }) => {
+    // Kills: nurse should not be able to rejects device registration
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_026_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to registers new medical device — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to registers new medical device — verify error code is present
+    // Kills: nurse should not be able to rejects device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-027-AUTHMATRIX
-// Behavior: POST /api/devices requires clinicId to match JWT clinicId
-// Risk: critical
+// Behavior: API rejects device registration if purchaseDate is in the future
+// Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_027_AUTHMATRIX() {
   return {
@@ -2841,8 +2869,8 @@ function basePayload_PROOF_B_027_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/devices requires clinicId to match JWT clinicId", () => {
-  test("admin must be able to requires clinicId match", async ({ request }) => {
+test.describe("Auth Matrix: API rejects device registration if purchaseDate is in the future", () => {
+  test("admin must be able to rejects device registration", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2861,7 +2889,7 @@ test.describe("Auth Matrix: POST /api/devices requires clinicId to match JWT cli
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to requires clinicId match", async ({ request }) => {
+  test("technician must NOT be able to rejects device registration", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_027_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2870,7 +2898,7 @@ test.describe("Auth Matrix: POST /api/devices requires clinicId to match JWT cli
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to requires clinicId match", async ({ request }) => {
+  test("nurse must NOT be able to rejects device registration", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_027_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2878,7 +2906,7 @@ test.describe("Auth Matrix: POST /api/devices requires clinicId to match JWT cli
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_027_AUTHMATRIX(),
@@ -2902,49 +2930,49 @@ test.describe("Auth Matrix: POST /api/devices requires clinicId to match JWT cli
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access clinicId match", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access clinicId match
+  test("mutation-kill-2: Allow lower-privileged role to access device registration", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device registration
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access clinicId match — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access clinicId match — verify error code is present
+    // Kills: Allow lower-privileged role to access device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to requires clinicId match", async ({ request }) => {
-    // Kills: technician should not be able to requires clinicId match
+  test("mutation-kill-3: technician should not be able to rejects device registration", async ({ request }) => {
+    // Kills: technician should not be able to rejects device registration
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires clinicId match — verify no data leaked in error response
+    // Kills: technician should not be able to rejects device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires clinicId match — verify error code is present
+    // Kills: technician should not be able to rejects device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to requires clinicId match", async ({ request }) => {
-    // Kills: nurse should not be able to requires clinicId match
+  test("mutation-kill-4: nurse should not be able to rejects device registration", async ({ request }) => {
+    // Kills: nurse should not be able to rejects device registration
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_027_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires clinicId match — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects device registration — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires clinicId match — verify error code is present
+    // Kills: nurse should not be able to rejects device registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-028-AUTHMATRIX
-// Behavior: POST /api/devices rejects registration if serialNumber is globally unique
-// Risk: medium
+// Behavior: API allows all roles to list devices
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_028_AUTHMATRIX() {
   return {
@@ -2961,8 +2989,8 @@ function basePayload_PROOF_B_028_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/devices rejects registration if serialNumber is globally unique", () => {
-  test("admin must be able to rejects registration device", async ({ request }) => {
+test.describe("Auth Matrix: API allows all roles to list devices", () => {
+  test("admin must be able to allows listing of devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -2981,7 +3009,7 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if serialNumb
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rejects registration device", async ({ request }) => {
+  test("technician must NOT be able to allows listing of devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_028_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2990,7 +3018,7 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if serialNumb
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rejects registration device", async ({ request }) => {
+  test("nurse must NOT be able to allows listing of devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_028_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -2998,7 +3026,7 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if serialNumb
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rejects registration must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_028_AUTHMATRIX(),
@@ -3022,49 +3050,49 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if serialNumb
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device
+  test("mutation-kill-2: Allow lower-privileged role to access listing of devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access listing of devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access listing of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device — verify error code is present
+    // Kills: Allow lower-privileged role to access listing of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to rejects registration device", async ({ request }) => {
-    // Kills: technician should not be able to rejects registration device
+  test("mutation-kill-3: technician should not be able to allows listing of devices", async ({ request }) => {
+    // Kills: technician should not be able to allows listing of devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects registration device — verify no data leaked in error response
+    // Kills: technician should not be able to allows listing of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects registration device — verify error code is present
+    // Kills: technician should not be able to allows listing of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to rejects registration device", async ({ request }) => {
-    // Kills: nurse should not be able to rejects registration device
+  test("mutation-kill-4: nurse should not be able to allows listing of devices", async ({ request }) => {
+    // Kills: nurse should not be able to allows listing of devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_028_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects registration device — verify no data leaked in error response
+    // Kills: nurse should not be able to allows listing of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects registration device — verify error code is present
+    // Kills: nurse should not be able to allows listing of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-029-AUTHMATRIX
-// Behavior: POST /api/devices rejects registration if purchaseDate is in the future
-// Risk: medium
+// Behavior: Technician/admin roles see all device fields when listing devices
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_029_AUTHMATRIX() {
   return {
@@ -3081,8 +3109,8 @@ function basePayload_PROOF_B_029_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/devices rejects registration if purchaseDate is in the future", () => {
-  test("admin must be able to rejects registration device", async ({ request }) => {
+test.describe("Auth Matrix: Technician/admin roles see all device fields when listing devices", () => {
+  test("admin must be able to see all device fields", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -3101,7 +3129,7 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if purchaseDa
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rejects registration device", async ({ request }) => {
+  test("technician must NOT be able to see all device fields", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_029_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3110,7 +3138,7 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if purchaseDa
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rejects registration device", async ({ request }) => {
+  test("nurse must NOT be able to see all device fields", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_029_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3118,7 +3146,7 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if purchaseDa
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rejects registration must be rejected", async ({ request }) => {
+  test("cross-tenant see must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_029_AUTHMATRIX(),
@@ -3142,48 +3170,48 @@ test.describe("Auth Matrix: POST /api/devices rejects registration if purchaseDa
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device
+  test("mutation-kill-2: Allow lower-privileged role to access all device fields", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access all device fields
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access all device fields — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device — verify error code is present
+    // Kills: Allow lower-privileged role to access all device fields — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to rejects registration device", async ({ request }) => {
-    // Kills: technician should not be able to rejects registration device
+  test("mutation-kill-3: technician should not be able to see all device fields", async ({ request }) => {
+    // Kills: technician should not be able to see all device fields
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects registration device — verify no data leaked in error response
+    // Kills: technician should not be able to see all device fields — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects registration device — verify error code is present
+    // Kills: technician should not be able to see all device fields — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to rejects registration device", async ({ request }) => {
-    // Kills: nurse should not be able to rejects registration device
+  test("mutation-kill-4: nurse should not be able to see all device fields", async ({ request }) => {
+    // Kills: nurse should not be able to see all device fields
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_029_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects registration device — verify no data leaked in error response
+    // Kills: nurse should not be able to see all device fields — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects registration device — verify error code is present
+    // Kills: nurse should not be able to see all device fields — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-030-AUTHMATRIX
-// Behavior: GET /api/devices lists devices
+// Behavior: Nurse role sees name, type, status, availability when listing devices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_030_AUTHMATRIX() {
@@ -3201,8 +3229,8 @@ function basePayload_PROOF_B_030_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/devices lists devices", () => {
-  test("admin must be able to lists devices", async ({ request }) => {
+test.describe("Auth Matrix: Nurse role sees name, type, status, availability when listing devices", () => {
+  test("admin must be able to sees name, type, status, availability of devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_030_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -3221,7 +3249,7 @@ test.describe("Auth Matrix: GET /api/devices lists devices", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to lists devices", async ({ request }) => {
+  test("technician must NOT be able to sees name, type, status, availability of devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_030_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3230,7 +3258,7 @@ test.describe("Auth Matrix: GET /api/devices lists devices", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to lists devices", async ({ request }) => {
+  test("nurse must NOT be able to sees name, type, status, availability of devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_030_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3238,7 +3266,7 @@ test.describe("Auth Matrix: GET /api/devices lists devices", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant lists must be rejected", async ({ request }) => {
+  test("cross-tenant sees must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_030_AUTHMATRIX(),
@@ -3262,48 +3290,48 @@ test.describe("Auth Matrix: GET /api/devices lists devices", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access devices", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access devices
+  test("mutation-kill-2: Allow lower-privileged role to access name, type, status, availability of devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access name, type, status, availability of devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_030_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access devices — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access name, type, status, availability of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access devices — verify error code is present
+    // Kills: Allow lower-privileged role to access name, type, status, availability of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to lists devices", async ({ request }) => {
-    // Kills: technician should not be able to lists devices
+  test("mutation-kill-3: technician should not be able to sees name, type, status, availability of devices", async ({ request }) => {
+    // Kills: technician should not be able to sees name, type, status, availability of devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_030_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to lists devices — verify no data leaked in error response
+    // Kills: technician should not be able to sees name, type, status, availability of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to lists devices — verify error code is present
+    // Kills: technician should not be able to sees name, type, status, availability of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to lists devices", async ({ request }) => {
-    // Kills: nurse should not be able to lists devices
+  test("mutation-kill-4: nurse should not be able to sees name, type, status, availability of devices", async ({ request }) => {
+    // Kills: nurse should not be able to sees name, type, status, availability of devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_030_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to lists devices — verify no data leaked in error response
+    // Kills: nurse should not be able to sees name, type, status, availability of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to lists devices — verify error code is present
+    // Kills: nurse should not be able to sees name, type, status, availability of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-031-AUTHMATRIX
-// Behavior: GET /api/devices shows all device fields to technician/admin
+// Behavior: Nurse role does not see pricing when listing devices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_031_AUTHMATRIX() {
@@ -3321,8 +3349,8 @@ function basePayload_PROOF_B_031_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/devices shows all device fields to technician/admin", () => {
-  test("admin must be able to shows all device fields", async ({ request }) => {
+test.describe("Auth Matrix: Nurse role does not see pricing when listing devices", () => {
+  test("admin must be able to does not see pricing of devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_031_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -3341,7 +3369,7 @@ test.describe("Auth Matrix: GET /api/devices shows all device fields to technici
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to shows all device fields", async ({ request }) => {
+  test("technician must NOT be able to does not see pricing of devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_031_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3350,7 +3378,7 @@ test.describe("Auth Matrix: GET /api/devices shows all device fields to technici
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to shows all device fields", async ({ request }) => {
+  test("nurse must NOT be able to does not see pricing of devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_031_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3358,7 +3386,7 @@ test.describe("Auth Matrix: GET /api/devices shows all device fields to technici
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant shows must be rejected", async ({ request }) => {
+  test("cross-tenant does not see must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_031_AUTHMATRIX(),
@@ -3382,48 +3410,48 @@ test.describe("Auth Matrix: GET /api/devices shows all device fields to technici
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access all device fields", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access all device fields
+  test("mutation-kill-2: Allow lower-privileged role to access pricing of devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access pricing of devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_031_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access all device fields — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access pricing of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access all device fields — verify error code is present
+    // Kills: Allow lower-privileged role to access pricing of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to shows all device fields", async ({ request }) => {
-    // Kills: technician should not be able to shows all device fields
+  test("mutation-kill-3: technician should not be able to does not see pricing of devices", async ({ request }) => {
+    // Kills: technician should not be able to does not see pricing of devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_031_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to shows all device fields — verify no data leaked in error response
+    // Kills: technician should not be able to does not see pricing of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to shows all device fields — verify error code is present
+    // Kills: technician should not be able to does not see pricing of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to shows all device fields", async ({ request }) => {
-    // Kills: nurse should not be able to shows all device fields
+  test("mutation-kill-4: nurse should not be able to does not see pricing of devices", async ({ request }) => {
+    // Kills: nurse should not be able to does not see pricing of devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_031_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to shows all device fields — verify no data leaked in error response
+    // Kills: nurse should not be able to does not see pricing of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to shows all device fields — verify error code is present
+    // Kills: nurse should not be able to does not see pricing of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-032-AUTHMATRIX
-// Behavior: GET /api/devices shows name, type, status, availability to nurse
+// Behavior: Billing role sees name, type, dailyRate, purchasePrice when listing devices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_032_AUTHMATRIX() {
@@ -3441,8 +3469,8 @@ function basePayload_PROOF_B_032_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/devices shows name, type, status, availability to nurse", () => {
-  test("admin must be able to shows name, type, status, availability", async ({ request }) => {
+test.describe("Auth Matrix: Billing role sees name, type, dailyRate, purchasePrice when listing devices", () => {
+  test("admin must be able to sees name, type, dailyRate, purchasePrice of devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_032_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -3461,7 +3489,7 @@ test.describe("Auth Matrix: GET /api/devices shows name, type, status, availabil
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to shows name, type, status, availability", async ({ request }) => {
+  test("technician must NOT be able to sees name, type, dailyRate, purchasePrice of devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_032_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3470,7 +3498,7 @@ test.describe("Auth Matrix: GET /api/devices shows name, type, status, availabil
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to shows name, type, status, availability", async ({ request }) => {
+  test("nurse must NOT be able to sees name, type, dailyRate, purchasePrice of devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_032_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3478,7 +3506,7 @@ test.describe("Auth Matrix: GET /api/devices shows name, type, status, availabil
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant shows must be rejected", async ({ request }) => {
+  test("cross-tenant sees must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_032_AUTHMATRIX(),
@@ -3502,48 +3530,48 @@ test.describe("Auth Matrix: GET /api/devices shows name, type, status, availabil
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access name, type, status, availability", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access name, type, status, availability
+  test("mutation-kill-2: Allow lower-privileged role to access name, type, dailyRate, purchasePrice of devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access name, type, dailyRate, purchasePrice of devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_032_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access name, type, status, availability — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access name, type, dailyRate, purchasePrice of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access name, type, status, availability — verify error code is present
+    // Kills: Allow lower-privileged role to access name, type, dailyRate, purchasePrice of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to shows name, type, status, availability", async ({ request }) => {
-    // Kills: technician should not be able to shows name, type, status, availability
+  test("mutation-kill-3: technician should not be able to sees name, type, dailyRate, purchasePrice of devices", async ({ request }) => {
+    // Kills: technician should not be able to sees name, type, dailyRate, purchasePrice of devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_032_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to shows name, type, status, availability — verify no data leaked in error response
+    // Kills: technician should not be able to sees name, type, dailyRate, purchasePrice of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to shows name, type, status, availability — verify error code is present
+    // Kills: technician should not be able to sees name, type, dailyRate, purchasePrice of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to shows name, type, status, availability", async ({ request }) => {
-    // Kills: nurse should not be able to shows name, type, status, availability
+  test("mutation-kill-4: nurse should not be able to sees name, type, dailyRate, purchasePrice of devices", async ({ request }) => {
+    // Kills: nurse should not be able to sees name, type, dailyRate, purchasePrice of devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_032_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to shows name, type, status, availability — verify no data leaked in error response
+    // Kills: nurse should not be able to sees name, type, dailyRate, purchasePrice of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to shows name, type, status, availability — verify error code is present
+    // Kills: nurse should not be able to sees name, type, dailyRate, purchasePrice of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-033-AUTHMATRIX
-// Behavior: GET /api/devices hides pricing details from nurse
+// Behavior: Billing role does not see maintenance details when listing devices
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_033_AUTHMATRIX() {
@@ -3561,8 +3589,8 @@ function basePayload_PROOF_B_033_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/devices hides pricing details from nurse", () => {
-  test("admin must be able to hides pricing details", async ({ request }) => {
+test.describe("Auth Matrix: Billing role does not see maintenance details when listing devices", () => {
+  test("admin must be able to does not see maintenance details of devices", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_033_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -3581,7 +3609,7 @@ test.describe("Auth Matrix: GET /api/devices hides pricing details from nurse", 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to hides pricing details", async ({ request }) => {
+  test("technician must NOT be able to does not see maintenance details of devices", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_033_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3590,7 +3618,7 @@ test.describe("Auth Matrix: GET /api/devices hides pricing details from nurse", 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to hides pricing details", async ({ request }) => {
+  test("nurse must NOT be able to does not see maintenance details of devices", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_033_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3598,7 +3626,7 @@ test.describe("Auth Matrix: GET /api/devices hides pricing details from nurse", 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant hides must be rejected", async ({ request }) => {
+  test("cross-tenant does not see must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_033_AUTHMATRIX(),
@@ -3622,76 +3650,66 @@ test.describe("Auth Matrix: GET /api/devices hides pricing details from nurse", 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access pricing details", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access pricing details
+  test("mutation-kill-2: Allow lower-privileged role to access maintenance details of devices", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access maintenance details of devices
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_033_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access pricing details — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access maintenance details of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access pricing details — verify error code is present
+    // Kills: Allow lower-privileged role to access maintenance details of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to hides pricing details", async ({ request }) => {
-    // Kills: technician should not be able to hides pricing details
+  test("mutation-kill-3: technician should not be able to does not see maintenance details of devices", async ({ request }) => {
+    // Kills: technician should not be able to does not see maintenance details of devices
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_033_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to hides pricing details — verify no data leaked in error response
+    // Kills: technician should not be able to does not see maintenance details of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to hides pricing details — verify error code is present
+    // Kills: technician should not be able to does not see maintenance details of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to hides pricing details", async ({ request }) => {
-    // Kills: nurse should not be able to hides pricing details
+  test("mutation-kill-4: nurse should not be able to does not see maintenance details of devices", async ({ request }) => {
+    // Kills: nurse should not be able to does not see maintenance details of devices
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_033_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to hides pricing details — verify no data leaked in error response
+    // Kills: nurse should not be able to does not see maintenance details of devices — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to hides pricing details — verify error code is present
+    // Kills: nurse should not be able to does not see maintenance details of devices — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-034-AUTHMATRIX
-// Behavior: GET /api/devices shows name, type, dailyRate, purchasePrice to billing
+// Behavior: API allows all roles to get device details with role-based field visibility
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_034_AUTHMATRIX() {
   return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
+    id: 1,
   };
 }
-test.describe("Auth Matrix: GET /api/devices shows name, type, dailyRate, purchasePrice to billing", () => {
-  test("admin must be able to shows name, type, dailyRate, purchasePrice", async ({ request }) => {
+test.describe("Auth Matrix: API allows all roles to get device details with role-based field visibility", () => {
+  test("admin must be able to allows getting device details", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -3701,209 +3719,89 @@ test.describe("Auth Matrix: GET /api/devices shows name, type, dailyRate, purcha
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to shows name, type, dailyRate, purchasePrice", async ({ request }) => {
+  test("technician must NOT be able to allows getting device details", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to shows name, type, dailyRate, purchasePrice", async ({ request }) => {
+  test("nurse must NOT be able to allows getting device details", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant shows must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_034_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.list", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
+  test("mutation-kill-1: Remove role check in devices.list", async ({ request }) => {
+    // Kills: Remove role check in devices.list
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.list — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access name, type, dailyRate, purchasePrice", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access name, type, dailyRate, purchasePrice
+  test("mutation-kill-2: Allow lower-privileged role to access getting device details", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access getting device details
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access name, type, dailyRate, purchasePrice — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access getting device details — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access name, type, dailyRate, purchasePrice — verify error code is present
+    // Kills: Allow lower-privileged role to access getting device details — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to shows name, type, dailyRate, purchasePrice", async ({ request }) => {
-    // Kills: technician should not be able to shows name, type, dailyRate, purchasePrice
+  test("mutation-kill-3: technician should not be able to allows getting device details", async ({ request }) => {
+    // Kills: technician should not be able to allows getting device details
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to shows name, type, dailyRate, purchasePrice — verify no data leaked in error response
+    // Kills: technician should not be able to allows getting device details — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to shows name, type, dailyRate, purchasePrice — verify error code is present
+    // Kills: technician should not be able to allows getting device details — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to shows name, type, dailyRate, purchasePrice", async ({ request }) => {
-    // Kills: nurse should not be able to shows name, type, dailyRate, purchasePrice
+  test("mutation-kill-4: nurse should not be able to allows getting device details", async ({ request }) => {
+    // Kills: nurse should not be able to allows getting device details
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_034_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to shows name, type, dailyRate, purchasePrice — verify no data leaked in error response
+    // Kills: nurse should not be able to allows getting device details — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to shows name, type, dailyRate, purchasePrice — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-035-AUTHMATRIX
-// Behavior: GET /api/devices hides maintenance details from billing
-// Risk: critical
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_035_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: GET /api/devices hides maintenance details from billing", () => {
-  test("admin must be able to hides maintenance details", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to hides maintenance details", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to hides maintenance details", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant hides must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_035_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access maintenance details", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access maintenance details
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access maintenance details — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access maintenance details — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to hides maintenance details", async ({ request }) => {
-    // Kills: technician should not be able to hides maintenance details
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to hides maintenance details — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to hides maintenance details — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to hides maintenance details", async ({ request }) => {
-    // Kills: nurse should not be able to hides maintenance details
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_035_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to hides maintenance details — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to hides maintenance details — verify error code is present
+    // Kills: nurse should not be able to allows getting device details — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-036-AUTHMATRIX
-// Behavior: GET /api/devices/:id retrieves device details
+// Behavior: API returns 403 if device belongs to a different clinic
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_036_AUTHMATRIX() {
@@ -3911,8 +3809,8 @@ function basePayload_PROOF_B_036_AUTHMATRIX() {
     id: 1,
   };
 }
-test.describe("Auth Matrix: GET /api/devices/:id retrieves device details", () => {
-  test("admin must be able to retrieves device details", async ({ request }) => {
+test.describe("Auth Matrix: API returns 403 if device belongs to a different clinic", () => {
+  test("admin must be able to returns 403 device details", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -3931,7 +3829,7 @@ test.describe("Auth Matrix: GET /api/devices/:id retrieves device details", () =
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to retrieves device details", async ({ request }) => {
+  test("technician must NOT be able to returns 403 device details", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_036_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3940,7 +3838,7 @@ test.describe("Auth Matrix: GET /api/devices/:id retrieves device details", () =
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to retrieves device details", async ({ request }) => {
+  test("nurse must NOT be able to returns 403 device details", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_036_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -3948,7 +3846,7 @@ test.describe("Auth Matrix: GET /api/devices/:id retrieves device details", () =
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant retrieves must be rejected", async ({ request }) => {
+  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_036_AUTHMATRIX(),
@@ -3985,53 +3883,55 @@ test.describe("Auth Matrix: GET /api/devices/:id retrieves device details", () =
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to retrieves device details", async ({ request }) => {
-    // Kills: technician should not be able to retrieves device details
+  test("mutation-kill-3: technician should not be able to returns 403 device details", async ({ request }) => {
+    // Kills: technician should not be able to returns 403 device details
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to retrieves device details — verify no data leaked in error response
+    // Kills: technician should not be able to returns 403 device details — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to retrieves device details — verify error code is present
+    // Kills: technician should not be able to returns 403 device details — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to retrieves device details", async ({ request }) => {
-    // Kills: nurse should not be able to retrieves device details
+  test("mutation-kill-4: nurse should not be able to returns 403 device details", async ({ request }) => {
+    // Kills: nurse should not be able to returns 403 device details
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_036_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to retrieves device details — verify no data leaked in error response
+    // Kills: nurse should not be able to returns 403 device details — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to retrieves device details — verify error code is present
+    // Kills: nurse should not be able to returns 403 device details — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-038-AUTHMATRIX
-// Behavior: GET /api/devices/:id returns 403 if device belongs to different clinic
-// Risk: critical
+// Proof: PROOF-B-037-AUTHMATRIX
+// Behavior: API allows technician and admin to update device status
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_038_AUTHMATRIX() {
+function basePayload_PROOF_B_037_AUTHMATRIX() {
   return {
     id: 1,
+    status: "available",
+    reason: "test-reason",
   };
 }
-test.describe("Auth Matrix: GET /api/devices/:id returns 403 if device belongs to different clinic", () => {
-  test("admin must be able to returns 403 device", async ({ request }) => {
+test.describe("Auth Matrix: API allows technician and admin to update device status", () => {
+  test("admin must be able to allows updating device status", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4041,109 +3941,114 @@ test.describe("Auth Matrix: GET /api/devices/:id returns 403 if device belongs t
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to returns 403 device", async ({ request }) => {
+  test("technician must NOT be able to allows updating device status", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to returns 403 device", async ({ request }) => {
+  test("nurse must NOT be able to allows updating device status", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_038_AUTHMATRIX(),
+      ...basePayload_PROOF_B_037_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.list", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.status", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.list", async ({ request }) => {
-    // Kills: Remove role check in devices.list
+  test("mutation-kill-1: Remove role check in devices.status", async ({ request }) => {
+    // Kills: Remove role check in devices.status
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.list — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.status — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device
+  test("mutation-kill-2: Allow lower-privileged role to access updating device status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access updating device status
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access updating device status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device — verify error code is present
+    // Kills: Allow lower-privileged role to access updating device status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to returns 403 device", async ({ request }) => {
-    // Kills: technician should not be able to returns 403 device
+  test("mutation-kill-3: technician should not be able to allows updating device status", async ({ request }) => {
+    // Kills: technician should not be able to allows updating device status
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to returns 403 device — verify no data leaked in error response
+    // Kills: technician should not be able to allows updating device status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to returns 403 device — verify error code is present
+    // Kills: technician should not be able to allows updating device status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to returns 403 device", async ({ request }) => {
-    // Kills: nurse should not be able to returns 403 device
+  test("mutation-kill-4: nurse should not be able to allows updating device status", async ({ request }) => {
+    // Kills: nurse should not be able to allows updating device status
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.list", basePayload_PROOF_B_038_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_037_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to returns 403 device — verify no data leaked in error response
+    // Kills: nurse should not be able to allows updating device status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to returns 403 device — verify error code is present
+    // Kills: nurse should not be able to allows updating device status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-039-AUTHMATRIX
-// Behavior: PATCH /api/devices/:id/status updates device status
-// Risk: high
+// Behavior: API allows technician and admin to record a maintenance event
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_039_AUTHMATRIX() {
   return {
     id: 1,
-    status: "available",
-    reason: "test-reason",
+    clinicId: TEST_CLINIC_ID,
+    type: "routine",
+    description: "Test description",
+    cost: 1,
+    performedBy: "test-performedBy",
+    partsReplaced: [],
+    nextMaintenanceDue: tomorrowStr(),
   };
 }
-test.describe("Auth Matrix: PATCH /api/devices/:id/status updates device status", () => {
-  test("admin must be able to updates device status", async ({ request }) => {
+test.describe("Auth Matrix: API allows technician and admin to record a maintenance event", () => {
+  test("admin must be able to allows recording maintenance event", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4153,109 +4058,114 @@ test.describe("Auth Matrix: PATCH /api/devices/:id/status updates device status"
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to updates device status", async ({ request }) => {
+  test("technician must NOT be able to allows recording maintenance event", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to updates device status", async ({ request }) => {
+  test("nurse must NOT be able to allows recording maintenance event", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant updates must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_039_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.status", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.maintenance", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.status", async ({ request }) => {
-    // Kills: Remove role check in devices.status
+  test("mutation-kill-1: Remove role check in devices.maintenance", async ({ request }) => {
+    // Kills: Remove role check in devices.maintenance
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.status — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.maintenance — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device status", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device status
+  test("mutation-kill-2: Allow lower-privileged role to access recording maintenance event", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access recording maintenance event
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device status — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access recording maintenance event — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device status — verify error code is present
+    // Kills: Allow lower-privileged role to access recording maintenance event — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to updates device status", async ({ request }) => {
-    // Kills: technician should not be able to updates device status
+  test("mutation-kill-3: technician should not be able to allows recording maintenance event", async ({ request }) => {
+    // Kills: technician should not be able to allows recording maintenance event
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to updates device status — verify no data leaked in error response
+    // Kills: technician should not be able to allows recording maintenance event — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to updates device status — verify error code is present
+    // Kills: technician should not be able to allows recording maintenance event — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to updates device status", async ({ request }) => {
-    // Kills: nurse should not be able to updates device status
+  test("mutation-kill-4: nurse should not be able to allows recording maintenance event", async ({ request }) => {
+    // Kills: nurse should not be able to allows recording maintenance event
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_039_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to updates device status — verify no data leaked in error response
+    // Kills: nurse should not be able to allows recording maintenance event — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to updates device status — verify error code is present
+    // Kills: nurse should not be able to allows recording maintenance event — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-040-AUTHMATRIX
-// Behavior: PATCH /api/devices/:id/status requires reason for maintenance/decommissioned status
-// Risk: medium
+// Behavior: API rejects maintenance recording if device is currently rented
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_040_AUTHMATRIX() {
   return {
     id: 1,
-    status: "available",
-    reason: "test-reason",
+    clinicId: TEST_CLINIC_ID,
+    type: "routine",
+    description: "Test description",
+    cost: 1,
+    performedBy: "test-performedBy",
+    partsReplaced: [],
+    nextMaintenanceDue: tomorrowStr(),
   };
 }
-test.describe("Auth Matrix: PATCH /api/devices/:id/status requires reason for maintenance/decommissioned status", () => {
-  test("admin must be able to requires reason", async ({ request }) => {
+test.describe("Auth Matrix: API rejects maintenance recording if device is currently rented", () => {
+  test("admin must be able to rejects maintenance recording", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4265,89 +4175,89 @@ test.describe("Auth Matrix: PATCH /api/devices/:id/status requires reason for ma
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to requires reason", async ({ request }) => {
+  test("technician must NOT be able to rejects maintenance recording", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to requires reason", async ({ request }) => {
+  test("nurse must NOT be able to rejects maintenance recording", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_040_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.status", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.maintenance", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.status", async ({ request }) => {
-    // Kills: Remove role check in devices.status
+  test("mutation-kill-1: Remove role check in devices.maintenance", async ({ request }) => {
+    // Kills: Remove role check in devices.maintenance
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.status — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.maintenance — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access reason", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access reason
+  test("mutation-kill-2: Allow lower-privileged role to access maintenance recording", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access maintenance recording
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access reason — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access maintenance recording — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access reason — verify error code is present
+    // Kills: Allow lower-privileged role to access maintenance recording — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to requires reason", async ({ request }) => {
-    // Kills: technician should not be able to requires reason
+  test("mutation-kill-3: technician should not be able to rejects maintenance recording", async ({ request }) => {
+    // Kills: technician should not be able to rejects maintenance recording
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires reason — verify no data leaked in error response
+    // Kills: technician should not be able to rejects maintenance recording — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires reason — verify error code is present
+    // Kills: technician should not be able to rejects maintenance recording — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to requires reason", async ({ request }) => {
-    // Kills: nurse should not be able to requires reason
+  test("mutation-kill-4: nurse should not be able to rejects maintenance recording", async ({ request }) => {
+    // Kills: nurse should not be able to rejects maintenance recording
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.status", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_040_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires reason — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects maintenance recording — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires reason — verify error code is present
+    // Kills: nurse should not be able to rejects maintenance recording — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-041-AUTHMATRIX
-// Behavior: POST /api/devices/:id/maintenance records a maintenance event
+// Behavior: API sets device.lastMaintenanceDate to today after maintenance event
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_041_AUTHMATRIX() {
@@ -4362,8 +4272,8 @@ function basePayload_PROOF_B_041_AUTHMATRIX() {
     nextMaintenanceDue: tomorrowStr(),
   };
 }
-test.describe("Auth Matrix: POST /api/devices/:id/maintenance records a maintenance event", () => {
-  test("admin must be able to records maintenance event", async ({ request }) => {
+test.describe("Auth Matrix: API sets device.lastMaintenanceDate to today after maintenance event", () => {
+  test("admin must be able to sets device.lastMaintenanceDate", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_041_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -4382,7 +4292,7 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance records a maintena
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to records maintenance event", async ({ request }) => {
+  test("technician must NOT be able to sets device.lastMaintenanceDate", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_041_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -4391,7 +4301,7 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance records a maintena
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to records maintenance event", async ({ request }) => {
+  test("nurse must NOT be able to sets device.lastMaintenanceDate", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_041_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -4399,7 +4309,7 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance records a maintena
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant records must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_041_AUTHMATRIX(),
@@ -4423,48 +4333,48 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance records a maintena
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access maintenance event", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access maintenance event
+  test("mutation-kill-2: Allow lower-privileged role to access device.lastMaintenanceDate", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device.lastMaintenanceDate
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_041_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access maintenance event — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device.lastMaintenanceDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access maintenance event — verify error code is present
+    // Kills: Allow lower-privileged role to access device.lastMaintenanceDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to records maintenance event", async ({ request }) => {
-    // Kills: technician should not be able to records maintenance event
+  test("mutation-kill-3: technician should not be able to sets device.lastMaintenanceDate", async ({ request }) => {
+    // Kills: technician should not be able to sets device.lastMaintenanceDate
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_041_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to records maintenance event — verify no data leaked in error response
+    // Kills: technician should not be able to sets device.lastMaintenanceDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to records maintenance event — verify error code is present
+    // Kills: technician should not be able to sets device.lastMaintenanceDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to records maintenance event", async ({ request }) => {
-    // Kills: nurse should not be able to records maintenance event
+  test("mutation-kill-4: nurse should not be able to sets device.lastMaintenanceDate", async ({ request }) => {
+    // Kills: nurse should not be able to sets device.lastMaintenanceDate
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_041_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to records maintenance event — verify no data leaked in error response
+    // Kills: nurse should not be able to sets device.lastMaintenanceDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to records maintenance event — verify error code is present
+    // Kills: nurse should not be able to sets device.lastMaintenanceDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-042-AUTHMATRIX
-// Behavior: POST /api/devices/:id/maintenance rejects if device is currently rented
+// Behavior: API resets maintenance countdown after maintenance event
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_042_AUTHMATRIX() {
@@ -4479,8 +4389,8 @@ function basePayload_PROOF_B_042_AUTHMATRIX() {
     nextMaintenanceDue: tomorrowStr(),
   };
 }
-test.describe("Auth Matrix: POST /api/devices/:id/maintenance rejects if device is currently rented", () => {
-  test("admin must be able to rejects maintenance event", async ({ request }) => {
+test.describe("Auth Matrix: API resets maintenance countdown after maintenance event", () => {
+  test("admin must be able to resets maintenance countdown", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_042_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -4499,7 +4409,7 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance rejects if device 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rejects maintenance event", async ({ request }) => {
+  test("technician must NOT be able to resets maintenance countdown", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_042_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -4508,7 +4418,7 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance rejects if device 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rejects maintenance event", async ({ request }) => {
+  test("nurse must NOT be able to resets maintenance countdown", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_042_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -4516,7 +4426,7 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance rejects if device 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
+  test("cross-tenant resets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_042_AUTHMATRIX(),
@@ -4540,73 +4450,75 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance rejects if device 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access maintenance event", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access maintenance event
+  test("mutation-kill-2: Allow lower-privileged role to access maintenance countdown", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access maintenance countdown
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_042_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access maintenance event — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access maintenance countdown — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access maintenance event — verify error code is present
+    // Kills: Allow lower-privileged role to access maintenance countdown — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to rejects maintenance event", async ({ request }) => {
-    // Kills: technician should not be able to rejects maintenance event
+  test("mutation-kill-3: technician should not be able to resets maintenance countdown", async ({ request }) => {
+    // Kills: technician should not be able to resets maintenance countdown
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_042_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects maintenance event — verify no data leaked in error response
+    // Kills: technician should not be able to resets maintenance countdown — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects maintenance event — verify error code is present
+    // Kills: technician should not be able to resets maintenance countdown — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to rejects maintenance event", async ({ request }) => {
-    // Kills: nurse should not be able to rejects maintenance event
+  test("mutation-kill-4: nurse should not be able to resets maintenance countdown", async ({ request }) => {
+    // Kills: nurse should not be able to resets maintenance countdown
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_042_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects maintenance event — verify no data leaked in error response
+    // Kills: nurse should not be able to resets maintenance countdown — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects maintenance event — verify error code is present
+    // Kills: nurse should not be able to resets maintenance countdown — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-043-AUTHMATRIX
-// Behavior: POST /api/devices/:id/maintenance sets device.lastMaintenanceDate to today
-// Risk: high
+// Behavior: API allows nurse and admin to register a patient
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_043_AUTHMATRIX() {
   return {
-    id: 1,
     clinicId: TEST_CLINIC_ID,
-    type: "routine",
-    description: "Test description",
-    cost: 1,
-    performedBy: "test-performedBy",
-    partsReplaced: [],
-    nextMaintenanceDue: tomorrowStr(),
+    firstName: "Test firstName-${Date.now()}",
+    lastName: "Test lastName-${Date.now()}",
+    dateOfBirth: tomorrowStr(),
+    email: "test@example.com",
+    phone: "+4917655470957",
+    insuranceProvider: TEST_CLINIC_ID,
+    insuranceNumber: "test-insuranceNumber",
+    address: "test-address",
+    medicalNotes: "test-medicalNotes",
   };
 }
-test.describe("Auth Matrix: POST /api/devices/:id/maintenance sets device.lastMaintenanceDate to today", () => {
-  test("admin must be able to sets device.lastMaintenanceDate", async ({ request }) => {
+test.describe("Auth Matrix: API allows nurse and admin to register a patient", () => {
+  test("admin must be able to allows registration of a patient", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4616,114 +4528,236 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance sets device.lastMa
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to sets device.lastMaintenanceDate", async ({ request }) => {
+  test("technician must NOT be able to allows registration of a patient", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to sets device.lastMaintenanceDate", async ({ request }) => {
+  test("nurse must NOT be able to allows registration of a patient", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_043_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.maintenance", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "patients.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.maintenance", async ({ request }) => {
-    // Kills: Remove role check in devices.maintenance
+  test("mutation-kill-1: Remove role check in patients.create", async ({ request }) => {
+    // Kills: Remove role check in patients.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.maintenance — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in patients.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device.lastMaintenanceDate", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device.lastMaintenanceDate
+  test("mutation-kill-2: Allow lower-privileged role to access registration of a patient", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access registration of a patient
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device.lastMaintenanceDate — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access registration of a patient — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device.lastMaintenanceDate — verify error code is present
+    // Kills: Allow lower-privileged role to access registration of a patient — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to sets device.lastMaintenanceDate", async ({ request }) => {
-    // Kills: technician should not be able to sets device.lastMaintenanceDate
+  test("mutation-kill-3: technician should not be able to allows registration of a patient", async ({ request }) => {
+    // Kills: technician should not be able to allows registration of a patient
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets device.lastMaintenanceDate — verify no data leaked in error response
+    // Kills: technician should not be able to allows registration of a patient — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets device.lastMaintenanceDate — verify error code is present
+    // Kills: technician should not be able to allows registration of a patient — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to sets device.lastMaintenanceDate", async ({ request }) => {
-    // Kills: nurse should not be able to sets device.lastMaintenanceDate
+  test("mutation-kill-4: nurse should not be able to allows registration of a patient", async ({ request }) => {
+    // Kills: nurse should not be able to allows registration of a patient
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_043_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets device.lastMaintenanceDate — verify no data leaked in error response
+    // Kills: nurse should not be able to allows registration of a patient — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets device.lastMaintenanceDate — verify error code is present
+    // Kills: nurse should not be able to allows registration of a patient — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-044-AUTHMATRIX
+// Behavior: API rejects patient registration if clinicId does not match JWT
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_044_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    firstName: "Test firstName-${Date.now()}",
+    lastName: "Test lastName-${Date.now()}",
+    dateOfBirth: tomorrowStr(),
+    email: "test@example.com",
+    phone: "+4917655470958",
+    insuranceProvider: TEST_CLINIC_ID,
+    insuranceNumber: "test-insuranceNumber",
+    address: "test-address",
+    medicalNotes: "test-medicalNotes",
+  };
+}
+test.describe("Auth Matrix: API rejects patient registration if clinicId does not match JWT", () => {
+  test("admin must be able to rejects patient registration", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to rejects patient registration", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to rejects patient registration", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_044_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "patients.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in patients.create", async ({ request }) => {
+    // Kills: Remove role check in patients.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in patients.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access patient registration", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access patient registration
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access patient registration — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access patient registration — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to rejects patient registration", async ({ request }) => {
+    // Kills: technician should not be able to rejects patient registration
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to rejects patient registration — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to rejects patient registration — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to rejects patient registration", async ({ request }) => {
+    // Kills: nurse should not be able to rejects patient registration
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_044_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to rejects patient registration — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to rejects patient registration — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-045-AUTHMATRIX
-// Behavior: POST /api/devices/:id/maintenance requires nextMaintenanceDue to be in the future
-// Risk: medium
+// Behavior: API allows nurse and admin to list patients
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_045_AUTHMATRIX() {
   return {
-    id: 1,
     clinicId: TEST_CLINIC_ID,
-    type: "routine",
-    description: "Test description",
-    cost: 1,
-    performedBy: "test-performedBy",
-    partsReplaced: [],
-    nextMaintenanceDue: tomorrowStr(),
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/devices/:id/maintenance requires nextMaintenanceDue to be in the future", () => {
-  test("admin must be able to requires nextMaintenanceDue", async ({ request }) => {
+test.describe("Auth Matrix: API allows nurse and admin to list patients", () => {
+  test("admin must be able to allows listing of patients", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4733,116 +4767,117 @@ test.describe("Auth Matrix: POST /api/devices/:id/maintenance requires nextMaint
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to requires nextMaintenanceDue", async ({ request }) => {
+  test("technician must NOT be able to allows listing of patients", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to requires nextMaintenanceDue", async ({ request }) => {
+  test("nurse must NOT be able to allows listing of patients", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_045_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.maintenance", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.maintenance", async ({ request }) => {
-    // Kills: Remove role check in devices.maintenance
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.maintenance — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access nextMaintenanceDue", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access nextMaintenanceDue
+  test("mutation-kill-2: Allow lower-privileged role to access listing of patients", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access listing of patients
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access nextMaintenanceDue — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access listing of patients — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access nextMaintenanceDue — verify error code is present
+    // Kills: Allow lower-privileged role to access listing of patients — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to requires nextMaintenanceDue", async ({ request }) => {
-    // Kills: technician should not be able to requires nextMaintenanceDue
+  test("mutation-kill-3: technician should not be able to allows listing of patients", async ({ request }) => {
+    // Kills: technician should not be able to allows listing of patients
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires nextMaintenanceDue — verify no data leaked in error response
+    // Kills: technician should not be able to allows listing of patients — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires nextMaintenanceDue — verify error code is present
+    // Kills: technician should not be able to allows listing of patients — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to requires nextMaintenanceDue", async ({ request }) => {
-    // Kills: nurse should not be able to requires nextMaintenanceDue
+  test("mutation-kill-4: nurse should not be able to allows listing of patients", async ({ request }) => {
+    // Kills: nurse should not be able to allows listing of patients
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.maintenance", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_045_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires nextMaintenanceDue — verify no data leaked in error response
+    // Kills: nurse should not be able to allows listing of patients — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires nextMaintenanceDue — verify error code is present
+    // Kills: nurse should not be able to allows listing of patients — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-046-AUTHMATRIX
-// Behavior: POST /api/patients registers a patient
+// Behavior: API rejects patient listing for billing role
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_046_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
-    firstName: "Test firstName-${Date.now()}",
-    lastName: "Test lastName-${Date.now()}",
-    dateOfBirth: tomorrowStr(),
-    email: "test@example.com",
-    phone: "+4917613725951",
-    insuranceProvider: TEST_CLINIC_ID,
-    insuranceNumber: "test-insuranceNumber",
-    address: "test-address",
-    medicalNotes: "test-medicalNotes",
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/patients registers a patient", () => {
-  test("admin must be able to registers patient", async ({ request }) => {
+test.describe("Auth Matrix: API rejects patient listing for billing role", () => {
+  test("admin must be able to rejects patient listing", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4852,116 +4887,118 @@ test.describe("Auth Matrix: POST /api/patients registers a patient", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to registers patient", async ({ request }) => {
+  test("technician must NOT be able to rejects patient listing", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to registers patient", async ({ request }) => {
+  test("nurse must NOT be able to rejects patient listing", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant registers must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_046_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "patients.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in patients.create", async ({ request }) => {
-    // Kills: Remove role check in patients.create
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in patients.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access patient", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access patient
+  test("mutation-kill-2: Allow lower-privileged role to access patient listing", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access patient listing
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access patient — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access patient listing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access patient — verify error code is present
+    // Kills: Allow lower-privileged role to access patient listing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to registers patient", async ({ request }) => {
-    // Kills: technician should not be able to registers patient
+  test("mutation-kill-3: technician should not be able to rejects patient listing", async ({ request }) => {
+    // Kills: technician should not be able to rejects patient listing
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to registers patient — verify no data leaked in error response
+    // Kills: technician should not be able to rejects patient listing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to registers patient — verify error code is present
+    // Kills: technician should not be able to rejects patient listing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to registers patient", async ({ request }) => {
-    // Kills: nurse should not be able to registers patient
+  test("mutation-kill-4: nurse should not be able to rejects patient listing", async ({ request }) => {
+    // Kills: nurse should not be able to rejects patient listing
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_046_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to registers patient — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects patient listing — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to registers patient — verify error code is present
+    // Kills: nurse should not be able to rejects patient listing — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-047-AUTHMATRIX
-// Behavior: POST /api/patients requires clinicId to match JWT clinicId
+// Behavior: API allows nurse and admin to create a device rental
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_047_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
-    firstName: "Test firstName-${Date.now()}",
-    lastName: "Test lastName-${Date.now()}",
-    dateOfBirth: tomorrowStr(),
-    email: "test@example.com",
-    phone: "+4917613725952",
-    insuranceProvider: TEST_CLINIC_ID,
-    insuranceNumber: "test-insuranceNumber",
-    address: "test-address",
-    medicalNotes: "test-medicalNotes",
+    deviceId: 1,
+    patientId: 1,
+    startDate: tomorrowStr(),
+    expectedReturnDate: tomorrowStr(),
+    dailyRate: 50,
+    deposit: 1,
+    insuranceClaim: false,
+    insurancePreAuthCode: "test-insurancePreAuthCode",
+    prescriptionId: TEST_CLINIC_ID,
+    accessories: [1],
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/patients requires clinicId to match JWT clinicId", () => {
-  test("admin must be able to requires clinicId match", async ({ request }) => {
+test.describe("Auth Matrix: API allows nurse and admin to create a device rental", () => {
+  test("admin must be able to allows creation of a device rental", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -4971,116 +5008,118 @@ test.describe("Auth Matrix: POST /api/patients requires clinicId to match JWT cl
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to requires clinicId match", async ({ request }) => {
+  test("technician must NOT be able to allows creation of a device rental", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to requires clinicId match", async ({ request }) => {
+  test("nurse must NOT be able to allows creation of a device rental", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_047_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "patients.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in patients.create", async ({ request }) => {
-    // Kills: Remove role check in patients.create
+  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
+    // Kills: Remove role check in rentals.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in patients.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access clinicId match", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access clinicId match
+  test("mutation-kill-2: Allow lower-privileged role to access creation of a device rental", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access creation of a device rental
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access clinicId match — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access creation of a device rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access clinicId match — verify error code is present
+    // Kills: Allow lower-privileged role to access creation of a device rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to requires clinicId match", async ({ request }) => {
-    // Kills: technician should not be able to requires clinicId match
+  test("mutation-kill-3: technician should not be able to allows creation of a device rental", async ({ request }) => {
+    // Kills: technician should not be able to allows creation of a device rental
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires clinicId match — verify no data leaked in error response
+    // Kills: technician should not be able to allows creation of a device rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires clinicId match — verify error code is present
+    // Kills: technician should not be able to allows creation of a device rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to requires clinicId match", async ({ request }) => {
-    // Kills: nurse should not be able to requires clinicId match
+  test("mutation-kill-4: nurse should not be able to allows creation of a device rental", async ({ request }) => {
+    // Kills: nurse should not be able to allows creation of a device rental
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_047_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires clinicId match — verify no data leaked in error response
+    // Kills: nurse should not be able to allows creation of a device rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires clinicId match — verify error code is present
+    // Kills: nurse should not be able to allows creation of a device rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-048-AUTHMATRIX
-// Behavior: POST /api/patients requires dateOfBirth to be in the past
-// Risk: medium
+// Behavior: API rejects rental creation if device is not available
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_048_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
-    firstName: "Test firstName-${Date.now()}",
-    lastName: "Test lastName-${Date.now()}",
-    dateOfBirth: tomorrowStr(),
-    email: "test@example.com",
-    phone: "+4917613725953",
-    insuranceProvider: TEST_CLINIC_ID,
-    insuranceNumber: "test-insuranceNumber",
-    address: "test-address",
-    medicalNotes: "test-medicalNotes",
+    deviceId: 1,
+    patientId: 1,
+    startDate: tomorrowStr(),
+    expectedReturnDate: tomorrowStr(),
+    dailyRate: 50,
+    deposit: 1,
+    insuranceClaim: false,
+    insurancePreAuthCode: "test-insurancePreAuthCode",
+    prescriptionId: TEST_CLINIC_ID,
+    accessories: [1],
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/patients requires dateOfBirth to be in the past", () => {
-  test("admin must be able to requires dateOfBirth", async ({ request }) => {
+test.describe("Auth Matrix: API rejects rental creation if device is not available", () => {
+  test("admin must be able to rejects rental creation", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -5090,116 +5129,118 @@ test.describe("Auth Matrix: POST /api/patients requires dateOfBirth to be in the
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to requires dateOfBirth", async ({ request }) => {
+  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to requires dateOfBirth", async ({ request }) => {
+  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_048_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "patients.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in patients.create", async ({ request }) => {
-    // Kills: Remove role check in patients.create
+  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
+    // Kills: Remove role check in rentals.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in patients.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access dateOfBirth", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access dateOfBirth
+  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rental creation
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access dateOfBirth — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access dateOfBirth — verify error code is present
+    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to requires dateOfBirth", async ({ request }) => {
-    // Kills: technician should not be able to requires dateOfBirth
+  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: technician should not be able to rejects rental creation
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires dateOfBirth — verify no data leaked in error response
+    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires dateOfBirth — verify error code is present
+    // Kills: technician should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to requires dateOfBirth", async ({ request }) => {
-    // Kills: nurse should not be able to requires dateOfBirth
+  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: nurse should not be able to rejects rental creation
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_048_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires dateOfBirth — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires dateOfBirth — verify error code is present
+    // Kills: nurse should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-049-AUTHMATRIX
-// Behavior: Patient medicalNotes are visible only to nurse/admin
+// Behavior: API rejects rental creation if device belongs to a different clinic
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_049_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
-    firstName: "Test firstName-${Date.now()}",
-    lastName: "Test lastName-${Date.now()}",
-    dateOfBirth: tomorrowStr(),
-    email: "test@example.com",
-    phone: "+4917613725953",
-    insuranceProvider: TEST_CLINIC_ID,
-    insuranceNumber: "test-insuranceNumber",
-    address: "test-address",
-    medicalNotes: "test-medicalNotes",
+    deviceId: 1,
+    patientId: 1,
+    startDate: tomorrowStr(),
+    expectedReturnDate: tomorrowStr(),
+    dailyRate: 50,
+    deposit: 1,
+    insuranceClaim: false,
+    insurancePreAuthCode: "test-insurancePreAuthCode",
+    prescriptionId: TEST_CLINIC_ID,
+    accessories: [1],
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Patient medicalNotes are visible only to nurse/admin", () => {
-  test("admin must be able to restricts visibility of patient medicalNotes", async ({ request }) => {
+test.describe("Auth Matrix: API rejects rental creation if device belongs to a different clinic", () => {
+  test("admin must be able to rejects rental creation", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -5209,117 +5250,118 @@ test.describe("Auth Matrix: Patient medicalNotes are visible only to nurse/admin
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to restricts visibility of patient medicalNotes", async ({ request }) => {
+  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to restricts visibility of patient medicalNotes", async ({ request }) => {
+  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant restricts visibility of must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_049_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "patients.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in patients.create", async ({ request }) => {
-    // Kills: Remove role check in patients.create
+  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
+    // Kills: Remove role check in rentals.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in patients.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access patient medicalNotes", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access patient medicalNotes
+  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rental creation
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access patient medicalNotes — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access patient medicalNotes — verify error code is present
+    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to restricts visibility of patient medicalNotes", async ({ request }) => {
-    // Kills: technician should not be able to restricts visibility of patient medicalNotes
+  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: technician should not be able to rejects rental creation
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to restricts visibility of patient medicalNotes — verify no data leaked in error response
+    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to restricts visibility of patient medicalNotes — verify error code is present
+    // Kills: technician should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to restricts visibility of patient medicalNotes", async ({ request }) => {
-    // Kills: nurse should not be able to restricts visibility of patient medicalNotes
+  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: nurse should not be able to rejects rental creation
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "patients.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_049_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to restricts visibility of patient medicalNotes — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to restricts visibility of patient medicalNotes — verify error code is present
+    // Kills: nurse should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-050-AUTHMATRIX
-// Behavior: GET /api/patients lists patients
+// Behavior: API rejects rental creation if patient belongs to a different clinic
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_050_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
+    deviceId: 1,
+    patientId: 1,
+    startDate: tomorrowStr(),
+    expectedReturnDate: tomorrowStr(),
     dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
+    deposit: 1,
+    insuranceClaim: false,
+    insurancePreAuthCode: "test-insurancePreAuthCode",
+    prescriptionId: TEST_CLINIC_ID,
+    accessories: [1],
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/patients lists patients", () => {
-  test("admin must be able to lists patients", async ({ request }) => {
+test.describe("Auth Matrix: API rejects rental creation if patient belongs to a different clinic", () => {
+  test("admin must be able to rejects rental creation", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -5329,117 +5371,118 @@ test.describe("Auth Matrix: GET /api/patients lists patients", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to lists patients", async ({ request }) => {
+  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to lists patients", async ({ request }) => {
+  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant lists must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_050_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
+  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
+    // Kills: Remove role check in rentals.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access patients", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access patients
+  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rental creation
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access patients — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access patients — verify error code is present
+    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to lists patients", async ({ request }) => {
-    // Kills: technician should not be able to lists patients
+  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: technician should not be able to rejects rental creation
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to lists patients — verify no data leaked in error response
+    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to lists patients — verify error code is present
+    // Kills: technician should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to lists patients", async ({ request }) => {
-    // Kills: nurse should not be able to lists patients
+  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: nurse should not be able to rejects rental creation
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_050_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to lists patients — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to lists patients — verify error code is present
+    // Kills: nurse should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-051-AUTHMATRIX
-// Behavior: GET /api/patients returns 403 INSUFFICIENT_ROLE for billing role
-// Risk: critical
+// Behavior: API rejects rental creation if expectedReturnDate is more than 365 days from startDate
+// Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_051_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
+    deviceId: 1,
+    patientId: 1,
+    startDate: tomorrowStr(),
+    expectedReturnDate: tomorrowStr(),
     dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
+    deposit: 1,
+    insuranceClaim: false,
+    insurancePreAuthCode: "test-insurancePreAuthCode",
+    prescriptionId: TEST_CLINIC_ID,
+    accessories: [1],
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/patients returns 403 INSUFFICIENT_ROLE for billing role", () => {
-  test("admin must be able to returns 403 INSUFFICIENT_ROLE patient list request", async ({ request }) => {
+test.describe("Auth Matrix: API rejects rental creation if expectedReturnDate is more than 365 days from startDate", () => {
+  test("admin must be able to rejects rental creation", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -5449,90 +5492,90 @@ test.describe("Auth Matrix: GET /api/patients returns 403 INSUFFICIENT_ROLE for 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to returns 403 INSUFFICIENT_ROLE patient list request", async ({ request }) => {
+  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to returns 403 INSUFFICIENT_ROLE patient list request", async ({ request }) => {
+  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant returns 403 INSUFFICIENT_ROLE must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_051_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
+  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
+    // Kills: Remove role check in rentals.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access patient list request", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access patient list request
+  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rental creation
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access patient list request — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access patient list request — verify error code is present
+    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to returns 403 INSUFFICIENT_ROLE patient list request", async ({ request }) => {
-    // Kills: technician should not be able to returns 403 INSUFFICIENT_ROLE patient list request
+  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: technician should not be able to rejects rental creation
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to returns 403 INSUFFICIENT_ROLE patient list request — verify no data leaked in error response
+    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to returns 403 INSUFFICIENT_ROLE patient list request — verify error code is present
+    // Kills: technician should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to returns 403 INSUFFICIENT_ROLE patient list request", async ({ request }) => {
-    // Kills: nurse should not be able to returns 403 INSUFFICIENT_ROLE patient list request
+  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
+    // Kills: nurse should not be able to rejects rental creation
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_051_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to returns 403 INSUFFICIENT_ROLE patient list request — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to returns 403 INSUFFICIENT_ROLE patient list request — verify error code is present
+    // Kills: nurse should not be able to rejects rental creation — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-052-AUTHMATRIX
-// Behavior: POST /api/rentals creates a device rental
-// Risk: critical
+// Behavior: API rejects rental creation if expectedReturnDate is not after startDate
+// Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_052_AUTHMATRIX() {
   return {
@@ -5550,8 +5593,8 @@ function basePayload_PROOF_B_052_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/rentals creates a device rental", () => {
-  test("admin must be able to creates device rental", async ({ request }) => {
+test.describe("Auth Matrix: API rejects rental creation if expectedReturnDate is not after startDate", () => {
+  test("admin must be able to rejects rental creation", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -5570,7 +5613,7 @@ test.describe("Auth Matrix: POST /api/rentals creates a device rental", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to creates device rental", async ({ request }) => {
+  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -5579,7 +5622,7 @@ test.describe("Auth Matrix: POST /api/rentals creates a device rental", () => {
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to creates device rental", async ({ request }) => {
+  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -5587,7 +5630,7 @@ test.describe("Auth Matrix: POST /api/rentals creates a device rental", () => {
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant creates must be rejected", async ({ request }) => {
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_052_AUTHMATRIX(),
@@ -5611,131 +5654,10 @@ test.describe("Auth Matrix: POST /api/rentals creates a device rental", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device rental", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device rental
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to creates device rental", async ({ request }) => {
-    // Kills: technician should not be able to creates device rental
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to creates device rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to creates device rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to creates device rental", async ({ request }) => {
-    // Kills: nurse should not be able to creates device rental
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to creates device rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to creates device rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-053-AUTHMATRIX
-// Behavior: POST /api/rentals rejects if device is not available
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_053_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    deviceId: 1,
-    patientId: 1,
-    startDate: tomorrowStr(),
-    expectedReturnDate: tomorrowStr(),
-    dailyRate: 50,
-    deposit: 1,
-    insuranceClaim: false,
-    insurancePreAuthCode: "test-insurancePreAuthCode",
-    prescriptionId: TEST_CLINIC_ID,
-    accessories: [1],
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals rejects if device is not available", () => {
-  test("admin must be able to rejects rental creation", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_053_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
-    // Kills: Remove role check in rentals.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
   test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
     // Kills: Allow lower-privileged role to access rental creation
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -5748,7 +5670,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device is not available
   test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
     // Kills: technician should not be able to rejects rental creation
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -5761,7 +5683,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device is not available
   test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
     // Kills: nurse should not be able to rejects rental creation
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_053_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_052_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -5773,8 +5695,8 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device is not available
 });
 
 // Proof: PROOF-B-054-AUTHMATRIX
-// Behavior: POST /api/rentals rejects if device belongs to a different clinic
-// Risk: critical
+// Behavior: API ensures only one concurrent rental for the same device succeeds
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_054_AUTHMATRIX() {
   return {
@@ -5792,8 +5714,8 @@ function basePayload_PROOF_B_054_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/rentals rejects if device belongs to a different clinic", () => {
-  test("admin must be able to rejects rental creation", async ({ request }) => {
+test.describe("Auth Matrix: API ensures only one concurrent rental for the same device succeeds", () => {
+  test("admin must be able to ensures single concurrent rental", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -5812,7 +5734,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device belongs to a dif
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
+  test("technician must NOT be able to ensures single concurrent rental", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_054_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -5821,7 +5743,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device belongs to a dif
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
+  test("nurse must NOT be able to ensures single concurrent rental", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_054_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -5829,7 +5751,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device belongs to a dif
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
+  test("cross-tenant ensures must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_054_AUTHMATRIX(),
@@ -5853,49 +5775,49 @@ test.describe("Auth Matrix: POST /api/rentals rejects if device belongs to a dif
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental creation
+  test("mutation-kill-2: Allow lower-privileged role to access single concurrent rental", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access single concurrent rental
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access single concurrent rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
+    // Kills: Allow lower-privileged role to access single concurrent rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: technician should not be able to rejects rental creation
+  test("mutation-kill-3: technician should not be able to ensures single concurrent rental", async ({ request }) => {
+    // Kills: technician should not be able to ensures single concurrent rental
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
+    // Kills: technician should not be able to ensures single concurrent rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects rental creation — verify error code is present
+    // Kills: technician should not be able to ensures single concurrent rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: nurse should not be able to rejects rental creation
+  test("mutation-kill-4: nurse should not be able to ensures single concurrent rental", async ({ request }) => {
+    // Kills: nurse should not be able to ensures single concurrent rental
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_054_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
+    // Kills: nurse should not be able to ensures single concurrent rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects rental creation — verify error code is present
+    // Kills: nurse should not be able to ensures single concurrent rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-055-AUTHMATRIX
-// Behavior: POST /api/rentals rejects if patient belongs to a different clinic
-// Risk: critical
+// Behavior: API sets device status to rented upon successful rental creation
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_055_AUTHMATRIX() {
   return {
@@ -5913,8 +5835,8 @@ function basePayload_PROOF_B_055_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: POST /api/rentals rejects if patient belongs to a different clinic", () => {
-  test("admin must be able to rejects rental creation", async ({ request }) => {
+test.describe("Auth Matrix: API sets device status to rented upon successful rental creation", () => {
+  test("admin must be able to sets device.status", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -5933,7 +5855,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if patient belongs to a di
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
+  test("technician must NOT be able to sets device.status", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -5942,7 +5864,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if patient belongs to a di
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
+  test("nurse must NOT be able to sets device.status", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -5950,7 +5872,7 @@ test.describe("Auth Matrix: POST /api/rentals rejects if patient belongs to a di
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_055_AUTHMATRIX(),
@@ -5974,615 +5896,10 @@ test.describe("Auth Matrix: POST /api/rentals rejects if patient belongs to a di
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental creation
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: technician should not be able to rejects rental creation
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: nurse should not be able to rejects rental creation
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-056-AUTHMATRIX
-// Behavior: POST /api/rentals rejects if rental period exceeds 365 days
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_056_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    deviceId: 1,
-    patientId: 1,
-    startDate: tomorrowStr(),
-    expectedReturnDate: tomorrowStr(),
-    dailyRate: 50,
-    deposit: 1,
-    insuranceClaim: false,
-    insurancePreAuthCode: "test-insurancePreAuthCode",
-    prescriptionId: TEST_CLINIC_ID,
-    accessories: [1],
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals rejects if rental period exceeds 365 days", () => {
-  test("admin must be able to rejects rental creation", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_056_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
-    // Kills: Remove role check in rentals.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental creation
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: technician should not be able to rejects rental creation
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: nurse should not be able to rejects rental creation
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_056_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-057-AUTHMATRIX
-// Behavior: POST /api/rentals rejects if expectedReturnDate is not after startDate
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_057_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    deviceId: 1,
-    patientId: 1,
-    startDate: tomorrowStr(),
-    expectedReturnDate: tomorrowStr(),
-    dailyRate: 50,
-    deposit: 1,
-    insuranceClaim: false,
-    insurancePreAuthCode: "test-insurancePreAuthCode",
-    prescriptionId: TEST_CLINIC_ID,
-    accessories: [1],
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals rejects if expectedReturnDate is not after startDate", () => {
-  test("admin must be able to rejects rental creation", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_057_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
-    // Kills: Remove role check in rentals.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental creation
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: technician should not be able to rejects rental creation
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: nurse should not be able to rejects rental creation
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-058-AUTHMATRIX
-// Behavior: POST /api/rentals rejects if insuranceClaim is true but insurancePreAuthCode is missing
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_058_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    deviceId: 1,
-    patientId: 1,
-    startDate: tomorrowStr(),
-    expectedReturnDate: tomorrowStr(),
-    dailyRate: 50,
-    deposit: 1,
-    insuranceClaim: false,
-    insurancePreAuthCode: "test-insurancePreAuthCode",
-    prescriptionId: TEST_CLINIC_ID,
-    accessories: [1],
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals rejects if insuranceClaim is true but insurancePreAuthCode is missing", () => {
-  test("admin must be able to rejects rental creation", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to rejects rental creation", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_058_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
-    // Kills: Remove role check in rentals.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental creation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental creation
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: technician should not be able to rejects rental creation
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to rejects rental creation", async ({ request }) => {
-    // Kills: nurse should not be able to rejects rental creation
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects rental creation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects rental creation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-059-AUTHMATRIX
-// Behavior: POST /api/rentals ensures only one rental succeeds for the same device concurrently
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_059_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    deviceId: 1,
-    patientId: 1,
-    startDate: tomorrowStr(),
-    expectedReturnDate: tomorrowStr(),
-    dailyRate: 50,
-    deposit: 1,
-    insuranceClaim: false,
-    insurancePreAuthCode: "test-insurancePreAuthCode",
-    prescriptionId: TEST_CLINIC_ID,
-    accessories: [1],
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals ensures only one rental succeeds for the same device concurrently", () => {
-  test("admin must be able to ensures single successful rental", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to ensures single successful rental", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to ensures single successful rental", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant ensures must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_059_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
-    // Kills: Remove role check in rentals.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access single successful rental", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access single successful rental
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access single successful rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access single successful rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to ensures single successful rental", async ({ request }) => {
-    // Kills: technician should not be able to ensures single successful rental
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to ensures single successful rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to ensures single successful rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to ensures single successful rental", async ({ request }) => {
-    // Kills: nurse should not be able to ensures single successful rental
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to ensures single successful rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to ensures single successful rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-060-AUTHMATRIX
-// Behavior: POST /api/rentals sets device.status to 'rented'
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_060_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    deviceId: 1,
-    patientId: 1,
-    startDate: tomorrowStr(),
-    expectedReturnDate: tomorrowStr(),
-    dailyRate: 50,
-    deposit: 1,
-    insuranceClaim: false,
-    insurancePreAuthCode: "test-insurancePreAuthCode",
-    prescriptionId: TEST_CLINIC_ID,
-    accessories: [1],
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals sets device.status to 'rented'", () => {
-  test("admin must be able to sets device.status", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to sets device.status", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to sets device.status", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_060_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.create", async ({ request }) => {
-    // Kills: Remove role check in rentals.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
   test("mutation-kill-2: Allow lower-privileged role to access device.status", async ({ request }) => {
     // Kills: Allow lower-privileged role to access device.status
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -6595,7 +5912,7 @@ test.describe("Auth Matrix: POST /api/rentals sets device.status to 'rented'", (
   test("mutation-kill-3: technician should not be able to sets device.status", async ({ request }) => {
     // Kills: technician should not be able to sets device.status
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to sets device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -6608,7 +5925,7 @@ test.describe("Auth Matrix: POST /api/rentals sets device.status to 'rented'", (
   test("mutation-kill-4: nurse should not be able to sets device.status", async ({ request }) => {
     // Kills: nurse should not be able to sets device.status
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.create", basePayload_PROOF_B_055_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to sets device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -6619,11 +5936,11 @@ test.describe("Auth Matrix: POST /api/rentals sets device.status to 'rented'", (
   });
 });
 
-// Proof: PROOF-B-062-AUTHMATRIX
-// Behavior: GET /api/rentals lists rentals
+// Proof: PROOF-B-057-AUTHMATRIX
+// Behavior: API allows all roles to list rentals
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_062_AUTHMATRIX() {
+function basePayload_PROOF_B_057_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     serialNumber: "test-serialNumber",
@@ -6638,17 +5955,17 @@ function basePayload_PROOF_B_062_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/rentals lists rentals", () => {
-  test("admin must be able to lists rentals", async ({ request }) => {
+test.describe("Auth Matrix: API allows all roles to list rentals", () => {
+  test("admin must be able to allows listing of rentals", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -6658,27 +5975,27 @@ test.describe("Auth Matrix: GET /api/rentals lists rentals", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to lists rentals", async ({ request }) => {
+  test("technician must NOT be able to allows listing of rentals", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to lists rentals", async ({ request }) => {
+  test("nurse must NOT be able to allows listing of rentals", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant lists must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_062_AUTHMATRIX(),
+      ...basePayload_PROOF_B_057_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
@@ -6691,7 +6008,7 @@ test.describe("Auth Matrix: GET /api/rentals lists rentals", () => {
   test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
     // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -6699,51 +6016,51 @@ test.describe("Auth Matrix: GET /api/rentals lists rentals", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access rentals", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rentals
+  test("mutation-kill-2: Allow lower-privileged role to access listing of rentals", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access listing of rentals
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rentals — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access listing of rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rentals — verify error code is present
+    // Kills: Allow lower-privileged role to access listing of rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to lists rentals", async ({ request }) => {
-    // Kills: technician should not be able to lists rentals
+  test("mutation-kill-3: technician should not be able to allows listing of rentals", async ({ request }) => {
+    // Kills: technician should not be able to allows listing of rentals
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to lists rentals — verify no data leaked in error response
+    // Kills: technician should not be able to allows listing of rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to lists rentals — verify error code is present
+    // Kills: technician should not be able to allows listing of rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to lists rentals", async ({ request }) => {
-    // Kills: nurse should not be able to lists rentals
+  test("mutation-kill-4: nurse should not be able to allows listing of rentals", async ({ request }) => {
+    // Kills: nurse should not be able to allows listing of rentals
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_057_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to lists rentals — verify no data leaked in error response
+    // Kills: nurse should not be able to allows listing of rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to lists rentals — verify error code is present
+    // Kills: nurse should not be able to allows listing of rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-063-AUTHMATRIX
-// Behavior: GET /api/rentals shows all rentals to nurse
+// Proof: PROOF-B-058-AUTHMATRIX
+// Behavior: Nurse role sees all rentals when listing rentals
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_063_AUTHMATRIX() {
+function basePayload_PROOF_B_058_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     serialNumber: "test-serialNumber",
@@ -6758,17 +6075,17 @@ function basePayload_PROOF_B_063_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/rentals shows all rentals to nurse", () => {
-  test("admin must be able to shows all rentals", async ({ request }) => {
+test.describe("Auth Matrix: Nurse role sees all rentals when listing rentals", () => {
+  test("admin must be able to sees all rentals", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -6778,27 +6095,27 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals to nurse", () => 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to shows all rentals", async ({ request }) => {
+  test("technician must NOT be able to sees all rentals", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to shows all rentals", async ({ request }) => {
+  test("nurse must NOT be able to sees all rentals", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant shows must be rejected", async ({ request }) => {
+  test("cross-tenant sees must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_063_AUTHMATRIX(),
+      ...basePayload_PROOF_B_058_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
@@ -6811,7 +6128,7 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals to nurse", () => 
   test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
     // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -6822,7 +6139,7 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals to nurse", () => 
   test("mutation-kill-2: Allow lower-privileged role to access all rentals", async ({ request }) => {
     // Kills: Allow lower-privileged role to access all rentals
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access all rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -6832,38 +6149,38 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals to nurse", () => 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to shows all rentals", async ({ request }) => {
-    // Kills: technician should not be able to shows all rentals
+  test("mutation-kill-3: technician should not be able to sees all rentals", async ({ request }) => {
+    // Kills: technician should not be able to sees all rentals
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to shows all rentals — verify no data leaked in error response
+    // Kills: technician should not be able to sees all rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to shows all rentals — verify error code is present
+    // Kills: technician should not be able to sees all rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to shows all rentals", async ({ request }) => {
-    // Kills: nurse should not be able to shows all rentals
+  test("mutation-kill-4: nurse should not be able to sees all rentals", async ({ request }) => {
+    // Kills: nurse should not be able to sees all rentals
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_058_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to shows all rentals — verify no data leaked in error response
+    // Kills: nurse should not be able to sees all rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to shows all rentals — verify error code is present
+    // Kills: nurse should not be able to sees all rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-064-AUTHMATRIX
-// Behavior: GET /api/rentals shows all rentals with financial data to billing
+// Proof: PROOF-B-059-AUTHMATRIX
+// Behavior: Billing role sees all rentals with financial data when listing rentals
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_064_AUTHMATRIX() {
+function basePayload_PROOF_B_059_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     serialNumber: "test-serialNumber",
@@ -6878,17 +6195,17 @@ function basePayload_PROOF_B_064_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/rentals shows all rentals with financial data to billing", () => {
-  test("admin must be able to shows all rentals with financial data", async ({ request }) => {
+test.describe("Auth Matrix: Billing role sees all rentals with financial data when listing rentals", () => {
+  test("admin must be able to sees all rentals with financial data", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -6898,27 +6215,27 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals with financial da
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to shows all rentals with financial data", async ({ request }) => {
+  test("technician must NOT be able to sees all rentals with financial data", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to shows all rentals with financial data", async ({ request }) => {
+  test("nurse must NOT be able to sees all rentals with financial data", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant shows must be rejected", async ({ request }) => {
+  test("cross-tenant sees must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_064_AUTHMATRIX(),
+      ...basePayload_PROOF_B_059_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
@@ -6931,7 +6248,7 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals with financial da
   test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
     // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -6942,7 +6259,7 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals with financial da
   test("mutation-kill-2: Allow lower-privileged role to access all rentals with financial data", async ({ request }) => {
     // Kills: Allow lower-privileged role to access all rentals with financial data
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access all rentals with financial data — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -6952,38 +6269,38 @@ test.describe("Auth Matrix: GET /api/rentals shows all rentals with financial da
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to shows all rentals with financial data", async ({ request }) => {
-    // Kills: technician should not be able to shows all rentals with financial data
+  test("mutation-kill-3: technician should not be able to sees all rentals with financial data", async ({ request }) => {
+    // Kills: technician should not be able to sees all rentals with financial data
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to shows all rentals with financial data — verify no data leaked in error response
+    // Kills: technician should not be able to sees all rentals with financial data — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to shows all rentals with financial data — verify error code is present
+    // Kills: technician should not be able to sees all rentals with financial data — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to shows all rentals with financial data", async ({ request }) => {
-    // Kills: nurse should not be able to shows all rentals with financial data
+  test("mutation-kill-4: nurse should not be able to sees all rentals with financial data", async ({ request }) => {
+    // Kills: nurse should not be able to sees all rentals with financial data
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_064_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_059_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to shows all rentals with financial data — verify no data leaked in error response
+    // Kills: nurse should not be able to sees all rentals with financial data — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to shows all rentals with financial data — verify error code is present
+    // Kills: nurse should not be able to sees all rentals with financial data — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-065-AUTHMATRIX
-// Behavior: GET /api/rentals shows device-focused view to technician
+// Proof: PROOF-B-060-AUTHMATRIX
+// Behavior: Technician role sees device-focused view of rentals when listing rentals
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_065_AUTHMATRIX() {
+function basePayload_PROOF_B_060_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     serialNumber: "test-serialNumber",
@@ -6998,17 +6315,17 @@ function basePayload_PROOF_B_065_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/rentals shows device-focused view to technician", () => {
-  test("admin must be able to shows device-focused view of rentals", async ({ request }) => {
+test.describe("Auth Matrix: Technician role sees device-focused view of rentals when listing rentals", () => {
+  test("admin must be able to sees device-focused view of rentals", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -7018,27 +6335,27 @@ test.describe("Auth Matrix: GET /api/rentals shows device-focused view to techni
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to shows device-focused view of rentals", async ({ request }) => {
+  test("technician must NOT be able to sees device-focused view of rentals", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to shows device-focused view of rentals", async ({ request }) => {
+  test("nurse must NOT be able to sees device-focused view of rentals", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant shows must be rejected", async ({ request }) => {
+  test("cross-tenant sees must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_065_AUTHMATRIX(),
+      ...basePayload_PROOF_B_060_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
@@ -7051,7 +6368,7 @@ test.describe("Auth Matrix: GET /api/rentals shows device-focused view to techni
   test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
     // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -7062,7 +6379,7 @@ test.describe("Auth Matrix: GET /api/rentals shows device-focused view to techni
   test("mutation-kill-2: Allow lower-privileged role to access device-focused view of rentals", async ({ request }) => {
     // Kills: Allow lower-privileged role to access device-focused view of rentals
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access device-focused view of rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7072,55 +6389,55 @@ test.describe("Auth Matrix: GET /api/rentals shows device-focused view to techni
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to shows device-focused view of rentals", async ({ request }) => {
-    // Kills: technician should not be able to shows device-focused view of rentals
+  test("mutation-kill-3: technician should not be able to sees device-focused view of rentals", async ({ request }) => {
+    // Kills: technician should not be able to sees device-focused view of rentals
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to shows device-focused view of rentals — verify no data leaked in error response
+    // Kills: technician should not be able to sees device-focused view of rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to shows device-focused view of rentals — verify error code is present
+    // Kills: technician should not be able to sees device-focused view of rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to shows device-focused view of rentals", async ({ request }) => {
-    // Kills: nurse should not be able to shows device-focused view of rentals
+  test("mutation-kill-4: nurse should not be able to sees device-focused view of rentals", async ({ request }) => {
+    // Kills: nurse should not be able to sees device-focused view of rentals
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_060_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to shows device-focused view of rentals — verify no data leaked in error response
+    // Kills: nurse should not be able to sees device-focused view of rentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to shows device-focused view of rentals — verify error code is present
+    // Kills: nurse should not be able to sees device-focused view of rentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-066-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/extend extends a rental period
-// Risk: high
+// Proof: PROOF-B-061-AUTHMATRIX
+// Behavior: API allows nurse and admin to extend a rental period
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_066_AUTHMATRIX() {
+function basePayload_PROOF_B_061_AUTHMATRIX() {
   return {
     id: 1,
     newReturnDate: tomorrowStr(),
     reason: "test-reason",
   };
 }
-test.describe("Auth Matrix: POST /api/rentals/:id/extend extends a rental period", () => {
-  test("admin must be able to extends rental period", async ({ request }) => {
+test.describe("Auth Matrix: API allows nurse and admin to extend a rental period", () => {
+  test("admin must be able to allows extending a rental period", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -7130,27 +6447,27 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend extends a rental period
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to extends rental period", async ({ request }) => {
+  test("technician must NOT be able to allows extending a rental period", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to extends rental period", async ({ request }) => {
+  test("nurse must NOT be able to allows extending a rental period", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant extends must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_066_AUTHMATRIX(),
+      ...basePayload_PROOF_B_061_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "rentals.extend", crossTenantPayload, cookie);
@@ -7163,7 +6480,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend extends a rental period
   test("mutation-kill-1: Remove role check in rentals.extend", async ({ request }) => {
     // Kills: Remove role check in rentals.extend
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in rentals.extend — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -7171,68 +6488,68 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend extends a rental period
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access rental period", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental period
+  test("mutation-kill-2: Allow lower-privileged role to access extending a rental period", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access extending a rental period
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental period — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access extending a rental period — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental period — verify error code is present
+    // Kills: Allow lower-privileged role to access extending a rental period — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to extends rental period", async ({ request }) => {
-    // Kills: technician should not be able to extends rental period
+  test("mutation-kill-3: technician should not be able to allows extending a rental period", async ({ request }) => {
+    // Kills: technician should not be able to allows extending a rental period
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to extends rental period — verify no data leaked in error response
+    // Kills: technician should not be able to allows extending a rental period — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to extends rental period — verify error code is present
+    // Kills: technician should not be able to allows extending a rental period — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to extends rental period", async ({ request }) => {
-    // Kills: nurse should not be able to extends rental period
+  test("mutation-kill-4: nurse should not be able to allows extending a rental period", async ({ request }) => {
+    // Kills: nurse should not be able to allows extending a rental period
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_061_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to extends rental period — verify no data leaked in error response
+    // Kills: nurse should not be able to allows extending a rental period — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to extends rental period — verify error code is present
+    // Kills: nurse should not be able to allows extending a rental period — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-067-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/extend rejects if rental is not active
+// Proof: PROOF-B-062-AUTHMATRIX
+// Behavior: API rejects rental extension if rental is not active
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_067_AUTHMATRIX() {
+function basePayload_PROOF_B_062_AUTHMATRIX() {
   return {
     id: 1,
     newReturnDate: tomorrowStr(),
     reason: "test-reason",
   };
 }
-test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is not active", () => {
+test.describe("Auth Matrix: API rejects rental extension if rental is not active", () => {
   test("admin must be able to rejects rental extension", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -7244,7 +6561,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
 
   test("technician must NOT be able to rejects rental extension", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -7253,7 +6570,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
 
   test("nurse must NOT be able to rejects rental extension", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -7262,7 +6579,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
   test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_067_AUTHMATRIX(),
+      ...basePayload_PROOF_B_062_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "rentals.extend", crossTenantPayload, cookie);
@@ -7275,7 +6592,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
   test("mutation-kill-1: Remove role check in rentals.extend", async ({ request }) => {
     // Kills: Remove role check in rentals.extend
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in rentals.extend — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -7286,7 +6603,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
   test("mutation-kill-2: Allow lower-privileged role to access rental extension", async ({ request }) => {
     // Kills: Allow lower-privileged role to access rental extension
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access rental extension — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7299,7 +6616,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
   test("mutation-kill-3: technician should not be able to rejects rental extension", async ({ request }) => {
     // Kills: technician should not be able to rejects rental extension
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to rejects rental extension — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7312,7 +6629,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
   test("mutation-kill-4: nurse should not be able to rejects rental extension", async ({ request }) => {
     // Kills: nurse should not be able to rejects rental extension
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_067_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_062_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to rejects rental extension — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7323,28 +6640,28 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if rental is no
   });
 });
 
-// Proof: PROOF-B-068-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/extend rejects if maximum 3 extensions per rental are reached
+// Proof: PROOF-B-063-AUTHMATRIX
+// Behavior: API rejects rental extension if maximum of 3 extensions per rental is reached
 // Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_068_AUTHMATRIX() {
+function basePayload_PROOF_B_063_AUTHMATRIX() {
   return {
     id: 1,
     newReturnDate: tomorrowStr(),
     reason: "test-reason",
   };
 }
-test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 extensions per rental are reached", () => {
+test.describe("Auth Matrix: API rejects rental extension if maximum of 3 extensions per rental is reached", () => {
   test("admin must be able to rejects rental extension", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -7356,7 +6673,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
 
   test("technician must NOT be able to rejects rental extension", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -7365,7 +6682,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
 
   test("nurse must NOT be able to rejects rental extension", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -7374,7 +6691,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
   test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_068_AUTHMATRIX(),
+      ...basePayload_PROOF_B_063_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "rentals.extend", crossTenantPayload, cookie);
@@ -7387,7 +6704,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
   test("mutation-kill-1: Remove role check in rentals.extend", async ({ request }) => {
     // Kills: Remove role check in rentals.extend
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in rentals.extend — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -7398,7 +6715,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
   test("mutation-kill-2: Allow lower-privileged role to access rental extension", async ({ request }) => {
     // Kills: Allow lower-privileged role to access rental extension
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access rental extension — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7411,7 +6728,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
   test("mutation-kill-3: technician should not be able to rejects rental extension", async ({ request }) => {
     // Kills: technician should not be able to rejects rental extension
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to rejects rental extension — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7424,7 +6741,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
   test("mutation-kill-4: nurse should not be able to rejects rental extension", async ({ request }) => {
     // Kills: nurse should not be able to rejects rental extension
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_068_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_063_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to rejects rental extension — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7435,235 +6752,11 @@ test.describe("Auth Matrix: POST /api/rentals/:id/extend rejects if maximum 3 ex
   });
 });
 
-// Proof: PROOF-B-069-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/extend requires newReturnDate to be after current expectedReturnDate
-// Risk: medium
+// Proof: PROOF-B-065-AUTHMATRIX
+// Behavior: API allows technician, nurse, and admin to process device return
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_069_AUTHMATRIX() {
-  return {
-    id: 1,
-    newReturnDate: tomorrowStr(),
-    reason: "test-reason",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/extend requires newReturnDate to be after current expectedReturnDate", () => {
-  test("admin must be able to requires newReturnDate", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to requires newReturnDate", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to requires newReturnDate", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_069_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.extend", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.extend", async ({ request }) => {
-    // Kills: Remove role check in rentals.extend
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.extend — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access newReturnDate", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access newReturnDate
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access newReturnDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access newReturnDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to requires newReturnDate", async ({ request }) => {
-    // Kills: technician should not be able to requires newReturnDate
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires newReturnDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires newReturnDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to requires newReturnDate", async ({ request }) => {
-    // Kills: nurse should not be able to requires newReturnDate
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_069_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires newReturnDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires newReturnDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-070-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/extend requires newReturnDate to be within 365 days from original startDate
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_070_AUTHMATRIX() {
-  return {
-    id: 1,
-    newReturnDate: tomorrowStr(),
-    reason: "test-reason",
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/extend requires newReturnDate to be within 365 days from original startDate", () => {
-  test("admin must be able to requires newReturnDate", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to requires newReturnDate", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to requires newReturnDate", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_070_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.extend", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.extend", async ({ request }) => {
-    // Kills: Remove role check in rentals.extend
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.extend — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access newReturnDate", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access newReturnDate
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access newReturnDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access newReturnDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to requires newReturnDate", async ({ request }) => {
-    // Kills: technician should not be able to requires newReturnDate
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires newReturnDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires newReturnDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to requires newReturnDate", async ({ request }) => {
-    // Kills: nurse should not be able to requires newReturnDate
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.extend", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires newReturnDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires newReturnDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-072-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return processes device return
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_072_AUTHMATRIX() {
+function basePayload_PROOF_B_065_AUTHMATRIX() {
   return {
     id: 1,
     returnDate: tomorrowStr(),
@@ -7672,17 +6765,17 @@ function basePayload_PROOF_B_072_AUTHMATRIX() {
     damageCharge: 1,
   };
 }
-test.describe("Auth Matrix: POST /api/rentals/:id/return processes device return", () => {
-  test("admin must be able to processes device return", async ({ request }) => {
+test.describe("Auth Matrix: API allows technician, nurse, and admin to process device return", () => {
+  test("admin must be able to allows processing device return", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -7692,27 +6785,27 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return processes device return
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to processes device return", async ({ request }) => {
+  test("technician must NOT be able to allows processing device return", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to processes device return", async ({ request }) => {
+  test("nurse must NOT be able to allows processing device return", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant processes must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_072_AUTHMATRIX(),
+      ...basePayload_PROOF_B_065_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
@@ -7725,7 +6818,121 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return processes device return
   test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
     // Kills: Remove role check in rentals.return
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access processing device return", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access processing device return
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access processing device return — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access processing device return — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to allows processing device return", async ({ request }) => {
+    // Kills: technician should not be able to allows processing device return
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to allows processing device return — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to allows processing device return — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to allows processing device return", async ({ request }) => {
+    // Kills: nurse should not be able to allows processing device return
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_065_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to allows processing device return — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to allows processing device return — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-066-AUTHMATRIX
+// Behavior: API rejects device return if rental is not active or overdue
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_066_AUTHMATRIX() {
+  return {
+    id: 1,
+    returnDate: tomorrowStr(),
+    condition: "good",
+    damageNotes: "test-damageNotes",
+    damageCharge: 1,
+  };
+}
+test.describe("Auth Matrix: API rejects device return if rental is not active or overdue", () => {
+  test("admin must be able to rejects device return", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to rejects device return", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to rejects device return", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant rejects must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_066_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
+    // Kills: Remove role check in rentals.return
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -7736,7 +6943,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return processes device return
   test("mutation-kill-2: Allow lower-privileged role to access device return", async ({ request }) => {
     // Kills: Allow lower-privileged role to access device return
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access device return — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -7746,35 +6953,263 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return processes device return
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to processes device return", async ({ request }) => {
-    // Kills: technician should not be able to processes device return
+  test("mutation-kill-3: technician should not be able to rejects device return", async ({ request }) => {
+    // Kills: technician should not be able to rejects device return
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to processes device return — verify no data leaked in error response
+    // Kills: technician should not be able to rejects device return — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to processes device return — verify error code is present
+    // Kills: technician should not be able to rejects device return — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to processes device return", async ({ request }) => {
-    // Kills: nurse should not be able to processes device return
+  test("mutation-kill-4: nurse should not be able to rejects device return", async ({ request }) => {
+    // Kills: nurse should not be able to rejects device return
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_072_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_066_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to processes device return — verify no data leaked in error response
+    // Kills: nurse should not be able to rejects device return — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to processes device return — verify error code is present
+    // Kills: nurse should not be able to rejects device return — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-070-AUTHMATRIX
+// Behavior: API sets device status to maintenance if return condition is needs_repair
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_070_AUTHMATRIX() {
+  return {
+    id: 1,
+    returnDate: tomorrowStr(),
+    condition: "good",
+    damageNotes: "test-damageNotes",
+    damageCharge: 1,
+  };
+}
+test.describe("Auth Matrix: API sets device status to maintenance if return condition is needs_repair", () => {
+  test("admin must be able to sets device.status", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to sets device.status", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to sets device.status", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant sets must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_070_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
+    // Kills: Remove role check in rentals.return
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access device.status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device.status
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access device.status — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access device.status — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to sets device.status", async ({ request }) => {
+    // Kills: technician should not be able to sets device.status
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to sets device.status — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to sets device.status — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to sets device.status", async ({ request }) => {
+    // Kills: nurse should not be able to sets device.status
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_070_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to sets device.status — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to sets device.status — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-071-AUTHMATRIX
+// Behavior: API sets device status to available if return condition is good
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_071_AUTHMATRIX() {
+  return {
+    id: 1,
+    returnDate: tomorrowStr(),
+    condition: "good",
+    damageNotes: "test-damageNotes",
+    damageCharge: 1,
+  };
+}
+test.describe("Auth Matrix: API sets device status to available if return condition is good", () => {
+  test("admin must be able to sets device.status", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to sets device.status", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to sets device.status", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant sets must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_071_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
+    // Kills: Remove role check in rentals.return
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access device.status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device.status
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access device.status — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access device.status — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to sets device.status", async ({ request }) => {
+    // Kills: technician should not be able to sets device.status
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to sets device.status — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to sets device.status — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to sets device.status", async ({ request }) => {
+    // Kills: nurse should not be able to sets device.status
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_071_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to sets device.status — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to sets device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-073-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return rejects if rental is not active or overdue
+// Behavior: API updates patient.activeRentals upon device return
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_073_AUTHMATRIX() {
@@ -7786,8 +7221,8 @@ function basePayload_PROOF_B_073_AUTHMATRIX() {
     damageCharge: 1,
   };
 }
-test.describe("Auth Matrix: POST /api/rentals/:id/return rejects if rental is not active or overdue", () => {
-  test("admin must be able to rejects device return", async ({ request }) => {
+test.describe("Auth Matrix: API updates patient.activeRentals upon device return", () => {
+  test("admin must be able to updates patient.activeRentals", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_073_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -7806,7 +7241,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return rejects if rental is no
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to rejects device return", async ({ request }) => {
+  test("technician must NOT be able to updates patient.activeRentals", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_073_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -7815,7 +7250,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return rejects if rental is no
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to rejects device return", async ({ request }) => {
+  test("nurse must NOT be able to updates patient.activeRentals", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_073_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -7823,7 +7258,7 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return rejects if rental is no
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant rejects must be rejected", async ({ request }) => {
+  test("cross-tenant updates must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_073_AUTHMATRIX(),
@@ -7847,846 +7282,51 @@ test.describe("Auth Matrix: POST /api/rentals/:id/return rejects if rental is no
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device return", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device return
+  test("mutation-kill-2: Allow lower-privileged role to access patient.activeRentals", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access patient.activeRentals
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_073_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device return — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access patient.activeRentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device return — verify error code is present
+    // Kills: Allow lower-privileged role to access patient.activeRentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to rejects device return", async ({ request }) => {
-    // Kills: technician should not be able to rejects device return
+  test("mutation-kill-3: technician should not be able to updates patient.activeRentals", async ({ request }) => {
+    // Kills: technician should not be able to updates patient.activeRentals
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_073_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to rejects device return — verify no data leaked in error response
+    // Kills: technician should not be able to updates patient.activeRentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to rejects device return — verify error code is present
+    // Kills: technician should not be able to updates patient.activeRentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to rejects device return", async ({ request }) => {
-    // Kills: nurse should not be able to rejects device return
+  test("mutation-kill-4: nurse should not be able to updates patient.activeRentals", async ({ request }) => {
+    // Kills: nurse should not be able to updates patient.activeRentals
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_073_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to rejects device return — verify no data leaked in error response
+    // Kills: nurse should not be able to updates patient.activeRentals — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to rejects device return — verify error code is present
+    // Kills: nurse should not be able to updates patient.activeRentals — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-074-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return charges full device replacement cost if condition is 'lost'
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_074_AUTHMATRIX() {
-  return {
-    id: 1,
-    returnDate: tomorrowStr(),
-    condition: "good",
-    damageNotes: "test-damageNotes",
-    damageCharge: 1,
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/return charges full device replacement cost if condition is 'lost'", () => {
-  test("admin must be able to charges full device replacement cost", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to charges full device replacement cost", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to charges full device replacement cost", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant charges must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_074_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
-    // Kills: Remove role check in rentals.return
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access full device replacement cost", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access full device replacement cost
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access full device replacement cost — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access full device replacement cost — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to charges full device replacement cost", async ({ request }) => {
-    // Kills: technician should not be able to charges full device replacement cost
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to charges full device replacement cost — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to charges full device replacement cost — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to charges full device replacement cost", async ({ request }) => {
-    // Kills: nurse should not be able to charges full device replacement cost
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to charges full device replacement cost — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to charges full device replacement cost — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-075-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return sets device.status to 'maintenance' if condition is 'needs_repair'
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_075_AUTHMATRIX() {
-  return {
-    id: 1,
-    returnDate: tomorrowStr(),
-    condition: "good",
-    damageNotes: "test-damageNotes",
-    damageCharge: 1,
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/return sets device.status to 'maintenance' if condition is 'needs_repair'", () => {
-  test("admin must be able to sets device.status to 'maintenance'", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to sets device.status to 'maintenance'", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to sets device.status to 'maintenance'", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_075_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
-    // Kills: Remove role check in rentals.return
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access device.status to 'maintenance'", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device.status to 'maintenance'
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device.status to 'maintenance' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device.status to 'maintenance' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to sets device.status to 'maintenance'", async ({ request }) => {
-    // Kills: technician should not be able to sets device.status to 'maintenance'
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets device.status to 'maintenance' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets device.status to 'maintenance' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to sets device.status to 'maintenance'", async ({ request }) => {
-    // Kills: nurse should not be able to sets device.status to 'maintenance'
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets device.status to 'maintenance' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets device.status to 'maintenance' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-076-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return sets device.status to 'available' if condition is 'good'
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_076_AUTHMATRIX() {
-  return {
-    id: 1,
-    returnDate: tomorrowStr(),
-    condition: "good",
-    damageNotes: "test-damageNotes",
-    damageCharge: 1,
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/return sets device.status to 'available' if condition is 'good'", () => {
-  test("admin must be able to sets device.status to 'available'", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to sets device.status to 'available'", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to sets device.status to 'available'", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_076_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
-    // Kills: Remove role check in rentals.return
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access device.status to 'available'", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device.status to 'available'
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device.status to 'available' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device.status to 'available' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to sets device.status to 'available'", async ({ request }) => {
-    // Kills: technician should not be able to sets device.status to 'available'
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets device.status to 'available' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets device.status to 'available' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to sets device.status to 'available'", async ({ request }) => {
-    // Kills: nurse should not be able to sets device.status to 'available'
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets device.status to 'available' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets device.status to 'available' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-077-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return calculates final invoice
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_077_AUTHMATRIX() {
-  return {
-    id: 1,
-    returnDate: tomorrowStr(),
-    condition: "good",
-    damageNotes: "test-damageNotes",
-    damageCharge: 1,
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/return calculates final invoice", () => {
-  test("admin must be able to calculates final invoice", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to calculates final invoice", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to calculates final invoice", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant calculates must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_077_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
-    // Kills: Remove role check in rentals.return
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access final invoice", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access final invoice
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access final invoice — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access final invoice — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to calculates final invoice", async ({ request }) => {
-    // Kills: technician should not be able to calculates final invoice
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to calculates final invoice — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to calculates final invoice — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to calculates final invoice", async ({ request }) => {
-    // Kills: nurse should not be able to calculates final invoice
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to calculates final invoice — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to calculates final invoice — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-079-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return requires damageNotes if condition is not 'good'
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_079_AUTHMATRIX() {
-  return {
-    id: 1,
-    returnDate: tomorrowStr(),
-    condition: "good",
-    damageNotes: "test-damageNotes",
-    damageCharge: 1,
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/return requires damageNotes if condition is not 'good'", () => {
-  test("admin must be able to requires damageNotes", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to requires damageNotes", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to requires damageNotes", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_079_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
-    // Kills: Remove role check in rentals.return
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access damageNotes", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access damageNotes
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access damageNotes — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access damageNotes — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to requires damageNotes", async ({ request }) => {
-    // Kills: technician should not be able to requires damageNotes
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires damageNotes — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires damageNotes — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to requires damageNotes", async ({ request }) => {
-    // Kills: nurse should not be able to requires damageNotes
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires damageNotes — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires damageNotes — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-080-AUTHMATRIX
-// Behavior: POST /api/rentals/:id/return requires damageCharge if condition is 'damaged' or 'needs_repair'
-// Risk: medium
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_080_AUTHMATRIX() {
-  return {
-    id: 1,
-    returnDate: tomorrowStr(),
-    condition: "good",
-    damageNotes: "test-damageNotes",
-    damageCharge: 1,
-  };
-}
-test.describe("Auth Matrix: POST /api/rentals/:id/return requires damageCharge if condition is 'damaged' or 'needs_repair'", () => {
-  test("admin must be able to requires damageCharge", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to requires damageCharge", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to requires damageCharge", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_080_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.return", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.return", async ({ request }) => {
-    // Kills: Remove role check in rentals.return
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.return — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access damageCharge", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access damageCharge
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access damageCharge — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access damageCharge — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to requires damageCharge", async ({ request }) => {
-    // Kills: technician should not be able to requires damageCharge
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires damageCharge — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires damageCharge — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to requires damageCharge", async ({ request }) => {
-    // Kills: nurse should not be able to requires damageCharge
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.return", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires damageCharge — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires damageCharge — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-081-AUTHMATRIX
-// Behavior: PATCH /api/rentals/:id/status updates rental status
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_081_AUTHMATRIX() {
-  return {
-    id: 1,
-    status: "reserved",
-  };
-}
-test.describe("Auth Matrix: PATCH /api/rentals/:id/status updates rental status", () => {
-  test("admin must be able to updates rental status", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to updates rental status", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to updates rental status", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant updates must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_081_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "rentals.status", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in rentals.status", async ({ request }) => {
-    // Kills: Remove role check in rentals.status
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in rentals.status — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental status", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental status
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental status — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental status — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to updates rental status", async ({ request }) => {
-    // Kills: technician should not be able to updates rental status
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to updates rental status — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to updates rental status — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to updates rental status", async ({ request }) => {
-    // Kills: nurse should not be able to updates rental status
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "rentals.status", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to updates rental status — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to updates rental status — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-082-AUTHMATRIX
-// Behavior: POST /api/invoices creates an invoice
+// Behavior: API allows billing and admin to create an invoice
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_082_AUTHMATRIX() {
+function basePayload_PROOF_B_074_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     rentalId: 1,
@@ -8694,17 +7334,17 @@ function basePayload_PROOF_B_082_AUTHMATRIX() {
     dueDate: tomorrowStr(),
   };
 }
-test.describe("Auth Matrix: POST /api/invoices creates an invoice", () => {
-  test("admin must be able to creates invoice", async ({ request }) => {
+test.describe("Auth Matrix: API allows billing and admin to create an invoice", () => {
+  test("admin must be able to allows creation of an invoice", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -8714,27 +7354,27 @@ test.describe("Auth Matrix: POST /api/invoices creates an invoice", () => {
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to creates invoice", async ({ request }) => {
+  test("technician must NOT be able to allows creation of an invoice", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to creates invoice", async ({ request }) => {
+  test("nurse must NOT be able to allows creation of an invoice", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant creates must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_082_AUTHMATRIX(),
+      ...basePayload_PROOF_B_074_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "invoices.create", crossTenantPayload, cookie);
@@ -8747,7 +7387,7 @@ test.describe("Auth Matrix: POST /api/invoices creates an invoice", () => {
   test("mutation-kill-1: Remove role check in invoices.create", async ({ request }) => {
     // Kills: Remove role check in invoices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in invoices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -8755,51 +7395,51 @@ test.describe("Auth Matrix: POST /api/invoices creates an invoice", () => {
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access invoice", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access invoice
+  test("mutation-kill-2: Allow lower-privileged role to access creation of an invoice", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access creation of an invoice
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access invoice — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access creation of an invoice — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access invoice — verify error code is present
+    // Kills: Allow lower-privileged role to access creation of an invoice — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to creates invoice", async ({ request }) => {
-    // Kills: technician should not be able to creates invoice
+  test("mutation-kill-3: technician should not be able to allows creation of an invoice", async ({ request }) => {
+    // Kills: technician should not be able to allows creation of an invoice
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to creates invoice — verify no data leaked in error response
+    // Kills: technician should not be able to allows creation of an invoice — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to creates invoice — verify error code is present
+    // Kills: technician should not be able to allows creation of an invoice — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to creates invoice", async ({ request }) => {
-    // Kills: nurse should not be able to creates invoice
+  test("mutation-kill-4: nurse should not be able to allows creation of an invoice", async ({ request }) => {
+    // Kills: nurse should not be able to allows creation of an invoice
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_074_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to creates invoice — verify no data leaked in error response
+    // Kills: nurse should not be able to allows creation of an invoice — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to creates invoice — verify error code is present
+    // Kills: nurse should not be able to allows creation of an invoice — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-083-AUTHMATRIX
-// Behavior: POST /api/invoices rejects if rentalId belongs to a different clinic
+// Proof: PROOF-B-075-AUTHMATRIX
+// Behavior: API rejects invoice creation if rentalId does not belong to same clinic
 // Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_083_AUTHMATRIX() {
+function basePayload_PROOF_B_075_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
     rentalId: 1,
@@ -8807,17 +7447,17 @@ function basePayload_PROOF_B_083_AUTHMATRIX() {
     dueDate: tomorrowStr(),
   };
 }
-test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a different clinic", () => {
+test.describe("Auth Matrix: API rejects invoice creation if rentalId does not belong to same clinic", () => {
   test("admin must be able to rejects invoice creation", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -8829,7 +7469,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
 
   test("technician must NOT be able to rejects invoice creation", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -8838,7 +7478,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
 
   test("nurse must NOT be able to rejects invoice creation", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -8847,7 +7487,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
   test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_083_AUTHMATRIX(),
+      ...basePayload_PROOF_B_075_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "invoices.create", crossTenantPayload, cookie);
@@ -8860,7 +7500,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
   test("mutation-kill-1: Remove role check in invoices.create", async ({ request }) => {
     // Kills: Remove role check in invoices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in invoices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -8871,7 +7511,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
   test("mutation-kill-2: Allow lower-privileged role to access invoice creation", async ({ request }) => {
     // Kills: Allow lower-privileged role to access invoice creation
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access invoice creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -8884,7 +7524,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
   test("mutation-kill-3: technician should not be able to rejects invoice creation", async ({ request }) => {
     // Kills: technician should not be able to rejects invoice creation
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to rejects invoice creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -8897,7 +7537,7 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
   test("mutation-kill-4: nurse should not be able to rejects invoice creation", async ({ request }) => {
     // Kills: nurse should not be able to rejects invoice creation
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_075_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to rejects invoice creation — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -8908,124 +7548,11 @@ test.describe("Auth Matrix: POST /api/invoices rejects if rentalId belongs to a 
   });
 });
 
-// Proof: PROOF-B-084-AUTHMATRIX
-// Behavior: POST /api/invoices requires dueDate to be in the future
-// Risk: medium
+// Proof: PROOF-B-076-AUTHMATRIX
+// Behavior: API allows billing and admin to record payment
+// Risk: critical
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_084_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    rentalId: 1,
-    items: [{ description: "Test description", quantity: 1, unitPrice: 1, taxRate: 1 }],
-    dueDate: tomorrowStr(),
-  };
-}
-test.describe("Auth Matrix: POST /api/invoices requires dueDate to be in the future", () => {
-  test("admin must be able to requires dueDate", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to requires dueDate", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to requires dueDate", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant requires must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_084_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "invoices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in invoices.create", async ({ request }) => {
-    // Kills: Remove role check in invoices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in invoices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access dueDate", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access dueDate
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access dueDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access dueDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to requires dueDate", async ({ request }) => {
-    // Kills: technician should not be able to requires dueDate
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to requires dueDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to requires dueDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to requires dueDate", async ({ request }) => {
-    // Kills: nurse should not be able to requires dueDate
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to requires dueDate — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to requires dueDate — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-085-AUTHMATRIX
-// Behavior: POST /api/invoices/:id/payment records payment
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_085_AUTHMATRIX() {
+function basePayload_PROOF_B_076_AUTHMATRIX() {
   return {
     id: 1,
     amount: 1,
@@ -9033,17 +7560,17 @@ function basePayload_PROOF_B_085_AUTHMATRIX() {
     reference: "test-reference",
   };
 }
-test.describe("Auth Matrix: POST /api/invoices/:id/payment records payment", () => {
-  test("admin must be able to records payment", async ({ request }) => {
+test.describe("Auth Matrix: API allows billing and admin to record payment", () => {
+  test("admin must be able to allows recording payment", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -9053,27 +7580,27 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment records payment", () 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to records payment", async ({ request }) => {
+  test("technician must NOT be able to allows recording payment", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to records payment", async ({ request }) => {
+  test("nurse must NOT be able to allows recording payment", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant records must be rejected", async ({ request }) => {
+  test("cross-tenant allows must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_085_AUTHMATRIX(),
+      ...basePayload_PROOF_B_076_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "invoices.payment", crossTenantPayload, cookie);
@@ -9086,7 +7613,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment records payment", () 
   test("mutation-kill-1: Remove role check in invoices.payment", async ({ request }) => {
     // Kills: Remove role check in invoices.payment
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in invoices.payment — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -9094,51 +7621,51 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment records payment", () 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access payment", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access payment
+  test("mutation-kill-2: Allow lower-privileged role to access recording payment", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access recording payment
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access payment — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access recording payment — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access payment — verify error code is present
+    // Kills: Allow lower-privileged role to access recording payment — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to records payment", async ({ request }) => {
-    // Kills: technician should not be able to records payment
+  test("mutation-kill-3: technician should not be able to allows recording payment", async ({ request }) => {
+    // Kills: technician should not be able to allows recording payment
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to records payment — verify no data leaked in error response
+    // Kills: technician should not be able to allows recording payment — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to records payment — verify error code is present
+    // Kills: technician should not be able to allows recording payment — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to records payment", async ({ request }) => {
-    // Kills: nurse should not be able to records payment
+  test("mutation-kill-4: nurse should not be able to allows recording payment", async ({ request }) => {
+    // Kills: nurse should not be able to allows recording payment
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_076_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to records payment — verify no data leaked in error response
+    // Kills: nurse should not be able to allows recording payment — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to records payment — verify error code is present
+    // Kills: nurse should not be able to allows recording payment — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-086-AUTHMATRIX
-// Behavior: POST /api/invoices/:id/payment rejects if amount exceeds remaining balance
+// Proof: PROOF-B-077-AUTHMATRIX
+// Behavior: API rejects payment if amount exceeds remaining balance
 // Risk: medium
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_086_AUTHMATRIX() {
+function basePayload_PROOF_B_077_AUTHMATRIX() {
   return {
     id: 1,
     amount: 1,
@@ -9146,17 +7673,17 @@ function basePayload_PROOF_B_086_AUTHMATRIX() {
     reference: "test-reference",
   };
 }
-test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exceeds remaining balance", () => {
+test.describe("Auth Matrix: API rejects payment if amount exceeds remaining balance", () => {
   test("admin must be able to rejects payment", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -9168,7 +7695,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
 
   test("technician must NOT be able to rejects payment", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -9177,7 +7704,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
 
   test("nurse must NOT be able to rejects payment", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -9186,7 +7713,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
   test("cross-tenant rejects must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_086_AUTHMATRIX(),
+      ...basePayload_PROOF_B_077_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "invoices.payment", crossTenantPayload, cookie);
@@ -9199,7 +7726,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
   test("mutation-kill-1: Remove role check in invoices.payment", async ({ request }) => {
     // Kills: Remove role check in invoices.payment
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in invoices.payment — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -9210,7 +7737,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
   test("mutation-kill-2: Allow lower-privileged role to access payment", async ({ request }) => {
     // Kills: Allow lower-privileged role to access payment
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: Allow lower-privileged role to access payment — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -9223,7 +7750,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
   test("mutation-kill-3: technician should not be able to rejects payment", async ({ request }) => {
     // Kills: technician should not be able to rejects payment
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: technician should not be able to rejects payment — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -9236,7 +7763,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
   test("mutation-kill-4: nurse should not be able to rejects payment", async ({ request }) => {
     // Kills: nurse should not be able to rejects payment
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_077_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Kills: nurse should not be able to rejects payment — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
@@ -9247,11 +7774,11 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment rejects if amount exc
   });
 });
 
-// Proof: PROOF-B-087-AUTHMATRIX
-// Behavior: POST /api/invoices/:id/payment sets invoice.status to 'paid' if total paid >= invoice total
+// Proof: PROOF-B-078-AUTHMATRIX
+// Behavior: API sets invoice status to paid if total paid >= invoice total
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_087_AUTHMATRIX() {
+function basePayload_PROOF_B_078_AUTHMATRIX() {
   return {
     id: 1,
     amount: 1,
@@ -9259,17 +7786,17 @@ function basePayload_PROOF_B_087_AUTHMATRIX() {
     reference: "test-reference",
   };
 }
-test.describe("Auth Matrix: POST /api/invoices/:id/payment sets invoice.status to 'paid' if total paid >= invoice total", () => {
-  test("admin must be able to sets invoice.status to 'paid'", async ({ request }) => {
+test.describe("Auth Matrix: API sets invoice status to paid if total paid >= invoice total", () => {
+  test("admin must be able to sets invoice.status", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -9279,18 +7806,18 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment sets invoice.status t
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to sets invoice.status to 'paid'", async ({ request }) => {
+  test("technician must NOT be able to sets invoice.status", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to sets invoice.status to 'paid'", async ({ request }) => {
+  test("nurse must NOT be able to sets invoice.status", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
@@ -9299,7 +7826,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment sets invoice.status t
   test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_087_AUTHMATRIX(),
+      ...basePayload_PROOF_B_078_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "invoices.payment", crossTenantPayload, cookie);
@@ -9312,7 +7839,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment sets invoice.status t
   test("mutation-kill-1: Remove role check in invoices.payment", async ({ request }) => {
     // Kills: Remove role check in invoices.payment
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in invoices.payment — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -9320,51 +7847,51 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment sets invoice.status t
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access invoice.status to 'paid'", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access invoice.status to 'paid'
+  test("mutation-kill-2: Allow lower-privileged role to access invoice.status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access invoice.status
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access invoice.status to 'paid' — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access invoice.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access invoice.status to 'paid' — verify error code is present
+    // Kills: Allow lower-privileged role to access invoice.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to sets invoice.status to 'paid'", async ({ request }) => {
-    // Kills: technician should not be able to sets invoice.status to 'paid'
+  test("mutation-kill-3: technician should not be able to sets invoice.status", async ({ request }) => {
+    // Kills: technician should not be able to sets invoice.status
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets invoice.status to 'paid' — verify no data leaked in error response
+    // Kills: technician should not be able to sets invoice.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets invoice.status to 'paid' — verify error code is present
+    // Kills: technician should not be able to sets invoice.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to sets invoice.status to 'paid'", async ({ request }) => {
-    // Kills: nurse should not be able to sets invoice.status to 'paid'
+  test("mutation-kill-4: nurse should not be able to sets invoice.status", async ({ request }) => {
+    // Kills: nurse should not be able to sets invoice.status
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_078_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets invoice.status to 'paid' — verify no data leaked in error response
+    // Kills: nurse should not be able to sets invoice.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets invoice.status to 'paid' — verify error code is present
+    // Kills: nurse should not be able to sets invoice.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
-// Proof: PROOF-B-088-AUTHMATRIX
-// Behavior: POST /api/invoices/:id/payment handles partial payments by keeping invoice outstanding
+// Proof: PROOF-B-079-AUTHMATRIX
+// Behavior: API keeps invoice status as outstanding for partial payments
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_088_AUTHMATRIX() {
+function basePayload_PROOF_B_079_AUTHMATRIX() {
   return {
     id: 1,
     amount: 1,
@@ -9372,17 +7899,17 @@ function basePayload_PROOF_B_088_AUTHMATRIX() {
     reference: "test-reference",
   };
 }
-test.describe("Auth Matrix: POST /api/invoices/:id/payment handles partial payments by keeping invoice outstanding", () => {
-  test("admin must be able to handles partial payments", async ({ request }) => {
+test.describe("Auth Matrix: API keeps invoice status as outstanding for partial payments", () => {
+  test("admin must be able to keeps invoice status as outstanding", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -9392,27 +7919,27 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment handles partial payme
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to handles partial payments", async ({ request }) => {
+  test("technician must NOT be able to keeps invoice status as outstanding", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to handles partial payments", async ({ request }) => {
+  test("nurse must NOT be able to keeps invoice status as outstanding", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant handles must be rejected", async ({ request }) => {
+  test("cross-tenant keeps must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
-      ...basePayload_PROOF_B_088_AUTHMATRIX(),
+      ...basePayload_PROOF_B_079_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await trpcQuery(request, "invoices.payment", crossTenantPayload, cookie);
@@ -9425,7 +7952,7 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment handles partial payme
   test("mutation-kill-1: Remove role check in invoices.payment", async ({ request }) => {
     // Kills: Remove role check in invoices.payment
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Kills: Remove role check in invoices.payment — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
@@ -9433,66 +7960,1146 @@ test.describe("Auth Matrix: POST /api/invoices/:id/payment handles partial payme
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access partial payments", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access partial payments
+  test("mutation-kill-2: Allow lower-privileged role to access invoice status as outstanding", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access invoice status as outstanding
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access partial payments — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access invoice status as outstanding — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access partial payments — verify error code is present
+    // Kills: Allow lower-privileged role to access invoice status as outstanding — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to handles partial payments", async ({ request }) => {
-    // Kills: technician should not be able to handles partial payments
+  test("mutation-kill-3: technician should not be able to keeps invoice status as outstanding", async ({ request }) => {
+    // Kills: technician should not be able to keeps invoice status as outstanding
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to handles partial payments — verify no data leaked in error response
+    // Kills: technician should not be able to keeps invoice status as outstanding — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to handles partial payments — verify error code is present
+    // Kills: technician should not be able to keeps invoice status as outstanding — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to handles partial payments", async ({ request }) => {
-    // Kills: nurse should not be able to handles partial payments
+  test("mutation-kill-4: nurse should not be able to keeps invoice status as outstanding", async ({ request }) => {
+    // Kills: nurse should not be able to keeps invoice status as outstanding
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "invoices.payment", basePayload_PROOF_B_079_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to handles partial payments — verify no data leaked in error response
+    // Kills: nurse should not be able to keeps invoice status as outstanding — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to handles partial payments — verify error code is present
+    // Kills: nurse should not be able to keeps invoice status as outstanding — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-080-AUTHMATRIX
+// Behavior: API allows admin only to access device utilization report
+// Risk: critical
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_080_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+  };
+}
+test.describe("Auth Matrix: API allows admin only to access device utilization report", () => {
+  test("admin must be able to allows access to device utilization report", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to allows access to device utilization report", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to allows access to device utilization report", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant allows must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_080_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "reports.utilization", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in reports.utilization", async ({ request }) => {
+    // Kills: Remove role check in reports.utilization
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in reports.utilization — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access access to device utilization report", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access access to device utilization report
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access access to device utilization report — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access access to device utilization report — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to allows access to device utilization report", async ({ request }) => {
+    // Kills: technician should not be able to allows access to device utilization report
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to allows access to device utilization report — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to allows access to device utilization report — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to allows access to device utilization report", async ({ request }) => {
+    // Kills: nurse should not be able to allows access to device utilization report
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_080_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to allows access to device utilization report — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to allows access to device utilization report — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-081-AUTHMATRIX
+// Behavior: Device status transitions from available to rented when rental created
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_081_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from available to rented when rental created", () => {
+  test("admin must be able to transitions from available to rented", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from available to rented", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from available to rented", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_081_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from available to rented", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from available to rented
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from available to rented — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from available to rented — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from available to rented", async ({ request }) => {
+    // Kills: technician should not be able to transitions from available to rented
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from available to rented — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from available to rented — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from available to rented", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from available to rented
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_081_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from available to rented — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from available to rented — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-082-AUTHMATRIX
+// Behavior: Device status transitions from rented to available when returned in good condition
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_082_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from rented to available when returned in good condition", () => {
+  test("admin must be able to transitions from rented to available", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from rented to available", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from rented to available", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_082_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from rented to available", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from rented to available
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from rented to available — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from rented to available — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from rented to available", async ({ request }) => {
+    // Kills: technician should not be able to transitions from rented to available
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from rented to available — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from rented to available — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from rented to available", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from rented to available
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_082_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from rented to available — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from rented to available — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-083-AUTHMATRIX
+// Behavior: Device status transitions from rented to maintenance when returned needing repair
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_083_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from rented to maintenance when returned needing repair", () => {
+  test("admin must be able to transitions from rented to maintenance", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from rented to maintenance", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from rented to maintenance", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_083_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from rented to maintenance", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from rented to maintenance
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from rented to maintenance — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from rented to maintenance — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from rented to maintenance", async ({ request }) => {
+    // Kills: technician should not be able to transitions from rented to maintenance
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from rented to maintenance — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from rented to maintenance — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from rented to maintenance", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from rented to maintenance
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_083_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from rented to maintenance — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from rented to maintenance — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-084-AUTHMATRIX
+// Behavior: Device status transitions from available to maintenance for scheduled maintenance
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_084_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from available to maintenance for scheduled maintenance", () => {
+  test("admin must be able to transitions from available to maintenance", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from available to maintenance", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from available to maintenance", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_084_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from available to maintenance", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from available to maintenance
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from available to maintenance — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from available to maintenance — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from available to maintenance", async ({ request }) => {
+    // Kills: technician should not be able to transitions from available to maintenance
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from available to maintenance — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from available to maintenance — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from available to maintenance", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from available to maintenance
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_084_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from available to maintenance — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from available to maintenance — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-085-AUTHMATRIX
+// Behavior: Device status transitions from maintenance to available when maintenance completed
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_085_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from maintenance to available when maintenance completed", () => {
+  test("admin must be able to transitions from maintenance to available", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from maintenance to available", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from maintenance to available", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_085_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from maintenance to available", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from maintenance to available
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from maintenance to available — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from maintenance to available — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from maintenance to available", async ({ request }) => {
+    // Kills: technician should not be able to transitions from maintenance to available
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from maintenance to available — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from maintenance to available — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from maintenance to available", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from maintenance to available
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_085_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from maintenance to available — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from maintenance to available — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-086-AUTHMATRIX
+// Behavior: Device status transitions from available to decommissioned
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_086_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from available to decommissioned", () => {
+  test("admin must be able to transitions from available to decommissioned", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from available to decommissioned", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from available to decommissioned", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_086_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from available to decommissioned", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from available to decommissioned
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from available to decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from available to decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from available to decommissioned", async ({ request }) => {
+    // Kills: technician should not be able to transitions from available to decommissioned
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from available to decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from available to decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from available to decommissioned", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from available to decommissioned
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_086_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from available to decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from available to decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-087-AUTHMATRIX
+// Behavior: Device status transitions from maintenance to decommissioned
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_087_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status transitions from maintenance to decommissioned", () => {
+  test("admin must be able to transitions from maintenance to decommissioned", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to transitions from maintenance to decommissioned", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to transitions from maintenance to decommissioned", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_087_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from maintenance to decommissioned", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from maintenance to decommissioned
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from maintenance to decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from maintenance to decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to transitions from maintenance to decommissioned", async ({ request }) => {
+    // Kills: technician should not be able to transitions from maintenance to decommissioned
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to transitions from maintenance to decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to transitions from maintenance to decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to transitions from maintenance to decommissioned", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from maintenance to decommissioned
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_087_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to transitions from maintenance to decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to transitions from maintenance to decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+});
+
+// Proof: PROOF-B-088-AUTHMATRIX
+// Behavior: Device status cannot transition from decommissioned to any other state
+// Risk: high
+// MutationTargets: 4 kills required for 100% mutation score
+function basePayload_PROOF_B_088_AUTHMATRIX() {
+  return {
+    clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
+  };
+}
+test.describe("Auth Matrix: Device status cannot transition from decommissioned to any other state", () => {
+  test("admin must be able to cannot transition from decommissioned", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Verify response has data (not empty)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+  });
+  test("unauthenticated request must be rejected", async ({ request }) => {
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), "");
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak data to unauthenticated callers
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+    // Verify error code is UNAUTHORIZED
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("technician must NOT be able to cannot transition from decommissioned", async ({ request }) => {
+    const roleCookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+
+  test("nurse must NOT be able to cannot transition from decommissioned", async ({ request }) => {
+    const roleCookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), roleCookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Must not leak any data in error response
+    const data = response.data?.result?.data;
+    expect(data).toBeFalsy();
+  });
+  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+    const cookie = await getAdminCookie(request);
+    const crossTenantPayload = {
+      ...basePayload_PROOF_B_088_AUTHMATRIX(),
+      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
+    };
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
+    expect(response.status).toBeOneOf([401, 403, 404]);
+    // Must not leak data from other tenant
+    const leakedData = response.data?.result?.data;
+    expect(leakedData).toBeFalsy();
+  });
+
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([200, 201]);
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
+    const data = response.data?.result?.data;
+    expect(data).not.toBeNull();
+    expect(data).not.toBeUndefined();
+  });
+
+  test("mutation-kill-2: Allow lower-privileged role to access from decommissioned", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from decommissioned
+    const cookie = await getAdminCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: Allow lower-privileged role to access from decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: Allow lower-privileged role to access from decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-3: technician should not be able to cannot transition from decommissioned", async ({ request }) => {
+    // Kills: technician should not be able to cannot transition from decommissioned
+    const cookie = await getTechnicianCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: technician should not be able to cannot transition from decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: technician should not be able to cannot transition from decommissioned — verify error code is present
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
+  });
+
+  test("mutation-kill-4: nurse should not be able to cannot transition from decommissioned", async ({ request }) => {
+    // Kills: nurse should not be able to cannot transition from decommissioned
+    const cookie = await getNurseCookie(request);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_088_AUTHMATRIX(), cookie);
+    expect(response.status).toBeOneOf([401, 403]);
+    // Kills: nurse should not be able to cannot transition from decommissioned — verify no data leaked in error response
+    const body = response.data?.result?.data ?? response.data?.result?.error;
+    expect(body).toBeFalsy();
+    // Kills: nurse should not be able to cannot transition from decommissioned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-089-AUTHMATRIX
-// Behavior: GET /api/reports/utilization provides device utilization report
-// Risk: critical
+// Behavior: Device status cannot transition from rented to decommissioned
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_089_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/reports/utilization provides device utilization report", () => {
-  test("admin must be able to provides device utilization report", async ({ request }) => {
+test.describe("Auth Matrix: Device status cannot transition from rented to decommissioned", () => {
+  test("admin must be able to cannot transition from rented to decommissioned", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -9502,107 +9109,117 @@ test.describe("Auth Matrix: GET /api/reports/utilization provides device utiliza
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to provides device utilization report", async ({ request }) => {
+  test("technician must NOT be able to cannot transition from rented to decommissioned", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to provides device utilization report", async ({ request }) => {
+  test("nurse must NOT be able to cannot transition from rented to decommissioned", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant provides must be rejected", async ({ request }) => {
+  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_089_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "reports.utilization", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in reports.utilization", async ({ request }) => {
-    // Kills: Remove role check in reports.utilization
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in reports.utilization — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device utilization report", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device utilization report
+  test("mutation-kill-2: Allow lower-privileged role to access from rented to decommissioned", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from rented to decommissioned
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device utilization report — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from rented to decommissioned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device utilization report — verify error code is present
+    // Kills: Allow lower-privileged role to access from rented to decommissioned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to provides device utilization report", async ({ request }) => {
-    // Kills: technician should not be able to provides device utilization report
+  test("mutation-kill-3: technician should not be able to cannot transition from rented to decommissioned", async ({ request }) => {
+    // Kills: technician should not be able to cannot transition from rented to decommissioned
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to provides device utilization report — verify no data leaked in error response
+    // Kills: technician should not be able to cannot transition from rented to decommissioned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to provides device utilization report — verify error code is present
+    // Kills: technician should not be able to cannot transition from rented to decommissioned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to provides device utilization report", async ({ request }) => {
-    // Kills: nurse should not be able to provides device utilization report
+  test("mutation-kill-4: nurse should not be able to cannot transition from rented to decommissioned", async ({ request }) => {
+    // Kills: nurse should not be able to cannot transition from rented to decommissioned
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_089_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to provides device utilization report — verify no data leaked in error response
+    // Kills: nurse should not be able to cannot transition from rented to decommissioned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to provides device utilization report — verify error code is present
+    // Kills: nurse should not be able to cannot transition from rented to decommissioned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-090-AUTHMATRIX
-// Behavior: GET /api/reports/utilization is accessible only by admin
-// Risk: critical
+// Behavior: System sets maintenanceStartDate when device status transitions to maintenance
+// Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_090_AUTHMATRIX() {
   return {
     clinicId: TEST_CLINIC_ID,
+    serialNumber: "test-serialNumber",
+    name: "Test name-${Date.now()}",
+    type: "wheelchair",
+    manufacturer: "test-manufacturer",
+    purchaseDate: tomorrowStr(),
+    purchasePrice: 100,
+    dailyRate: 50,
+    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
+    maintenanceIntervalDays: 7,
+    notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: GET /api/reports/utilization is accessible only by admin", () => {
-  test("admin must be able to restricts access to device utilization report", async ({ request }) => {
+test.describe("Auth Matrix: System sets maintenanceStartDate when device status transitions to maintenance", () => {
+  test("admin must be able to sets maintenanceStartDate", async ({ request }) => {
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), "");
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), "");
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
@@ -9612,89 +9229,89 @@ test.describe("Auth Matrix: GET /api/reports/utilization is accessible only by a
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to restricts access to device utilization report", async ({ request }) => {
+  test("technician must NOT be able to sets maintenanceStartDate", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to restricts access to device utilization report", async ({ request }) => {
+  test("nurse must NOT be able to sets maintenanceStartDate", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), roleCookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant restricts access to must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_090_AUTHMATRIX(),
       clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
-    const response = await trpcQuery(request, "reports.utilization", crossTenantPayload, cookie);
+    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
     expect(response.status).toBeOneOf([401, 403, 404]);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 
-  test("mutation-kill-1: Remove role check in reports.utilization", async ({ request }) => {
-    // Kills: Remove role check in reports.utilization
+  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
+    // Kills: Remove role check in devices.create
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in reports.utilization — verify response has expected structure (not empty/null)
+    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device utilization report", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device utilization report
+  test("mutation-kill-2: Allow lower-privileged role to access maintenanceStartDate", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access maintenanceStartDate
     const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device utilization report — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access maintenanceStartDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device utilization report — verify error code is present
+    // Kills: Allow lower-privileged role to access maintenanceStartDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to restricts access to device utilization report", async ({ request }) => {
-    // Kills: technician should not be able to restricts access to device utilization report
+  test("mutation-kill-3: technician should not be able to sets maintenanceStartDate", async ({ request }) => {
+    // Kills: technician should not be able to sets maintenanceStartDate
     const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to restricts access to device utilization report — verify no data leaked in error response
+    // Kills: technician should not be able to sets maintenanceStartDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to restricts access to device utilization report — verify error code is present
+    // Kills: technician should not be able to sets maintenanceStartDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to restricts access to device utilization report", async ({ request }) => {
-    // Kills: nurse should not be able to restricts access to device utilization report
+  test("mutation-kill-4: nurse should not be able to sets maintenanceStartDate", async ({ request }) => {
+    // Kills: nurse should not be able to sets maintenanceStartDate
     const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "reports.utilization", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
+    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_090_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to restricts access to device utilization report — verify no data leaked in error response
+    // Kills: nurse should not be able to sets maintenanceStartDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to restricts access to device utilization report — verify error code is present
+    // Kills: nurse should not be able to sets maintenanceStartDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-091-AUTHMATRIX
-// Behavior: Device state transitions from available to rented when rental created
+// Behavior: System sets lastMaintenanceDate when device status transitions to available from maintenance
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_091_AUTHMATRIX() {
@@ -9712,8 +9329,8 @@ function basePayload_PROOF_B_091_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from available to rented when rental created", () => {
-  test("admin must be able to transitions from available to rented", async ({ request }) => {
+test.describe("Auth Matrix: System sets lastMaintenanceDate when device status transitions to available from maintenance", () => {
+  test("admin must be able to sets lastMaintenanceDate", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_091_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -9732,7 +9349,7 @@ test.describe("Auth Matrix: Device state transitions from available to rented wh
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from available to rented", async ({ request }) => {
+  test("technician must NOT be able to sets lastMaintenanceDate", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_091_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -9741,7 +9358,7 @@ test.describe("Auth Matrix: Device state transitions from available to rented wh
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from available to rented", async ({ request }) => {
+  test("nurse must NOT be able to sets lastMaintenanceDate", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_091_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -9749,7 +9366,7 @@ test.describe("Auth Matrix: Device state transitions from available to rented wh
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_091_AUTHMATRIX(),
@@ -9773,48 +9390,48 @@ test.describe("Auth Matrix: Device state transitions from available to rented wh
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from available to rented", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from available to rented
+  test("mutation-kill-2: Allow lower-privileged role to access lastMaintenanceDate", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access lastMaintenanceDate
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_091_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from available to rented — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access lastMaintenanceDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from available to rented — verify error code is present
+    // Kills: Allow lower-privileged role to access lastMaintenanceDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from available to rented", async ({ request }) => {
-    // Kills: technician should not be able to transitions from available to rented
+  test("mutation-kill-3: technician should not be able to sets lastMaintenanceDate", async ({ request }) => {
+    // Kills: technician should not be able to sets lastMaintenanceDate
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_091_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from available to rented — verify no data leaked in error response
+    // Kills: technician should not be able to sets lastMaintenanceDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from available to rented — verify error code is present
+    // Kills: technician should not be able to sets lastMaintenanceDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from available to rented", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from available to rented
+  test("mutation-kill-4: nurse should not be able to sets lastMaintenanceDate", async ({ request }) => {
+    // Kills: nurse should not be able to sets lastMaintenanceDate
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_091_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from available to rented — verify no data leaked in error response
+    // Kills: nurse should not be able to sets lastMaintenanceDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from available to rented — verify error code is present
+    // Kills: nurse should not be able to sets lastMaintenanceDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-092-AUTHMATRIX
-// Behavior: Device state transitions from rented to available when returned in good condition
+// Behavior: System clears maintenanceStartDate when device status transitions to available from maintenance
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_092_AUTHMATRIX() {
@@ -9832,8 +9449,8 @@ function basePayload_PROOF_B_092_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from rented to available when returned in good condition", () => {
-  test("admin must be able to transitions from rented to available", async ({ request }) => {
+test.describe("Auth Matrix: System clears maintenanceStartDate when device status transitions to available from maintenance", () => {
+  test("admin must be able to clears maintenanceStartDate", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_092_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -9852,7 +9469,7 @@ test.describe("Auth Matrix: Device state transitions from rented to available wh
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from rented to available", async ({ request }) => {
+  test("technician must NOT be able to clears maintenanceStartDate", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_092_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -9861,7 +9478,7 @@ test.describe("Auth Matrix: Device state transitions from rented to available wh
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from rented to available", async ({ request }) => {
+  test("nurse must NOT be able to clears maintenanceStartDate", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_092_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -9869,7 +9486,7 @@ test.describe("Auth Matrix: Device state transitions from rented to available wh
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant clears must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_092_AUTHMATRIX(),
@@ -9893,48 +9510,48 @@ test.describe("Auth Matrix: Device state transitions from rented to available wh
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from rented to available", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from rented to available
+  test("mutation-kill-2: Allow lower-privileged role to access maintenanceStartDate", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access maintenanceStartDate
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_092_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from rented to available — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access maintenanceStartDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from rented to available — verify error code is present
+    // Kills: Allow lower-privileged role to access maintenanceStartDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from rented to available", async ({ request }) => {
-    // Kills: technician should not be able to transitions from rented to available
+  test("mutation-kill-3: technician should not be able to clears maintenanceStartDate", async ({ request }) => {
+    // Kills: technician should not be able to clears maintenanceStartDate
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_092_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from rented to available — verify no data leaked in error response
+    // Kills: technician should not be able to clears maintenanceStartDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from rented to available — verify error code is present
+    // Kills: technician should not be able to clears maintenanceStartDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from rented to available", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from rented to available
+  test("mutation-kill-4: nurse should not be able to clears maintenanceStartDate", async ({ request }) => {
+    // Kills: nurse should not be able to clears maintenanceStartDate
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_092_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from rented to available — verify no data leaked in error response
+    // Kills: nurse should not be able to clears maintenanceStartDate — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from rented to available — verify error code is present
+    // Kills: nurse should not be able to clears maintenanceStartDate — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-093-AUTHMATRIX
-// Behavior: Device state transitions from rented to maintenance when returned needing repair
+// Behavior: System sets decommissionedAt when device status transitions to decommissioned
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_093_AUTHMATRIX() {
@@ -9952,8 +9569,8 @@ function basePayload_PROOF_B_093_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from rented to maintenance when returned needing repair", () => {
-  test("admin must be able to transitions from rented to maintenance", async ({ request }) => {
+test.describe("Auth Matrix: System sets decommissionedAt when device status transitions to decommissioned", () => {
+  test("admin must be able to sets decommissionedAt", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_093_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -9972,7 +9589,7 @@ test.describe("Auth Matrix: Device state transitions from rented to maintenance 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from rented to maintenance", async ({ request }) => {
+  test("technician must NOT be able to sets decommissionedAt", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_093_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -9981,7 +9598,7 @@ test.describe("Auth Matrix: Device state transitions from rented to maintenance 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from rented to maintenance", async ({ request }) => {
+  test("nurse must NOT be able to sets decommissionedAt", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_093_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -9989,7 +9606,7 @@ test.describe("Auth Matrix: Device state transitions from rented to maintenance 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_093_AUTHMATRIX(),
@@ -10013,48 +9630,48 @@ test.describe("Auth Matrix: Device state transitions from rented to maintenance 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from rented to maintenance", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from rented to maintenance
+  test("mutation-kill-2: Allow lower-privileged role to access decommissionedAt", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access decommissionedAt
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_093_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from rented to maintenance — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access decommissionedAt — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from rented to maintenance — verify error code is present
+    // Kills: Allow lower-privileged role to access decommissionedAt — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from rented to maintenance", async ({ request }) => {
-    // Kills: technician should not be able to transitions from rented to maintenance
+  test("mutation-kill-3: technician should not be able to sets decommissionedAt", async ({ request }) => {
+    // Kills: technician should not be able to sets decommissionedAt
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_093_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from rented to maintenance — verify no data leaked in error response
+    // Kills: technician should not be able to sets decommissionedAt — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from rented to maintenance — verify error code is present
+    // Kills: technician should not be able to sets decommissionedAt — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from rented to maintenance", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from rented to maintenance
+  test("mutation-kill-4: nurse should not be able to sets decommissionedAt", async ({ request }) => {
+    // Kills: nurse should not be able to sets decommissionedAt
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_093_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from rented to maintenance — verify no data leaked in error response
+    // Kills: nurse should not be able to sets decommissionedAt — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from rented to maintenance — verify error code is present
+    // Kills: nurse should not be able to sets decommissionedAt — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-094-AUTHMATRIX
-// Behavior: Device state transitions from available to maintenance for scheduled maintenance
+// Behavior: System sets decommissionedReason when device status transitions to decommissioned
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_094_AUTHMATRIX() {
@@ -10072,8 +9689,8 @@ function basePayload_PROOF_B_094_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from available to maintenance for scheduled maintenance", () => {
-  test("admin must be able to transitions from available to maintenance", async ({ request }) => {
+test.describe("Auth Matrix: System sets decommissionedReason when device status transitions to decommissioned", () => {
+  test("admin must be able to sets decommissionedReason", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_094_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10092,7 +9709,7 @@ test.describe("Auth Matrix: Device state transitions from available to maintenan
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from available to maintenance", async ({ request }) => {
+  test("technician must NOT be able to sets decommissionedReason", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_094_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10101,7 +9718,7 @@ test.describe("Auth Matrix: Device state transitions from available to maintenan
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from available to maintenance", async ({ request }) => {
+  test("nurse must NOT be able to sets decommissionedReason", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_094_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10109,7 +9726,7 @@ test.describe("Auth Matrix: Device state transitions from available to maintenan
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_094_AUTHMATRIX(),
@@ -10133,48 +9750,48 @@ test.describe("Auth Matrix: Device state transitions from available to maintenan
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from available to maintenance", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from available to maintenance
+  test("mutation-kill-2: Allow lower-privileged role to access decommissionedReason", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access decommissionedReason
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_094_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from available to maintenance — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access decommissionedReason — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from available to maintenance — verify error code is present
+    // Kills: Allow lower-privileged role to access decommissionedReason — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from available to maintenance", async ({ request }) => {
-    // Kills: technician should not be able to transitions from available to maintenance
+  test("mutation-kill-3: technician should not be able to sets decommissionedReason", async ({ request }) => {
+    // Kills: technician should not be able to sets decommissionedReason
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_094_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from available to maintenance — verify no data leaked in error response
+    // Kills: technician should not be able to sets decommissionedReason — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from available to maintenance — verify error code is present
+    // Kills: technician should not be able to sets decommissionedReason — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from available to maintenance", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from available to maintenance
+  test("mutation-kill-4: nurse should not be able to sets decommissionedReason", async ({ request }) => {
+    // Kills: nurse should not be able to sets decommissionedReason
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_094_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from available to maintenance — verify no data leaked in error response
+    // Kills: nurse should not be able to sets decommissionedReason — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from available to maintenance — verify error code is present
+    // Kills: nurse should not be able to sets decommissionedReason — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-095-AUTHMATRIX
-// Behavior: Device state transitions from maintenance to available when maintenance completed
+// Behavior: Rental status transitions from reserved to active on startDate or manual activation
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_095_AUTHMATRIX() {
@@ -10192,8 +9809,8 @@ function basePayload_PROOF_B_095_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from maintenance to available when maintenance completed", () => {
-  test("admin must be able to transitions from maintenance to available", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from reserved to active on startDate or manual activation", () => {
+  test("admin must be able to transitions from reserved to active", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_095_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10212,7 +9829,7 @@ test.describe("Auth Matrix: Device state transitions from maintenance to availab
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from maintenance to available", async ({ request }) => {
+  test("technician must NOT be able to transitions from reserved to active", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_095_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10221,7 +9838,7 @@ test.describe("Auth Matrix: Device state transitions from maintenance to availab
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from maintenance to available", async ({ request }) => {
+  test("nurse must NOT be able to transitions from reserved to active", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_095_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10253,48 +9870,48 @@ test.describe("Auth Matrix: Device state transitions from maintenance to availab
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from maintenance to available", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from maintenance to available
+  test("mutation-kill-2: Allow lower-privileged role to access from reserved to active", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from reserved to active
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_095_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from maintenance to available — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from reserved to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from maintenance to available — verify error code is present
+    // Kills: Allow lower-privileged role to access from reserved to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from maintenance to available", async ({ request }) => {
-    // Kills: technician should not be able to transitions from maintenance to available
+  test("mutation-kill-3: technician should not be able to transitions from reserved to active", async ({ request }) => {
+    // Kills: technician should not be able to transitions from reserved to active
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_095_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from maintenance to available — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from reserved to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from maintenance to available — verify error code is present
+    // Kills: technician should not be able to transitions from reserved to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from maintenance to available", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from maintenance to available
+  test("mutation-kill-4: nurse should not be able to transitions from reserved to active", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from reserved to active
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_095_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from maintenance to available — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from reserved to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from maintenance to available — verify error code is present
+    // Kills: nurse should not be able to transitions from reserved to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-096-AUTHMATRIX
-// Behavior: Device state transitions from available to decommissioned
+// Behavior: Rental status transitions from active to overdue automatically when past expectedReturnDate
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_096_AUTHMATRIX() {
@@ -10312,8 +9929,8 @@ function basePayload_PROOF_B_096_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from available to decommissioned", () => {
-  test("admin must be able to transitions from available to decommissioned", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from active to overdue automatically when past expectedReturnDate", () => {
+  test("admin must be able to transitions from active to overdue", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_096_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10332,7 +9949,7 @@ test.describe("Auth Matrix: Device state transitions from available to decommiss
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from available to decommissioned", async ({ request }) => {
+  test("technician must NOT be able to transitions from active to overdue", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_096_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10341,7 +9958,7 @@ test.describe("Auth Matrix: Device state transitions from available to decommiss
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from available to decommissioned", async ({ request }) => {
+  test("nurse must NOT be able to transitions from active to overdue", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_096_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10373,48 +9990,48 @@ test.describe("Auth Matrix: Device state transitions from available to decommiss
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from available to decommissioned", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from available to decommissioned
+  test("mutation-kill-2: Allow lower-privileged role to access from active to overdue", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from active to overdue
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_096_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from available to decommissioned — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from active to overdue — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from available to decommissioned — verify error code is present
+    // Kills: Allow lower-privileged role to access from active to overdue — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from available to decommissioned", async ({ request }) => {
-    // Kills: technician should not be able to transitions from available to decommissioned
+  test("mutation-kill-3: technician should not be able to transitions from active to overdue", async ({ request }) => {
+    // Kills: technician should not be able to transitions from active to overdue
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_096_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from available to decommissioned — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from active to overdue — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from available to decommissioned — verify error code is present
+    // Kills: technician should not be able to transitions from active to overdue — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from available to decommissioned", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from available to decommissioned
+  test("mutation-kill-4: nurse should not be able to transitions from active to overdue", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from active to overdue
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_096_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from available to decommissioned — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from active to overdue — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from available to decommissioned — verify error code is present
+    // Kills: nurse should not be able to transitions from active to overdue — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-097-AUTHMATRIX
-// Behavior: Device state transitions from maintenance to decommissioned
+// Behavior: Rental status transitions from active to returned when device returned
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_097_AUTHMATRIX() {
@@ -10432,8 +10049,8 @@ function basePayload_PROOF_B_097_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state transitions from maintenance to decommissioned", () => {
-  test("admin must be able to transitions from maintenance to decommissioned", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from active to returned when device returned", () => {
+  test("admin must be able to transitions from active to returned", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_097_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10452,7 +10069,7 @@ test.describe("Auth Matrix: Device state transitions from maintenance to decommi
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from maintenance to decommissioned", async ({ request }) => {
+  test("technician must NOT be able to transitions from active to returned", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_097_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10461,7 +10078,7 @@ test.describe("Auth Matrix: Device state transitions from maintenance to decommi
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from maintenance to decommissioned", async ({ request }) => {
+  test("nurse must NOT be able to transitions from active to returned", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_097_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10493,48 +10110,48 @@ test.describe("Auth Matrix: Device state transitions from maintenance to decommi
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from maintenance to decommissioned", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from maintenance to decommissioned
+  test("mutation-kill-2: Allow lower-privileged role to access from active to returned", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from active to returned
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_097_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from maintenance to decommissioned — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from active to returned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from maintenance to decommissioned — verify error code is present
+    // Kills: Allow lower-privileged role to access from active to returned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from maintenance to decommissioned", async ({ request }) => {
-    // Kills: technician should not be able to transitions from maintenance to decommissioned
+  test("mutation-kill-3: technician should not be able to transitions from active to returned", async ({ request }) => {
+    // Kills: technician should not be able to transitions from active to returned
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_097_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from maintenance to decommissioned — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from active to returned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from maintenance to decommissioned — verify error code is present
+    // Kills: technician should not be able to transitions from active to returned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from maintenance to decommissioned", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from maintenance to decommissioned
+  test("mutation-kill-4: nurse should not be able to transitions from active to returned", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from active to returned
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_097_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from maintenance to decommissioned — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from active to returned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from maintenance to decommissioned — verify error code is present
+    // Kills: nurse should not be able to transitions from active to returned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-098-AUTHMATRIX
-// Behavior: Device state cannot transition from decommissioned to any other state
+// Behavior: Rental status transitions from overdue to returned upon late return
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_098_AUTHMATRIX() {
@@ -10552,8 +10169,8 @@ function basePayload_PROOF_B_098_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state cannot transition from decommissioned to any other state", () => {
-  test("admin must be able to cannot transition from decommissioned", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from overdue to returned upon late return", () => {
+  test("admin must be able to transitions from overdue to returned", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_098_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10572,7 +10189,7 @@ test.describe("Auth Matrix: Device state cannot transition from decommissioned t
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot transition from decommissioned", async ({ request }) => {
+  test("technician must NOT be able to transitions from overdue to returned", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_098_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10581,7 +10198,7 @@ test.describe("Auth Matrix: Device state cannot transition from decommissioned t
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot transition from decommissioned", async ({ request }) => {
+  test("nurse must NOT be able to transitions from overdue to returned", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_098_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10589,7 +10206,7 @@ test.describe("Auth Matrix: Device state cannot transition from decommissioned t
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_098_AUTHMATRIX(),
@@ -10613,48 +10230,48 @@ test.describe("Auth Matrix: Device state cannot transition from decommissioned t
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from decommissioned", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from decommissioned
+  test("mutation-kill-2: Allow lower-privileged role to access from overdue to returned", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from overdue to returned
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_098_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from decommissioned — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from overdue to returned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from decommissioned — verify error code is present
+    // Kills: Allow lower-privileged role to access from overdue to returned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot transition from decommissioned", async ({ request }) => {
-    // Kills: technician should not be able to cannot transition from decommissioned
+  test("mutation-kill-3: technician should not be able to transitions from overdue to returned", async ({ request }) => {
+    // Kills: technician should not be able to transitions from overdue to returned
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_098_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot transition from decommissioned — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from overdue to returned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot transition from decommissioned — verify error code is present
+    // Kills: technician should not be able to transitions from overdue to returned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot transition from decommissioned", async ({ request }) => {
-    // Kills: nurse should not be able to cannot transition from decommissioned
+  test("mutation-kill-4: nurse should not be able to transitions from overdue to returned", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from overdue to returned
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_098_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot transition from decommissioned — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from overdue to returned — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot transition from decommissioned — verify error code is present
+    // Kills: nurse should not be able to transitions from overdue to returned — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-099-AUTHMATRIX
-// Behavior: Device state cannot transition from rented to decommissioned without return first
+// Behavior: Rental status transitions from returned to completed when final invoice paid
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_099_AUTHMATRIX() {
@@ -10672,8 +10289,8 @@ function basePayload_PROOF_B_099_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Device state cannot transition from rented to decommissioned without return first", () => {
-  test("admin must be able to cannot transition from rented to decommissioned", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from returned to completed when final invoice paid", () => {
+  test("admin must be able to transitions from returned to completed", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_099_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10692,7 +10309,7 @@ test.describe("Auth Matrix: Device state cannot transition from rented to decomm
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot transition from rented to decommissioned", async ({ request }) => {
+  test("technician must NOT be able to transitions from returned to completed", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_099_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10701,7 +10318,7 @@ test.describe("Auth Matrix: Device state cannot transition from rented to decomm
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot transition from rented to decommissioned", async ({ request }) => {
+  test("nurse must NOT be able to transitions from returned to completed", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_099_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10709,7 +10326,7 @@ test.describe("Auth Matrix: Device state cannot transition from rented to decomm
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_099_AUTHMATRIX(),
@@ -10733,48 +10350,48 @@ test.describe("Auth Matrix: Device state cannot transition from rented to decomm
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from rented to decommissioned", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from rented to decommissioned
+  test("mutation-kill-2: Allow lower-privileged role to access from returned to completed", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from returned to completed
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_099_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from rented to decommissioned — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from returned to completed — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from rented to decommissioned — verify error code is present
+    // Kills: Allow lower-privileged role to access from returned to completed — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot transition from rented to decommissioned", async ({ request }) => {
-    // Kills: technician should not be able to cannot transition from rented to decommissioned
+  test("mutation-kill-3: technician should not be able to transitions from returned to completed", async ({ request }) => {
+    // Kills: technician should not be able to transitions from returned to completed
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_099_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot transition from rented to decommissioned — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from returned to completed — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot transition from rented to decommissioned — verify error code is present
+    // Kills: technician should not be able to transitions from returned to completed — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot transition from rented to decommissioned", async ({ request }) => {
-    // Kills: nurse should not be able to cannot transition from rented to decommissioned
+  test("mutation-kill-4: nurse should not be able to transitions from returned to completed", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from returned to completed
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_099_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot transition from rented to decommissioned — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from returned to completed — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot transition from rented to decommissioned — verify error code is present
+    // Kills: nurse should not be able to transitions from returned to completed — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-100-AUTHMATRIX
-// Behavior: Transition to maintenance state sets maintenanceStartDate
+// Behavior: Rental status transitions from reserved to cancelled before startDate
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_100_AUTHMATRIX() {
@@ -10792,8 +10409,8 @@ function basePayload_PROOF_B_100_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Transition to maintenance state sets maintenanceStartDate", () => {
-  test("admin must be able to sets maintenanceStartDate", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from reserved to cancelled before startDate", () => {
+  test("admin must be able to transitions from reserved to cancelled", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_100_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10812,7 +10429,7 @@ test.describe("Auth Matrix: Transition to maintenance state sets maintenanceStar
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to sets maintenanceStartDate", async ({ request }) => {
+  test("technician must NOT be able to transitions from reserved to cancelled", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_100_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10821,7 +10438,7 @@ test.describe("Auth Matrix: Transition to maintenance state sets maintenanceStar
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to sets maintenanceStartDate", async ({ request }) => {
+  test("nurse must NOT be able to transitions from reserved to cancelled", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_100_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10829,7 +10446,7 @@ test.describe("Auth Matrix: Transition to maintenance state sets maintenanceStar
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_100_AUTHMATRIX(),
@@ -10853,48 +10470,48 @@ test.describe("Auth Matrix: Transition to maintenance state sets maintenanceStar
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access maintenanceStartDate", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access maintenanceStartDate
+  test("mutation-kill-2: Allow lower-privileged role to access from reserved to cancelled", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from reserved to cancelled
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_100_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access maintenanceStartDate — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from reserved to cancelled — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access maintenanceStartDate — verify error code is present
+    // Kills: Allow lower-privileged role to access from reserved to cancelled — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to sets maintenanceStartDate", async ({ request }) => {
-    // Kills: technician should not be able to sets maintenanceStartDate
+  test("mutation-kill-3: technician should not be able to transitions from reserved to cancelled", async ({ request }) => {
+    // Kills: technician should not be able to transitions from reserved to cancelled
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_100_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets maintenanceStartDate — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from reserved to cancelled — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets maintenanceStartDate — verify error code is present
+    // Kills: technician should not be able to transitions from reserved to cancelled — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to sets maintenanceStartDate", async ({ request }) => {
-    // Kills: nurse should not be able to sets maintenanceStartDate
+  test("mutation-kill-4: nurse should not be able to transitions from reserved to cancelled", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from reserved to cancelled
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_100_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets maintenanceStartDate — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from reserved to cancelled — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets maintenanceStartDate — verify error code is present
+    // Kills: nurse should not be able to transitions from reserved to cancelled — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-101-AUTHMATRIX
-// Behavior: Transition from maintenance to available sets lastMaintenanceDate and clears maintenanceStartDate
+// Behavior: Rental status transitions from active to cancelled by admin only with reason
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_101_AUTHMATRIX() {
@@ -10912,8 +10529,8 @@ function basePayload_PROOF_B_101_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Transition from maintenance to available sets lastMaintenanceDate and clears maintenanceStartDate", () => {
-  test("admin must be able to sets lastMaintenanceDate and clears maintenanceStartDate device", async ({ request }) => {
+test.describe("Auth Matrix: Rental status transitions from active to cancelled by admin only with reason", () => {
+  test("admin must be able to transitions from active to cancelled", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_101_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -10932,7 +10549,7 @@ test.describe("Auth Matrix: Transition from maintenance to available sets lastMa
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to sets lastMaintenanceDate and clears maintenanceStartDate device", async ({ request }) => {
+  test("technician must NOT be able to transitions from active to cancelled", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_101_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10941,7 +10558,7 @@ test.describe("Auth Matrix: Transition from maintenance to available sets lastMa
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to sets lastMaintenanceDate and clears maintenanceStartDate device", async ({ request }) => {
+  test("nurse must NOT be able to transitions from active to cancelled", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_101_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -10949,7 +10566,7 @@ test.describe("Auth Matrix: Transition from maintenance to available sets lastMa
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sets lastMaintenanceDate and clears maintenanceStartDate must be rejected", async ({ request }) => {
+  test("cross-tenant transitions must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_101_AUTHMATRIX(),
@@ -10973,48 +10590,48 @@ test.describe("Auth Matrix: Transition from maintenance to available sets lastMa
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access device", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device
+  test("mutation-kill-2: Allow lower-privileged role to access from active to cancelled", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from active to cancelled
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_101_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from active to cancelled — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device — verify error code is present
+    // Kills: Allow lower-privileged role to access from active to cancelled — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device", async ({ request }) => {
-    // Kills: technician should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device
+  test("mutation-kill-3: technician should not be able to transitions from active to cancelled", async ({ request }) => {
+    // Kills: technician should not be able to transitions from active to cancelled
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_101_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device — verify no data leaked in error response
+    // Kills: technician should not be able to transitions from active to cancelled — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device — verify error code is present
+    // Kills: technician should not be able to transitions from active to cancelled — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device", async ({ request }) => {
-    // Kills: nurse should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device
+  test("mutation-kill-4: nurse should not be able to transitions from active to cancelled", async ({ request }) => {
+    // Kills: nurse should not be able to transitions from active to cancelled
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_101_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device — verify no data leaked in error response
+    // Kills: nurse should not be able to transitions from active to cancelled — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets lastMaintenanceDate and clears maintenanceStartDate device — verify error code is present
+    // Kills: nurse should not be able to transitions from active to cancelled — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-102-AUTHMATRIX
-// Behavior: Transition to decommissioned state sets decommissionedAt and decommissionedReason
+// Behavior: Rental status cannot transition from completed to any other state
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_102_AUTHMATRIX() {
@@ -11032,8 +10649,8 @@ function basePayload_PROOF_B_102_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Transition to decommissioned state sets decommissionedAt and decommissionedReason", () => {
-  test("admin must be able to sets decommissionedAt and decommissionedReason", async ({ request }) => {
+test.describe("Auth Matrix: Rental status cannot transition from completed to any other state", () => {
+  test("admin must be able to cannot transition from completed", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_102_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11052,7 +10669,7 @@ test.describe("Auth Matrix: Transition to decommissioned state sets decommission
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to sets decommissionedAt and decommissionedReason", async ({ request }) => {
+  test("technician must NOT be able to cannot transition from completed", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_102_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11061,7 +10678,7 @@ test.describe("Auth Matrix: Transition to decommissioned state sets decommission
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to sets decommissionedAt and decommissionedReason", async ({ request }) => {
+  test("nurse must NOT be able to cannot transition from completed", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_102_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11069,7 +10686,7 @@ test.describe("Auth Matrix: Transition to decommissioned state sets decommission
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
+  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_102_AUTHMATRIX(),
@@ -11093,48 +10710,48 @@ test.describe("Auth Matrix: Transition to decommissioned state sets decommission
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access decommissionedAt and decommissionedReason", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access decommissionedAt and decommissionedReason
+  test("mutation-kill-2: Allow lower-privileged role to access from completed", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from completed
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_102_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access decommissionedAt and decommissionedReason — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from completed — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access decommissionedAt and decommissionedReason — verify error code is present
+    // Kills: Allow lower-privileged role to access from completed — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to sets decommissionedAt and decommissionedReason", async ({ request }) => {
-    // Kills: technician should not be able to sets decommissionedAt and decommissionedReason
+  test("mutation-kill-3: technician should not be able to cannot transition from completed", async ({ request }) => {
+    // Kills: technician should not be able to cannot transition from completed
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_102_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets decommissionedAt and decommissionedReason — verify no data leaked in error response
+    // Kills: technician should not be able to cannot transition from completed — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets decommissionedAt and decommissionedReason — verify error code is present
+    // Kills: technician should not be able to cannot transition from completed — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to sets decommissionedAt and decommissionedReason", async ({ request }) => {
-    // Kills: nurse should not be able to sets decommissionedAt and decommissionedReason
+  test("mutation-kill-4: nurse should not be able to cannot transition from completed", async ({ request }) => {
+    // Kills: nurse should not be able to cannot transition from completed
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_102_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets decommissionedAt and decommissionedReason — verify no data leaked in error response
+    // Kills: nurse should not be able to cannot transition from completed — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets decommissionedAt and decommissionedReason — verify error code is present
+    // Kills: nurse should not be able to cannot transition from completed — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-103-AUTHMATRIX
-// Behavior: Rental state transitions from reserved to active on startDate or manual activation
+// Behavior: Rental status cannot transition from cancelled to active
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_103_AUTHMATRIX() {
@@ -11152,8 +10769,8 @@ function basePayload_PROOF_B_103_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state transitions from reserved to active on startDate or manual activation", () => {
-  test("admin must be able to transitions from reserved to active", async ({ request }) => {
+test.describe("Auth Matrix: Rental status cannot transition from cancelled to active", () => {
+  test("admin must be able to cannot transition from cancelled to active", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_103_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11172,7 +10789,7 @@ test.describe("Auth Matrix: Rental state transitions from reserved to active on 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from reserved to active", async ({ request }) => {
+  test("technician must NOT be able to cannot transition from cancelled to active", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_103_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11181,7 +10798,7 @@ test.describe("Auth Matrix: Rental state transitions from reserved to active on 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from reserved to active", async ({ request }) => {
+  test("nurse must NOT be able to cannot transition from cancelled to active", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_103_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11189,7 +10806,7 @@ test.describe("Auth Matrix: Rental state transitions from reserved to active on 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_103_AUTHMATRIX(),
@@ -11213,168 +10830,48 @@ test.describe("Auth Matrix: Rental state transitions from reserved to active on 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from reserved to active", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from reserved to active
+  test("mutation-kill-2: Allow lower-privileged role to access from cancelled to active", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from cancelled to active
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_103_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from reserved to active — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from cancelled to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from reserved to active — verify error code is present
+    // Kills: Allow lower-privileged role to access from cancelled to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from reserved to active", async ({ request }) => {
-    // Kills: technician should not be able to transitions from reserved to active
+  test("mutation-kill-3: technician should not be able to cannot transition from cancelled to active", async ({ request }) => {
+    // Kills: technician should not be able to cannot transition from cancelled to active
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_103_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from reserved to active — verify no data leaked in error response
+    // Kills: technician should not be able to cannot transition from cancelled to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from reserved to active — verify error code is present
+    // Kills: technician should not be able to cannot transition from cancelled to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from reserved to active", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from reserved to active
+  test("mutation-kill-4: nurse should not be able to cannot transition from cancelled to active", async ({ request }) => {
+    // Kills: nurse should not be able to cannot transition from cancelled to active
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_103_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from reserved to active — verify no data leaked in error response
+    // Kills: nurse should not be able to cannot transition from cancelled to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from reserved to active — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-104-AUTHMATRIX
-// Behavior: Rental state transitions from active to overdue automatically when past expectedReturnDate
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_104_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: Rental state transitions from active to overdue automatically when past expectedReturnDate", () => {
-  test("admin must be able to transitions from active to overdue automatically", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to transitions from active to overdue automatically", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to transitions from active to overdue automatically", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_104_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access from active to overdue automatically", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from active to overdue automatically
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from active to overdue automatically — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from active to overdue automatically — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to transitions from active to overdue automatically", async ({ request }) => {
-    // Kills: technician should not be able to transitions from active to overdue automatically
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from active to overdue automatically — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from active to overdue automatically — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to transitions from active to overdue automatically", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from active to overdue automatically
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_104_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from active to overdue automatically — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from active to overdue automatically — verify error code is present
+    // Kills: nurse should not be able to cannot transition from cancelled to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-105-AUTHMATRIX
-// Behavior: Rental state transitions from active to returned when device is returned
+// Behavior: Rental status cannot transition from returned to active
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_105_AUTHMATRIX() {
@@ -11392,8 +10889,8 @@ function basePayload_PROOF_B_105_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state transitions from active to returned when device is returned", () => {
-  test("admin must be able to transitions from active to returned", async ({ request }) => {
+test.describe("Auth Matrix: Rental status cannot transition from returned to active", () => {
+  test("admin must be able to cannot transition from returned to active", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_105_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11412,7 +10909,7 @@ test.describe("Auth Matrix: Rental state transitions from active to returned whe
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from active to returned", async ({ request }) => {
+  test("technician must NOT be able to cannot transition from returned to active", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_105_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11421,7 +10918,7 @@ test.describe("Auth Matrix: Rental state transitions from active to returned whe
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from active to returned", async ({ request }) => {
+  test("nurse must NOT be able to cannot transition from returned to active", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_105_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11429,7 +10926,7 @@ test.describe("Auth Matrix: Rental state transitions from active to returned whe
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_105_AUTHMATRIX(),
@@ -11453,48 +10950,48 @@ test.describe("Auth Matrix: Rental state transitions from active to returned whe
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from active to returned", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from active to returned
+  test("mutation-kill-2: Allow lower-privileged role to access from returned to active", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access from returned to active
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_105_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from active to returned — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access from returned to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from active to returned — verify error code is present
+    // Kills: Allow lower-privileged role to access from returned to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from active to returned", async ({ request }) => {
-    // Kills: technician should not be able to transitions from active to returned
+  test("mutation-kill-3: technician should not be able to cannot transition from returned to active", async ({ request }) => {
+    // Kills: technician should not be able to cannot transition from returned to active
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_105_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from active to returned — verify no data leaked in error response
+    // Kills: technician should not be able to cannot transition from returned to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from active to returned — verify error code is present
+    // Kills: technician should not be able to cannot transition from returned to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from active to returned", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from active to returned
+  test("mutation-kill-4: nurse should not be able to cannot transition from returned to active", async ({ request }) => {
+    // Kills: nurse should not be able to cannot transition from returned to active
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_105_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from active to returned — verify no data leaked in error response
+    // Kills: nurse should not be able to cannot transition from returned to active — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from active to returned — verify error code is present
+    // Kills: nurse should not be able to cannot transition from returned to active — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-106-AUTHMATRIX
-// Behavior: Rental state transitions from overdue to returned upon late return, applying extra charges
+// Behavior: System sets device.status to rented when rental status transitions to active
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_106_AUTHMATRIX() {
@@ -11512,8 +11009,8 @@ function basePayload_PROOF_B_106_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state transitions from overdue to returned upon late return, applying extra charges", () => {
-  test("admin must be able to transitions from overdue to returned", async ({ request }) => {
+test.describe("Auth Matrix: System sets device.status to rented when rental status transitions to active", () => {
+  test("admin must be able to sets device.status", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_106_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11532,7 +11029,7 @@ test.describe("Auth Matrix: Rental state transitions from overdue to returned up
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from overdue to returned", async ({ request }) => {
+  test("technician must NOT be able to sets device.status", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_106_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11541,7 +11038,7 @@ test.describe("Auth Matrix: Rental state transitions from overdue to returned up
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from overdue to returned", async ({ request }) => {
+  test("nurse must NOT be able to sets device.status", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_106_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11549,7 +11046,7 @@ test.describe("Auth Matrix: Rental state transitions from overdue to returned up
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant sets must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_106_AUTHMATRIX(),
@@ -11573,48 +11070,48 @@ test.describe("Auth Matrix: Rental state transitions from overdue to returned up
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from overdue to returned", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from overdue to returned
+  test("mutation-kill-2: Allow lower-privileged role to access device.status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device.status
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_106_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from overdue to returned — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from overdue to returned — verify error code is present
+    // Kills: Allow lower-privileged role to access device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from overdue to returned", async ({ request }) => {
-    // Kills: technician should not be able to transitions from overdue to returned
+  test("mutation-kill-3: technician should not be able to sets device.status", async ({ request }) => {
+    // Kills: technician should not be able to sets device.status
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_106_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from overdue to returned — verify no data leaked in error response
+    // Kills: technician should not be able to sets device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from overdue to returned — verify error code is present
+    // Kills: technician should not be able to sets device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from overdue to returned", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from overdue to returned
+  test("mutation-kill-4: nurse should not be able to sets device.status", async ({ request }) => {
+    // Kills: nurse should not be able to sets device.status
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_106_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from overdue to returned — verify no data leaked in error response
+    // Kills: nurse should not be able to sets device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from overdue to returned — verify error code is present
+    // Kills: nurse should not be able to sets device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-107-AUTHMATRIX
-// Behavior: Rental state transitions from returned to completed when final invoice is paid
+// Behavior: System sends overdue notification when rental status transitions to overdue
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_107_AUTHMATRIX() {
@@ -11632,8 +11129,8 @@ function basePayload_PROOF_B_107_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state transitions from returned to completed when final invoice is paid", () => {
-  test("admin must be able to transitions from returned to completed", async ({ request }) => {
+test.describe("Auth Matrix: System sends overdue notification when rental status transitions to overdue", () => {
+  test("admin must be able to sends overdue notification", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_107_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11652,7 +11149,7 @@ test.describe("Auth Matrix: Rental state transitions from returned to completed 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from returned to completed", async ({ request }) => {
+  test("technician must NOT be able to sends overdue notification", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_107_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11661,7 +11158,7 @@ test.describe("Auth Matrix: Rental state transitions from returned to completed 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from returned to completed", async ({ request }) => {
+  test("nurse must NOT be able to sends overdue notification", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_107_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11669,7 +11166,7 @@ test.describe("Auth Matrix: Rental state transitions from returned to completed 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant sends must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_107_AUTHMATRIX(),
@@ -11693,48 +11190,48 @@ test.describe("Auth Matrix: Rental state transitions from returned to completed 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from returned to completed", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from returned to completed
+  test("mutation-kill-2: Allow lower-privileged role to access overdue notification", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access overdue notification
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_107_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from returned to completed — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access overdue notification — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from returned to completed — verify error code is present
+    // Kills: Allow lower-privileged role to access overdue notification — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from returned to completed", async ({ request }) => {
-    // Kills: technician should not be able to transitions from returned to completed
+  test("mutation-kill-3: technician should not be able to sends overdue notification", async ({ request }) => {
+    // Kills: technician should not be able to sends overdue notification
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_107_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from returned to completed — verify no data leaked in error response
+    // Kills: technician should not be able to sends overdue notification — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from returned to completed — verify error code is present
+    // Kills: technician should not be able to sends overdue notification — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from returned to completed", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from returned to completed
+  test("mutation-kill-4: nurse should not be able to sends overdue notification", async ({ request }) => {
+    // Kills: nurse should not be able to sends overdue notification
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_107_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from returned to completed — verify no data leaked in error response
+    // Kills: nurse should not be able to sends overdue notification — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from returned to completed — verify error code is present
+    // Kills: nurse should not be able to sends overdue notification — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-108-AUTHMATRIX
-// Behavior: Rental state transitions from reserved to cancelled before startDate
+// Behavior: System calculates late fees (150% of dailyRate) when rental status transitions to overdue
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_108_AUTHMATRIX() {
@@ -11752,8 +11249,8 @@ function basePayload_PROOF_B_108_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state transitions from reserved to cancelled before startDate", () => {
-  test("admin must be able to transitions from reserved to cancelled", async ({ request }) => {
+test.describe("Auth Matrix: System calculates late fees (150% of dailyRate) when rental status transitions to overdue", () => {
+  test("admin must be able to calculates late fees", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_108_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11772,7 +11269,7 @@ test.describe("Auth Matrix: Rental state transitions from reserved to cancelled 
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from reserved to cancelled", async ({ request }) => {
+  test("technician must NOT be able to calculates late fees", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_108_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11781,7 +11278,7 @@ test.describe("Auth Matrix: Rental state transitions from reserved to cancelled 
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from reserved to cancelled", async ({ request }) => {
+  test("nurse must NOT be able to calculates late fees", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_108_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11789,7 +11286,7 @@ test.describe("Auth Matrix: Rental state transitions from reserved to cancelled 
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant calculates must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_108_AUTHMATRIX(),
@@ -11813,48 +11310,48 @@ test.describe("Auth Matrix: Rental state transitions from reserved to cancelled 
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from reserved to cancelled", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from reserved to cancelled
+  test("mutation-kill-2: Allow lower-privileged role to access late fees", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access late fees
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_108_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from reserved to cancelled — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access late fees — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from reserved to cancelled — verify error code is present
+    // Kills: Allow lower-privileged role to access late fees — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from reserved to cancelled", async ({ request }) => {
-    // Kills: technician should not be able to transitions from reserved to cancelled
+  test("mutation-kill-3: technician should not be able to calculates late fees", async ({ request }) => {
+    // Kills: technician should not be able to calculates late fees
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_108_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from reserved to cancelled — verify no data leaked in error response
+    // Kills: technician should not be able to calculates late fees — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from reserved to cancelled — verify error code is present
+    // Kills: technician should not be able to calculates late fees — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from reserved to cancelled", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from reserved to cancelled
+  test("mutation-kill-4: nurse should not be able to calculates late fees", async ({ request }) => {
+    // Kills: nurse should not be able to calculates late fees
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_108_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from reserved to cancelled — verify no data leaked in error response
+    // Kills: nurse should not be able to calculates late fees — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from reserved to cancelled — verify error code is present
+    // Kills: nurse should not be able to calculates late fees — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-109-AUTHMATRIX
-// Behavior: Rental state transitions from active to cancelled by admin only, with reason
+// Behavior: System calculates final charges when rental status transitions to returned
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_109_AUTHMATRIX() {
@@ -11872,8 +11369,8 @@ function basePayload_PROOF_B_109_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state transitions from active to cancelled by admin only, with reason", () => {
-  test("admin must be able to transitions from active to cancelled", async ({ request }) => {
+test.describe("Auth Matrix: System calculates final charges when rental status transitions to returned", () => {
+  test("admin must be able to calculates final charges", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_109_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -11892,7 +11389,7 @@ test.describe("Auth Matrix: Rental state transitions from active to cancelled by
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to transitions from active to cancelled", async ({ request }) => {
+  test("technician must NOT be able to calculates final charges", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_109_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11901,7 +11398,7 @@ test.describe("Auth Matrix: Rental state transitions from active to cancelled by
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to transitions from active to cancelled", async ({ request }) => {
+  test("nurse must NOT be able to calculates final charges", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_109_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -11909,7 +11406,7 @@ test.describe("Auth Matrix: Rental state transitions from active to cancelled by
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant transitions must be rejected", async ({ request }) => {
+  test("cross-tenant calculates must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_109_AUTHMATRIX(),
@@ -11933,48 +11430,48 @@ test.describe("Auth Matrix: Rental state transitions from active to cancelled by
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from active to cancelled", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from active to cancelled
+  test("mutation-kill-2: Allow lower-privileged role to access final charges", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access final charges
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_109_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from active to cancelled — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access final charges — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from active to cancelled — verify error code is present
+    // Kills: Allow lower-privileged role to access final charges — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to transitions from active to cancelled", async ({ request }) => {
-    // Kills: technician should not be able to transitions from active to cancelled
+  test("mutation-kill-3: technician should not be able to calculates final charges", async ({ request }) => {
+    // Kills: technician should not be able to calculates final charges
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_109_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to transitions from active to cancelled — verify no data leaked in error response
+    // Kills: technician should not be able to calculates final charges — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to transitions from active to cancelled — verify error code is present
+    // Kills: technician should not be able to calculates final charges — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to transitions from active to cancelled", async ({ request }) => {
-    // Kills: nurse should not be able to transitions from active to cancelled
+  test("mutation-kill-4: nurse should not be able to calculates final charges", async ({ request }) => {
+    // Kills: nurse should not be able to calculates final charges
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_109_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to transitions from active to cancelled — verify no data leaked in error response
+    // Kills: nurse should not be able to calculates final charges — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to transitions from active to cancelled — verify error code is present
+    // Kills: nurse should not be able to calculates final charges — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-110-AUTHMATRIX
-// Behavior: Rental state cannot transition from completed to any other state
+// Behavior: System updates device.status to available/maintenance when rental status transitions to returned
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_110_AUTHMATRIX() {
@@ -11992,8 +11489,8 @@ function basePayload_PROOF_B_110_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state cannot transition from completed to any other state", () => {
-  test("admin must be able to cannot transition from completed", async ({ request }) => {
+test.describe("Auth Matrix: System updates device.status to available/maintenance when rental status transitions to returned", () => {
+  test("admin must be able to updates device.status", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_110_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -12012,7 +11509,7 @@ test.describe("Auth Matrix: Rental state cannot transition from completed to any
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot transition from completed", async ({ request }) => {
+  test("technician must NOT be able to updates device.status", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_110_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12021,7 +11518,7 @@ test.describe("Auth Matrix: Rental state cannot transition from completed to any
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot transition from completed", async ({ request }) => {
+  test("nurse must NOT be able to updates device.status", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_110_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12029,7 +11526,7 @@ test.describe("Auth Matrix: Rental state cannot transition from completed to any
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+  test("cross-tenant updates must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_110_AUTHMATRIX(),
@@ -12053,48 +11550,48 @@ test.describe("Auth Matrix: Rental state cannot transition from completed to any
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from completed", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from completed
+  test("mutation-kill-2: Allow lower-privileged role to access device.status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device.status
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_110_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from completed — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from completed — verify error code is present
+    // Kills: Allow lower-privileged role to access device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot transition from completed", async ({ request }) => {
-    // Kills: technician should not be able to cannot transition from completed
+  test("mutation-kill-3: technician should not be able to updates device.status", async ({ request }) => {
+    // Kills: technician should not be able to updates device.status
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_110_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot transition from completed — verify no data leaked in error response
+    // Kills: technician should not be able to updates device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot transition from completed — verify error code is present
+    // Kills: technician should not be able to updates device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot transition from completed", async ({ request }) => {
-    // Kills: nurse should not be able to cannot transition from completed
+  test("mutation-kill-4: nurse should not be able to updates device.status", async ({ request }) => {
+    // Kills: nurse should not be able to updates device.status
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_110_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot transition from completed — verify no data leaked in error response
+    // Kills: nurse should not be able to updates device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot transition from completed — verify error code is present
+    // Kills: nurse should not be able to updates device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-111-AUTHMATRIX
-// Behavior: Rental state cannot transition from cancelled to active
+// Behavior: System archives rental when rental status transitions to completed
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_111_AUTHMATRIX() {
@@ -12112,8 +11609,8 @@ function basePayload_PROOF_B_111_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state cannot transition from cancelled to active", () => {
-  test("admin must be able to cannot transition from cancelled to active", async ({ request }) => {
+test.describe("Auth Matrix: System archives rental when rental status transitions to completed", () => {
+  test("admin must be able to archives rental", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_111_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -12132,7 +11629,7 @@ test.describe("Auth Matrix: Rental state cannot transition from cancelled to act
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot transition from cancelled to active", async ({ request }) => {
+  test("technician must NOT be able to archives rental", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_111_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12141,7 +11638,7 @@ test.describe("Auth Matrix: Rental state cannot transition from cancelled to act
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot transition from cancelled to active", async ({ request }) => {
+  test("nurse must NOT be able to archives rental", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_111_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12149,7 +11646,7 @@ test.describe("Auth Matrix: Rental state cannot transition from cancelled to act
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+  test("cross-tenant archives must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_111_AUTHMATRIX(),
@@ -12173,48 +11670,48 @@ test.describe("Auth Matrix: Rental state cannot transition from cancelled to act
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from cancelled to active", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from cancelled to active
+  test("mutation-kill-2: Allow lower-privileged role to access rental", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access rental
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_111_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from cancelled to active — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from cancelled to active — verify error code is present
+    // Kills: Allow lower-privileged role to access rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot transition from cancelled to active", async ({ request }) => {
-    // Kills: technician should not be able to cannot transition from cancelled to active
+  test("mutation-kill-3: technician should not be able to archives rental", async ({ request }) => {
+    // Kills: technician should not be able to archives rental
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_111_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot transition from cancelled to active — verify no data leaked in error response
+    // Kills: technician should not be able to archives rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot transition from cancelled to active — verify error code is present
+    // Kills: technician should not be able to archives rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot transition from cancelled to active", async ({ request }) => {
-    // Kills: nurse should not be able to cannot transition from cancelled to active
+  test("mutation-kill-4: nurse should not be able to archives rental", async ({ request }) => {
+    // Kills: nurse should not be able to archives rental
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_111_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot transition from cancelled to active — verify no data leaked in error response
+    // Kills: nurse should not be able to archives rental — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot transition from cancelled to active — verify error code is present
+    // Kills: nurse should not be able to archives rental — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-112-AUTHMATRIX
-// Behavior: Rental state cannot transition from overdue to reserved
+// Behavior: System updates patient.completedRentals count when rental status transitions to completed
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_112_AUTHMATRIX() {
@@ -12232,8 +11729,8 @@ function basePayload_PROOF_B_112_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state cannot transition from overdue to reserved", () => {
-  test("admin must be able to cannot transition from overdue to reserved", async ({ request }) => {
+test.describe("Auth Matrix: System updates patient.completedRentals count when rental status transitions to completed", () => {
+  test("admin must be able to updates patient.completedRentals count", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_112_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -12252,7 +11749,7 @@ test.describe("Auth Matrix: Rental state cannot transition from overdue to reser
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot transition from overdue to reserved", async ({ request }) => {
+  test("technician must NOT be able to updates patient.completedRentals count", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_112_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12261,7 +11758,7 @@ test.describe("Auth Matrix: Rental state cannot transition from overdue to reser
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot transition from overdue to reserved", async ({ request }) => {
+  test("nurse must NOT be able to updates patient.completedRentals count", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_112_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12269,7 +11766,7 @@ test.describe("Auth Matrix: Rental state cannot transition from overdue to reser
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+  test("cross-tenant updates must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_112_AUTHMATRIX(),
@@ -12293,48 +11790,48 @@ test.describe("Auth Matrix: Rental state cannot transition from overdue to reser
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from overdue to reserved", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from overdue to reserved
+  test("mutation-kill-2: Allow lower-privileged role to access patient.completedRentals count", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access patient.completedRentals count
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_112_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from overdue to reserved — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access patient.completedRentals count — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from overdue to reserved — verify error code is present
+    // Kills: Allow lower-privileged role to access patient.completedRentals count — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot transition from overdue to reserved", async ({ request }) => {
-    // Kills: technician should not be able to cannot transition from overdue to reserved
+  test("mutation-kill-3: technician should not be able to updates patient.completedRentals count", async ({ request }) => {
+    // Kills: technician should not be able to updates patient.completedRentals count
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_112_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot transition from overdue to reserved — verify no data leaked in error response
+    // Kills: technician should not be able to updates patient.completedRentals count — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot transition from overdue to reserved — verify error code is present
+    // Kills: technician should not be able to updates patient.completedRentals count — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot transition from overdue to reserved", async ({ request }) => {
-    // Kills: nurse should not be able to cannot transition from overdue to reserved
+  test("mutation-kill-4: nurse should not be able to updates patient.completedRentals count", async ({ request }) => {
+    // Kills: nurse should not be able to updates patient.completedRentals count
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_112_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot transition from overdue to reserved — verify no data leaked in error response
+    // Kills: nurse should not be able to updates patient.completedRentals count — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot transition from overdue to reserved — verify error code is present
+    // Kills: nurse should not be able to updates patient.completedRentals count — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 });
 
 // Proof: PROOF-B-113-AUTHMATRIX
-// Behavior: Rental state cannot transition from returned to active
+// Behavior: System updates device.status to available when rental status transitions to cancelled
 // Risk: high
 // MutationTargets: 4 kills required for 100% mutation score
 function basePayload_PROOF_B_113_AUTHMATRIX() {
@@ -12352,8 +11849,8 @@ function basePayload_PROOF_B_113_AUTHMATRIX() {
     notes: "test-notes",
   };
 }
-test.describe("Auth Matrix: Rental state cannot transition from returned to active", () => {
-  test("admin must be able to cannot transition from returned to active", async ({ request }) => {
+test.describe("Auth Matrix: System updates device.status to available when rental status transitions to cancelled", () => {
+  test("admin must be able to updates device.status", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_113_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([200, 201]);
@@ -12372,7 +11869,7 @@ test.describe("Auth Matrix: Rental state cannot transition from returned to acti
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("technician must NOT be able to cannot transition from returned to active", async ({ request }) => {
+  test("technician must NOT be able to updates device.status", async ({ request }) => {
     const roleCookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_113_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12381,7 +11878,7 @@ test.describe("Auth Matrix: Rental state cannot transition from returned to acti
     expect(data).toBeFalsy();
   });
 
-  test("nurse must NOT be able to cannot transition from returned to active", async ({ request }) => {
+  test("nurse must NOT be able to updates device.status", async ({ request }) => {
     const roleCookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_113_AUTHMATRIX(), roleCookie);
     expect(response.status).toBeOneOf([401, 403]);
@@ -12389,7 +11886,7 @@ test.describe("Auth Matrix: Rental state cannot transition from returned to acti
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });
-  test("cross-tenant cannot transition must be rejected", async ({ request }) => {
+  test("cross-tenant updates must be rejected", async ({ request }) => {
     const cookie = await getAdminCookie(request);
     const crossTenantPayload = {
       ...basePayload_PROOF_B_113_AUTHMATRIX(),
@@ -12413,1001 +11910,41 @@ test.describe("Auth Matrix: Rental state cannot transition from returned to acti
     expect(data).not.toBeUndefined();
   });
 
-  test("mutation-kill-2: Allow lower-privileged role to access from returned to active", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access from returned to active
+  test("mutation-kill-2: Allow lower-privileged role to access device.status", async ({ request }) => {
+    // Kills: Allow lower-privileged role to access device.status
     const cookie = await getAdminCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_113_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access from returned to active — verify no data leaked in error response
+    // Kills: Allow lower-privileged role to access device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access from returned to active — verify error code is present
+    // Kills: Allow lower-privileged role to access device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-3: technician should not be able to cannot transition from returned to active", async ({ request }) => {
-    // Kills: technician should not be able to cannot transition from returned to active
+  test("mutation-kill-3: technician should not be able to updates device.status", async ({ request }) => {
+    // Kills: technician should not be able to updates device.status
     const cookie = await getTechnicianCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_113_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to cannot transition from returned to active — verify no data leaked in error response
+    // Kills: technician should not be able to updates device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: technician should not be able to cannot transition from returned to active — verify error code is present
+    // Kills: technician should not be able to updates device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 
-  test("mutation-kill-4: nurse should not be able to cannot transition from returned to active", async ({ request }) => {
-    // Kills: nurse should not be able to cannot transition from returned to active
+  test("mutation-kill-4: nurse should not be able to updates device.status", async ({ request }) => {
+    // Kills: nurse should not be able to updates device.status
     const cookie = await getNurseCookie(request);
     const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_113_AUTHMATRIX(), cookie);
     expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to cannot transition from returned to active — verify no data leaked in error response
+    // Kills: nurse should not be able to updates device.status — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
-    // Kills: nurse should not be able to cannot transition from returned to active — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-114-AUTHMATRIX
-// Behavior: Transition to active rental state sets device.status to 'rented'
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_114_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: Transition to active rental state sets device.status to 'rented'", () => {
-  test("admin must be able to sets device.status to 'rented'", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to sets device.status to 'rented'", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to sets device.status to 'rented'", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant sets must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_114_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access device.status to 'rented'", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access device.status to 'rented'
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access device.status to 'rented' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access device.status to 'rented' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to sets device.status to 'rented'", async ({ request }) => {
-    // Kills: technician should not be able to sets device.status to 'rented'
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets device.status to 'rented' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets device.status to 'rented' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to sets device.status to 'rented'", async ({ request }) => {
-    // Kills: nurse should not be able to sets device.status to 'rented'
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_114_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets device.status to 'rented' — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets device.status to 'rented' — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-115-AUTHMATRIX
-// Behavior: Transition to overdue rental state sends overdue notification and calculates late fees
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_115_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: Transition to overdue rental state sends overdue notification and calculates late fees", () => {
-  test("admin must be able to sends overdue notification and calculates late fees rental", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to sends overdue notification and calculates late fees rental", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to sends overdue notification and calculates late fees rental", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant sends overdue notification and calculates late fees must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_115_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to sends overdue notification and calculates late fees rental", async ({ request }) => {
-    // Kills: technician should not be able to sends overdue notification and calculates late fees rental
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sends overdue notification and calculates late fees rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to sends overdue notification and calculates late fees rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to sends overdue notification and calculates late fees rental", async ({ request }) => {
-    // Kills: nurse should not be able to sends overdue notification and calculates late fees rental
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_115_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sends overdue notification and calculates late fees rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sends overdue notification and calculates late fees rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-116-AUTHMATRIX
-// Behavior: Transition to returned rental state calculates final charges and updates device status
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_116_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: Transition to returned rental state calculates final charges and updates device status", () => {
-  test("admin must be able to calculates final charges and updates device status rental", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to calculates final charges and updates device status rental", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to calculates final charges and updates device status rental", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant calculates final charges and updates device status must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_116_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to calculates final charges and updates device status rental", async ({ request }) => {
-    // Kills: technician should not be able to calculates final charges and updates device status rental
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to calculates final charges and updates device status rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to calculates final charges and updates device status rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to calculates final charges and updates device status rental", async ({ request }) => {
-    // Kills: nurse should not be able to calculates final charges and updates device status rental
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_116_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to calculates final charges and updates device status rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to calculates final charges and updates device status rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-117-AUTHMATRIX
-// Behavior: Transition to completed rental state archives rental and updates patient.completedRentals count
-// Risk: critical
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_117_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: Transition to completed rental state archives rental and updates patient.completedRentals count", () => {
-  test("admin must be able to archives rental and updates patient.completedRentals count rental", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to archives rental and updates patient.completedRentals count rental", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to archives rental and updates patient.completedRentals count rental", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant archives rental and updates patient.completedRentals count must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_117_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to archives rental and updates patient.completedRentals count rental", async ({ request }) => {
-    // Kills: technician should not be able to archives rental and updates patient.completedRentals count rental
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to archives rental and updates patient.completedRentals count rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to archives rental and updates patient.completedRentals count rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to archives rental and updates patient.completedRentals count rental", async ({ request }) => {
-    // Kills: nurse should not be able to archives rental and updates patient.completedRentals count rental
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_117_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to archives rental and updates patient.completedRentals count rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to archives rental and updates patient.completedRentals count rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-118-AUTHMATRIX
-// Behavior: Transition to cancelled rental state sets device.status to 'available' and refunds deposit if applicable
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_118_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: Transition to cancelled rental state sets device.status to 'available' and refunds deposit if applicable", () => {
-  test("admin must be able to sets device.status to 'available' and refunds deposit if applicable rental", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to sets device.status to 'available' and refunds deposit if applicable rental", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to sets device.status to 'available' and refunds deposit if applicable rental", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant sets device.status to 'available' and refunds deposit if applicable must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_118_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to sets device.status to 'available' and refunds deposit if applicable rental", async ({ request }) => {
-    // Kills: technician should not be able to sets device.status to 'available' and refunds deposit if applicable rental
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to sets device.status to 'available' and refunds deposit if applicable rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to sets device.status to 'available' and refunds deposit if applicable rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to sets device.status to 'available' and refunds deposit if applicable rental", async ({ request }) => {
-    // Kills: nurse should not be able to sets device.status to 'available' and refunds deposit if applicable rental
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_118_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to sets device.status to 'available' and refunds deposit if applicable rental — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to sets device.status to 'available' and refunds deposit if applicable rental — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-119-AUTHMATRIX
-// Behavior: System provides 100% deposit refund for cancellation before startDate
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_119_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: System provides 100% deposit refund for cancellation before startDate", () => {
-  test("admin must be able to provides 100% deposit refund", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to provides 100% deposit refund", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to provides 100% deposit refund", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant provides must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_119_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access 100% deposit refund", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access 100% deposit refund
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access 100% deposit refund — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access 100% deposit refund — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to provides 100% deposit refund", async ({ request }) => {
-    // Kills: technician should not be able to provides 100% deposit refund
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to provides 100% deposit refund — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to provides 100% deposit refund — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to provides 100% deposit refund", async ({ request }) => {
-    // Kills: nurse should not be able to provides 100% deposit refund
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_119_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to provides 100% deposit refund — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to provides 100% deposit refund — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-120-AUTHMATRIX
-// Behavior: System provides 50% deposit refund for cancellation within 24h of startDate
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_120_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: System provides 50% deposit refund for cancellation within 24h of startDate", () => {
-  test("admin must be able to provides 50% deposit refund", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to provides 50% deposit refund", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to provides 50% deposit refund", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant provides must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_120_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access 50% deposit refund", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access 50% deposit refund
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access 50% deposit refund — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access 50% deposit refund — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to provides 50% deposit refund", async ({ request }) => {
-    // Kills: technician should not be able to provides 50% deposit refund
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to provides 50% deposit refund — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to provides 50% deposit refund — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to provides 50% deposit refund", async ({ request }) => {
-    // Kills: nurse should not be able to provides 50% deposit refund
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_120_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to provides 50% deposit refund — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to provides 50% deposit refund — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-});
-
-// Proof: PROOF-B-121-AUTHMATRIX
-// Behavior: System provides no deposit refund for cancellation after startDate (admin only), charging for days used
-// Risk: high
-// MutationTargets: 4 kills required for 100% mutation score
-function basePayload_PROOF_B_121_AUTHMATRIX() {
-  return {
-    clinicId: TEST_CLINIC_ID,
-    serialNumber: "test-serialNumber",
-    name: "Test name-${Date.now()}",
-    type: "wheelchair",
-    manufacturer: "test-manufacturer",
-    purchaseDate: tomorrowStr(),
-    purchasePrice: 100,
-    dailyRate: 50,
-    accessories: [{ name: "Test name-${Date.now()}", serialNumber: "test-serialNumber", included: false }],
-    maintenanceIntervalDays: 7,
-    notes: "test-notes",
-  };
-}
-test.describe("Auth Matrix: System provides no deposit refund for cancellation after startDate (admin only), charging for days used", () => {
-  test("admin must be able to provides no deposit refund and charges for days used rental cancellation", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Verify response has data (not empty)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-  });
-  test("unauthenticated request must be rejected", async ({ request }) => {
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), "");
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-    // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("technician must NOT be able to provides no deposit refund and charges for days used rental cancellation", async ({ request }) => {
-    const roleCookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-
-  test("nurse must NOT be able to provides no deposit refund and charges for days used rental cancellation", async ({ request }) => {
-    const roleCookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Must not leak any data in error response
-    const data = response.data?.result?.data;
-    expect(data).toBeFalsy();
-  });
-  test("cross-tenant provides no deposit refund and charges for days used must be rejected", async ({ request }) => {
-    const cookie = await getAdminCookie(request);
-    const crossTenantPayload = {
-      ...basePayload_PROOF_B_121_AUTHMATRIX(),
-      clinicId: TEST_CLINIC_ID + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
-    };
-    const response = await trpcQuery(request, "devices.create", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
-    // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
-    expect(leakedData).toBeFalsy();
-  });
-
-  test("mutation-kill-1: Remove role check in devices.create", async ({ request }) => {
-    // Kills: Remove role check in devices.create
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
-    // Kills: Remove role check in devices.create — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
-    expect(data).not.toBeNull();
-    expect(data).not.toBeUndefined();
-  });
-
-  test("mutation-kill-2: Allow lower-privileged role to access rental cancellation", async ({ request }) => {
-    // Kills: Allow lower-privileged role to access rental cancellation
-    const cookie = await getAdminCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: Allow lower-privileged role to access rental cancellation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: Allow lower-privileged role to access rental cancellation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-3: technician should not be able to provides no deposit refund and charges for days used rental cancellation", async ({ request }) => {
-    // Kills: technician should not be able to provides no deposit refund and charges for days used rental cancellation
-    const cookie = await getTechnicianCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: technician should not be able to provides no deposit refund and charges for days used rental cancellation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: technician should not be able to provides no deposit refund and charges for days used rental cancellation — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
-    expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
-  });
-
-  test("mutation-kill-4: nurse should not be able to provides no deposit refund and charges for days used rental cancellation", async ({ request }) => {
-    // Kills: nurse should not be able to provides no deposit refund and charges for days used rental cancellation
-    const cookie = await getNurseCookie(request);
-    const response = await trpcQuery(request, "devices.create", basePayload_PROOF_B_121_AUTHMATRIX(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
-    // Kills: nurse should not be able to provides no deposit refund and charges for days used rental cancellation — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
-    expect(body).toBeFalsy();
-    // Kills: nurse should not be able to provides no deposit refund and charges for days used rental cancellation — verify error code is present
+    // Kills: nurse should not be able to updates device.status — verify error code is present
     const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });

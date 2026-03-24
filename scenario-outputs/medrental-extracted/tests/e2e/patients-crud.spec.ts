@@ -43,7 +43,7 @@ test.describe("Browser: Patients CRUD", () => {
     // Step 6: API double-verify — resource must exist in DB
     const loginResp = await request.post(`${BASE_URL}/api/auth/login`, {
       headers: { "Content-Type": "application/json" },
-      data: { json: { username: process.env.TECH_USER || "tech@medrental.com", password: process.env.TECH_PASS || "TechPass1!" } },
+      data: { json: { username: process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com", password: process.env.E2E_TECHNICIAN_PASS || "TechPass2026x" } },
     });
     const adminCookie = loginResp.headers()["set-cookie"] || "";
     const { data } = await trpcQuery(request, "patients.list",

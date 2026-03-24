@@ -10,8 +10,8 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 test.describe("Browser: Authentication", () => {
   test("login via UI redirects away from login page", async ({ page }) => {
     await page.goto(`${BASE_URL}/login`);
-    await page.getByLabel(/email/i).fill(process.env.TECH_USER || "tech@medrental.com@test.com");
-    await page.getByLabel(/password|passwort/i).fill(process.env.TECH_PASS || "TechPass1!");
+    await page.getByLabel(/email/i).fill(process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com@test.com");
+    await page.getByLabel(/password|passwort/i).fill(process.env.E2E_TECHNICIAN_PASS || "TechPass2026x");
     await page.getByRole("button", { name: /login|anmelden|sign.in/i }).click();
     await expect(page).not.toHaveURL(//login/, { timeout: 10000 });
     // Kills: Login form doesn't redirect on success
@@ -19,7 +19,7 @@ test.describe("Browser: Authentication", () => {
 
   test("login with wrong password shows error", async ({ page }) => {
     await page.goto(`${BASE_URL}/login`);
-    await page.getByLabel(/email/i).fill("tech@medrental.com@test.com");
+    await page.getByLabel(/email/i).fill("test-technician@medrental.com@test.com");
     await page.getByLabel(/password|passwort/i).fill("wrong-password-xyz-123");
     await page.getByRole("button", { name: /login|anmelden|sign.in/i }).click();
     await expect(page.getByText(/fehler|error|invalid|falsch|incorrect|wrong/i))

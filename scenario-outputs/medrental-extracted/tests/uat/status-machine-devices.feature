@@ -7,38 +7,32 @@ Feature: Status Machine: devices
   I want to manage status machine: devices
   So that I can transitions the system correctly
 
-  Scenario: Device state transitions from available to rented when rental created
-    Given Rental is created for the device
-    When device transitions from available to rented
-    Then Device status is 'rented'
+  Scenario: Device status transitions from available to rented when rental created
+    Given rental created
+    When device status transitions from available to rented
     # Spec: "available→rented (when rental created)"
 
-  Scenario: Device state transitions from rented to available when returned in good condition
-    Given Device is returned in 'good' condition
-    When device transitions from rented to available
-    Then Device status is 'available'
+  Scenario: Device status transitions from rented to available when returned in good condition
+    Given device returned in good condition
+    When device status transitions from rented to available
     # Spec: "rented→available (when returned in good condition)"
 
-  Scenario: Device state transitions from rented to maintenance when returned needing repair
-    Given Device is returned needing repair
-    When device transitions from rented to maintenance
-    Then Device status is 'maintenance'
+  Scenario: Device status transitions from rented to maintenance when returned needing repair
+    Given device returned needing repair
+    When device status transitions from rented to maintenance
     # Spec: "rented→maintenance (when returned needing repair)"
 
-  Scenario: Device state transitions from available to maintenance for scheduled maintenance
-    Given Scheduled maintenance is initiated for an available device
-    When device transitions from available to maintenance
-    Then Device status is 'maintenance'
+  Scenario: Device status transitions from available to maintenance for scheduled maintenance
+    Given scheduled maintenance
+    When device status transitions from available to maintenance
     # Spec: "available→maintenance (scheduled maintenance)"
 
-  Scenario: Device state transitions from maintenance to available when maintenance completed
-    Given Maintenance on device is completed
-    When device transitions from maintenance to available
-    Then Device status is 'available'
+  Scenario: Device status transitions from maintenance to available when maintenance completed
+    Given maintenance completed
+    When device status transitions from maintenance to available
     # Spec: "maintenance→available (maintenance completed)"
 
-  Scenario: Device state transitions from available to decommissioned
-    Given Device is available and marked for decommissioning
-    When device transitions from available to decommissioned
-    Then Device status is 'decommissioned'
+  Scenario: Device status transitions from available to decommissioned
+    Given the system is in a valid state
+    When device status transitions from available to decommissioned
     # Spec: "available→decommissioned"

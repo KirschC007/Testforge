@@ -5,20 +5,20 @@
 Feature: Authentication
   As a technician
   I want to manage authentication
-  So that I can returns the system correctly
+  So that I can authenticates the system correctly
 
-  Scenario: POST /api/auth/login returns JWT and session cookie upon successful authentication
-    Given Valid email and password provided
-    When system returns JWT + session cookie
-    Then User is authenticated
-    And JWT contains userId, clinicId, role
-    And Session cookie is set
+  Scenario: API authenticates user via email and password
+    Given valid email
+    And valid password
+    When api authenticates user
+    Then JWT issued
+    And session cookie issued
     # Spec: "POST /api/auth/login (email, password → JWT + session cookie)"
 
-  Scenario: GET /api/auth/csrf-token returns CSRF double-submit cookie
+  Scenario: API provides CSRF token via double-submit cookie
     Given the system is in a valid state
-    When system returns CSRF double-submit cookie
-    Then CSRF token is provided for subsequent requests
+    When api provides CSRF token
+    Then CSRF token issued as double-submit cookie
     # Spec: "GET /api/auth/csrf-token → CSRF double-submit cookie"
 
   Scenario: JWT contains userId, clinicId, and role
@@ -29,17 +29,12 @@ Feature: Authentication
   Scenario: Session expires after 12 hours
     Given the system is in a valid state
     When session expires after 12h
-    Then User must re-authenticate after 12 hours
+    Then user must re-authenticate
     # Spec: "Session expires after 12h"
 
-  Scenario: rate-limits failed login attempts to 5 per 15 minutes
-    Given User attempts to log in with incorrect credentials
-    When system rate-limits failed logins
-    Then After 5 failed attempts within 15 minutes, further attempts are blocked
-    # Spec: "Rate limit: 5 failed logins per 15 minutes → 429, then 30-minute lockout"
-
-  Scenario: returns 429 for exceeding failed login rate limit
-    Given User exceeds 5 failed logins within 15 minutes
-    When system returns 429 failed login attempt
+  Scenario: rate limits failed login attempts to 5 per 15 minutes
+    Given 5 failed logins within 15 minutes
+    When system rate limits failed login attempts
     Then HTTP 429 response
+    And 30-minute lockout
     # Spec: "Rate limit: 5 failed logins per 15 minutes → 429, then 30-minute lockout"

@@ -32,8 +32,8 @@ export function setup() {
   const loginResp = http.post(
     `${__ENV.BASE_URL || "http://localhost:3000"}/api/auth/login`,
     JSON.stringify({ json: {
-      username: __ENV.TECH_USER || "tech@medrental.com",
-      password: __ENV.TECH_PASS || "TechPass1!",
+      username: __ENV.E2E_TECHNICIAN_USER || "test-technician@medrental.com",
+      password: __ENV.E2E_TECHNICIAN_PASS || "TechPass2026x",
     }}),
     { headers: { "Content-Type": "application/json" } }
   );
@@ -45,8 +45,7 @@ export default function(data: { cookie: string }) {
   const headers = { "Content-Type": "application/json", "Cookie": data.cookie };
 
   // Rate-limit behaviors detected in spec:
-  // - System rate-limits failed login attempts to 5 per 15 minutes
-  // - System returns 429 for exceeding failed login rate limit
+  // - System rate limits failed login attempts to 5 per 15 minutes
 
   // Attempt rapid-fire requests to trigger rate limiting
   const resp = http.post(

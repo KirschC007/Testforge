@@ -5,23 +5,28 @@
 Feature: Cancellation Policy
   As a technician
   I want to manage cancellation policy
-  So that I can provides the system correctly
+  So that I can refunds the system correctly
 
-  Scenario: provides 100% deposit refund for cancellation before startDate
-    Given Rental is cancelled before its startDate
-    When system provides 100% deposit refund
-    Then Full deposit amount is refunded
+  Scenario: refunds 100% deposit if rental cancelled before startDate
+    Given rental cancelled before startDate
+    When system refunds 100% deposit
+    Then full deposit refunded
     # Spec: "Before startDate: 100% deposit refund"
 
-  Scenario: provides 50% deposit refund for cancellation within 24h of startDate
-    Given Rental is cancelled within 24 hours of its startDate
-    When system provides 50% deposit refund
-    Then Half of the deposit amount is refunded
+  Scenario: refunds 50% deposit if rental cancelled within 24h of startDate
+    Given rental cancelled within 24h of startDate
+    When system refunds 50% deposit
+    Then 50% deposit refunded
     # Spec: "Within 24h of startDate: 50% deposit refund"
 
-  Scenario: provides no deposit refund for cancellation after startDate (admin only), charging for days used
-    Given Rental is cancelled after its startDate (by admin)
-    When system provides no deposit refund and charges for days used rental cancellation
-    Then No deposit is refunded
-    And Customer is charged for the days the device was rented
-    # Spec: "After startDate (admin only): no refund, charged for days used"
+  Scenario: provides no refund if rental cancelled after startDate by admin
+    Given rental cancelled after startDate by admin
+    When system provides no refund
+    Then no deposit refunded
+    # Spec: "After startDate (admin only): no refund"
+
+  Scenario: charges for days used if rental cancelled after startDate by admin
+    Given rental cancelled after startDate by admin
+    When system charges for days used
+    Then customer charged for used days
+    # Spec: "After startDate (admin only): ..., charged for days used"

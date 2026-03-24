@@ -67,8 +67,8 @@ async function trpcQuery(
 
 beforeAll(async () => {
   authCookie = await login(
-    process.env.TECH_USER || "tech@medrental.com",
-    process.env.TECH_PASS || "TechPass1!"
+    process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com",
+    process.env.E2E_TECHNICIAN_PASS || "TechPass2026x"
   );
 });
 

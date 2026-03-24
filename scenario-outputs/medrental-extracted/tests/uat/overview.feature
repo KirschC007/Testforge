@@ -10,11 +10,10 @@ Feature: Overview
   Scenario: isolates clinics by clinicId
     Given the system is in a valid state
     When system isolates clinic data
-    Then Data access is restricted by clinicId
     # Spec: "Each clinic is isolated by `clinicId`."
 
   Scenario: stores all monetary values in EUR cents as integers
     Given the system is in a valid state
     When system stores monetary values
-    Then Monetary values are stored as integers representing EUR cents
+    Then monetary values are integers representing EUR cents
     # Spec: "All monetary values in EUR cents (integer)."

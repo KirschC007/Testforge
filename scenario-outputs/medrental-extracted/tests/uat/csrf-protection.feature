@@ -7,14 +7,14 @@ Feature: CSRF Protection
   I want to manage csrf protection
   So that I can requires the system correctly
 
-  Scenario: All POST/PUT/PATCH/DELETE requests require X-CSRF-Token header
-    Given Request method is POST, PUT, PATCH, or DELETE
-    When system requires X-CSRF-Token header
+  Scenario: API requires X-CSRF-Token header for state-changing requests
+    Given POST/PUT/PATCH/DELETE request
+    When api requires X-CSRF-Token header
     # Spec: "All POST/PUT/PATCH/DELETE require X-CSRF-Token header"
 
-  Scenario: returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
-    Given Request method is POST, PUT, PATCH, or DELETE
-    And X-CSRF-Token header is missing or invalid
-    When system returns 403 CSRF_REQUIRED request
-    Then HTTP 403 response with CSRF_REQUIRED error code
+  Scenario: API returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
+    Given POST/PUT/PATCH/DELETE request
+    And missing or invalid X-CSRF-Token header
+    When api returns 403 CSRF_REQUIRED
+    Then HTTP 403 CSRF_REQUIRED
     # Spec: "Missing or invalid → 403 CSRF_REQUIRED"

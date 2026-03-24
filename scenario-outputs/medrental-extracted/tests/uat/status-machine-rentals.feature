@@ -7,39 +7,33 @@ Feature: Status Machine: rentals
   I want to manage status machine: rentals
   So that I can transitions the system correctly
 
-  Scenario: Rental state transitions from reserved to active on startDate or manual activation
-    Given Rental startDate is reached or manually activated
-    When rental transitions from reserved to active
-    Then Rental status is 'active'
+  Scenario: Rental status transitions from reserved to active on startDate or manual activation
+    Given startDate reached or manual activation
+    When rental status transitions from reserved to active
     # Spec: "reserved→active (on startDate or manual activation)"
 
-  Scenario: Rental state transitions from active to overdue automatically when past expectedReturnDate
-    Given Current date is past the rental's expectedReturnDate
-    When rental transitions from active to overdue automatically
-    Then Rental status is 'overdue'
+  Scenario: Rental status transitions from active to overdue automatically when past expectedReturnDate
+    Given past expectedReturnDate
+    When rental status transitions from active to overdue
     # Spec: "active→overdue (auto when past expectedReturnDate)"
 
-  Scenario: Rental state transitions from active to returned when device is returned
-    Given Device associated with active rental is returned
-    When rental transitions from active to returned
-    Then Rental status is 'returned'
+  Scenario: Rental status transitions from active to returned when device returned
+    Given device returned
+    When rental status transitions from active to returned
     # Spec: "active→returned (device returned)"
 
-  Scenario: Rental state transitions from overdue to returned upon late return, applying extra charges
-    Given Device associated with overdue rental is returned
-    When rental transitions from overdue to returned
-    Then Rental status is 'returned'
-    And Extra charges are applied
+  Scenario: Rental status transitions from overdue to returned upon late return
+    Given late return of device
+    When rental status transitions from overdue to returned
+    Then extra charges apply
     # Spec: "overdue→returned (late return, extra charges apply)"
 
-  Scenario: Rental state transitions from returned to completed when final invoice is paid
-    Given Final invoice for the returned rental is fully paid
-    When rental transitions from returned to completed
-    Then Rental status is 'completed'
+  Scenario: Rental status transitions from returned to completed when final invoice paid
+    Given final invoice paid
+    When rental status transitions from returned to completed
     # Spec: "returned→completed (final invoice paid)"
 
-  Scenario: Rental state transitions from reserved to cancelled before startDate
-    Given Cancellation occurs before rental startDate
-    When rental transitions from reserved to cancelled
-    Then Rental status is 'cancelled'
+  Scenario: Rental status transitions from reserved to cancelled before startDate
+    Given before startDate
+    When rental status transitions from reserved to cancelled
     # Spec: "reserved→cancelled (before startDate)"

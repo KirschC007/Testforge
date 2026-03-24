@@ -10,8 +10,8 @@ export async function getTechnicianCookie(request: any): Promise<string> {
   if (_technicianCookie) return _technicianCookie;
   _technicianCookie = await loginAndGetCookie(
     request,
-    process.env.TECH_USER || "tech@medrental.com",
-    process.env.TECH_PASS || "TechPass1!"
+    process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com",
+    process.env.E2E_TECHNICIAN_PASS || "TechPass2026x"
   );
   return _technicianCookie;
 }
@@ -22,8 +22,8 @@ export async function getNurseCookie(request: any): Promise<string> {
   if (_nurseCookie) return _nurseCookie;
   _nurseCookie = await loginAndGetCookie(
     request,
-    process.env.NURSE_USER || "nurse@medrental.com",
-    process.env.NURSE_PASS || "NursePass1!"
+    process.env.E2E_NURSE_USER || "test-nurse@medrental.com",
+    process.env.E2E_NURSE_PASS || "NursePass2026x"
   );
   return _nurseCookie;
 }
@@ -34,8 +34,8 @@ export async function getBillingCookie(request: any): Promise<string> {
   if (_billingCookie) return _billingCookie;
   _billingCookie = await loginAndGetCookie(
     request,
-    process.env.BILLING_USER || "billing@medrental.com",
-    process.env.BILLING_PASS || "BillingPass1!"
+    process.env.E2E_BILLING_USER || "test-billing@medrental.com",
+    process.env.E2E_BILLING_PASS || "BillingPass2026x"
   );
   return _billingCookie;
 }
@@ -46,8 +46,8 @@ export async function getAdminCookie(request: any): Promise<string> {
   if (_adminCookie) return _adminCookie;
   _adminCookie = await loginAndGetCookie(
     request,
-    process.env.ADMIN_USER || "admin@medrental.com",
-    process.env.ADMIN_PASS || "AdminPass1!"
+    process.env.E2E_ADMIN_USER || "test-admin@medrental.com",
+    process.env.E2E_ADMIN_PASS || "AdminPass2026x"
   );
   return _adminCookie;
 }

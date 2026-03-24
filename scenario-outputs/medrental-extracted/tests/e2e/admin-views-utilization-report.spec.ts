@@ -13,7 +13,7 @@ const TEST_CLINIC_ID = parseInt(process.env.TEST_CLINIC_ID || process.env.TEST_T
 test.describe("Browser: Admin views utilization report", () => {
   test("Admin views utilization report — happy path", async ({ page, request }) => {
     // Actor: Admin
-    // Success criteria: API verify: /api/reports/utilization returns correct data
+    // Success criteria: /api/reports/utilization returns correct data
 
     // Step 1: Admin logs in
     // Step 2: Admin navigates to /reports
@@ -26,7 +26,7 @@ test.describe("Browser: Admin views utilization report", () => {
     // API double-verify — resource state must match UI
     const loginResp = await request.post(`${BASE_URL}/api/auth/login`, {
       headers: { "Content-Type": "application/json" },
-      data: { json: { username: process.env.TECH_USER || "tech@medrental.com", password: process.env.TECH_PASS || "TechPass1!" } },
+      data: { json: { username: process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com", password: process.env.E2E_TECHNICIAN_PASS || "TechPass2026x" } },
     });
     const adminCookie = loginResp.headers()["set-cookie"] || "";
     const { data } = await trpcQuery(request, "/api/reports/utilization",

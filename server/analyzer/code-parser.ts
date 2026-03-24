@@ -102,6 +102,10 @@ const TENANT_KEY_NAMES = new Set([
   "tenantId", "workspaceId", "organizationId", "orgId", "bankId", "companyId",
   "restaurantId", "shopId", "storeId", "accountId", "teamId",
   "customerId", "clientId",
+  // Healthcare
+  "clinicId", "hospitalId", "practiceId", "facilityId",
+  // Other domains
+  "projectId", "channelId", "groupId", "departmentId", "branchId",
 ]);
 
 function parseDrizzleTable(tableName: string, tableBody: string): ParsedTable {
@@ -328,6 +332,8 @@ interface ParsedProcedure {
   isProtected: boolean;
   inputFields: EndpointField[];
   authMiddleware: string;
+  detectedTenantKey?: string | null;  // e.g. 'orgId' from req.user.orgId
+  detectedRoles?: string[];           // e.g. ['admin', 'doctor'] from user.role === 'admin'
 }
 
 function parseZodObject(zodBody: string): EndpointField[] {
@@ -590,6 +596,26 @@ function parseExpressRoutes(files: CodeFile[]): ParsedProcedure[] {
 
       const authMiddleware = handlerBlock.includes("requireAdmin") ? "requireAdmin" : "requireAuth";
 
+       // Role detection from handler body: user.role === 'admin' / req.user.role === 'doctor'
+      const roleMatches = Array.from(handlerBlock.matchAll(/(?:req\.user|user|ctx\.user)\.role\s*[!=]==?\s*['"]([a-zA-Z_]+)['"]/g));
+      const detectedRoles: string[] = roleMatches.map(rm => rm[1]);
+      // Tenant key detection from handler body:
+      //   req.user.orgId / user.orgId / ctx.user.clinicId
+      //   req.session.clinicId / session.clinicId
+      const tenantKeyMatch =
+        handlerBlock.match(/(?:req\.user|user|ctx\.user)\.([a-zA-Z]+(?:Id|_id))/) ||
+        handlerBlock.match(/(?:req\.session|session)\.([a-zA-Z]+(?:Id|_id))/);
+      const detectedTenantKey = tenantKeyMatch && TENANT_KEY_NAMES.has(tenantKeyMatch[1]) ? tenantKeyMatch[1] : null;
+
+      // PII export detection
+      const hasPIIExport = handlerBlock.includes('Content-Disposition') || handlerBlock.includes('text/csv') ||
+                           procName.includes('export') || procName.includes('Export');
+
+      // Missing tenant filter: findAll without orgId/tenantId
+      const hasMissingTenantFilter = detectedTenantKey !== null &&
+        (handlerBlock.includes('findAll') || handlerBlock.includes('findMany')) &&
+        !handlerBlock.includes(detectedTenantKey);
+
       procedures.push({
         name: procName,
         fullName: `${httpVerb} ${path}`,
@@ -597,6 +623,8 @@ function parseExpressRoutes(files: CodeFile[]): ParsedProcedure[] {
         isProtected,
         inputFields,
         authMiddleware,
+        detectedTenantKey,
+        detectedRoles: detectedRoles.length > 0 ? detectedRoles : undefined,
       });
     }
   }
@@ -698,6 +726,19 @@ function buildIRFromCode(
     }
   }
 
+  // Third fallback: if still no globalTenantKey, scan procedure handler bodies
+  if (!globalTenantKey && procedures.length > 0) {
+    const tenantKeyCounts: Record<string, number> = {};
+    for (const proc of procedures) {
+      if (proc.detectedTenantKey) {
+        tenantKeyCounts[proc.detectedTenantKey] = (tenantKeyCounts[proc.detectedTenantKey] || 0) + 1;
+      }
+    }
+    const mostCommon = Object.entries(tenantKeyCounts).sort((a, b) => b[1] - a[1])[0];
+    if (mostCommon && mostCommon[1] >= 1) {
+      globalTenantKey = mostCommon[0];
+    }
+  }
   // Build behaviors from procedures
   let behaviorIdx = 0;
   for (const proc of procedures) {
@@ -707,7 +748,7 @@ function buildIRFromCode(
     // Infer behavior from procedure name and input fields
     const action = inferAction(proc.name, proc.method);
     const subject = inferSubject(proc.fullName);
-    const tenantField = proc.inputFields.find(f => f.isTenantKey)?.name || globalTenantKey;
+    const tenantField = proc.inputFields.find(f => f.isTenantKey)?.name || proc.detectedTenantKey || globalTenantKey;
 
     const preconditions: string[] = [];
     const postconditions: string[] = [];
@@ -837,12 +878,23 @@ function buildIRFromCode(
     });
   }
 
-  // Build auth model
-  const authRoles: AuthRole[] = [
-    { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "admin@test.com", defaultPass: "password" },
-    { name: "user", envUserVar: "E2E_USER_USER", envPassVar: "E2E_USER_PASS", defaultUser: "user@test.com", defaultPass: "password" },
-  ];
-
+  // Build auth model — collect roles from procedure handler bodies (Fix 3)
+  const allDetectedRoles = new Set<string>();
+  for (const proc of procedures) {
+    if (proc.detectedRoles) {
+      for (const r of proc.detectedRoles) allDetectedRoles.add(r);
+    }
+  }
+  // Ensure admin and user are always present as fallback
+  allDetectedRoles.add("admin");
+  allDetectedRoles.add("user");
+  const authRoles: AuthRole[] = Array.from(allDetectedRoles).map(roleName => ({
+    name: roleName,
+    envUserVar: `E2E_${roleName.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_USER`,
+    envPassVar: `E2E_${roleName.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_PASS`,
+    defaultUser: `${roleName}@test.com`,
+    defaultPass: "password",
+  }));
   const authModel: AuthModel = {
     loginEndpoint: "/api/auth/login",
     csrfEndpoint: "/api/auth/csrf-token",

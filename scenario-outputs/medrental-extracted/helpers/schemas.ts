@@ -197,7 +197,9 @@ export const devices_createResponseSchema = z.object({
   accessories: z.unknown(),
   maintenanceIntervalDays: z.unknown(),
   notes: z.unknown(),
-  clinicId: z.unknown()
+  clinicId: z.unknown(),
+  status: z.unknown(),
+  lastMaintenanceDate: z.unknown()
 }).passthrough();
 
 // Input schema for devices.list
@@ -216,11 +218,10 @@ export const devices_listResponseSchema = z.object({
   accessories: z.unknown(),
   maintenanceIntervalDays: z.unknown(),
   notes: z.unknown(),
+  clinicId: z.unknown(),
   status: z.unknown(),
   lastMaintenanceDate: z.unknown(),
-  nextMaintenanceDue: z.unknown(),
-  clinicId: z.unknown(),
-  currentRentalId: z.unknown()
+  availability: z.unknown()
 }).passthrough();
 
 // Input schema for devices.status
@@ -231,7 +232,8 @@ export const devices_statusSchema = z.object({
 });
 export const devices_statusResponseSchema = z.object({
   id: z.unknown(),
-  status: z.unknown()
+  status: z.unknown(),
+  reason: z.unknown()
 }).passthrough();
 
 // Input schema for devices.maintenance
@@ -246,15 +248,8 @@ export const devices_maintenanceSchema = z.object({
 });
 export const devices_maintenanceResponseSchema = z.object({
   id: z.unknown(),
-  deviceId: z.unknown(),
-  type: z.unknown(),
-  description: z.unknown(),
-  cost: z.unknown(),
-  performedBy: z.unknown(),
-  partsReplaced: z.unknown(),
-  nextMaintenanceDue: z.unknown(),
-  clinicId: z.unknown(),
-  eventDate: z.unknown()
+  lastMaintenanceDate: z.unknown(),
+  nextMaintenanceDue: z.unknown()
 }).passthrough();
 
 // Input schema for patients.create
@@ -299,6 +294,7 @@ export const rentals_createSchema = z.object({
 });
 export const rentals_createResponseSchema = z.object({
   id: z.unknown(),
+  clinicId: z.unknown(),
   deviceId: z.unknown(),
   patientId: z.unknown(),
   startDate: z.unknown(),
@@ -310,9 +306,7 @@ export const rentals_createResponseSchema = z.object({
   prescriptionId: z.unknown(),
   accessories: z.unknown(),
   notes: z.unknown(),
-  clinicId: z.unknown(),
-  status: z.unknown(),
-  invoiceId: z.unknown()
+  status: z.unknown()
 }).passthrough();
 
 // Input schema for rentals.extend
@@ -323,9 +317,7 @@ export const rentals_extendSchema = z.object({
 });
 export const rentals_extendResponseSchema = z.object({
   id: z.unknown(),
-  expectedReturnDate: z.unknown(),
-  extensionsCount: z.unknown(),
-  extensionInvoiceId: z.unknown()
+  expectedReturnDate: z.unknown()
 }).passthrough();
 
 // Input schema for rentals.return
@@ -339,12 +331,7 @@ export const rentals_returnSchema = z.object({
 export const rentals_returnResponseSchema = z.object({
   id: z.unknown(),
   status: z.unknown(),
-  actualReturnDate: z.unknown(),
-  condition: z.unknown(),
-  damageNotes: z.unknown(),
-  damageCharge: z.unknown(),
-  finalInvoiceId: z.unknown(),
-  patientActiveRentalsCount: z.unknown()
+  finalInvoice: z.unknown()
 }).passthrough();
 
 // Input schema for rentals.status
@@ -387,18 +374,9 @@ export const invoices_paymentSchema = z.object({
 });
 export const invoices_paymentResponseSchema = z.object({
   id: z.unknown(),
-  status: z.unknown(),
-  paidAmount: z.unknown(),
+  amountPaid: z.unknown(),
   remainingBalance: z.unknown(),
-  paymentId: z.unknown()
-}).passthrough();
-
-// Input schema for reports.utilization
-export const reports_utilizationSchema = z.object({
-
-});
-export const reports_utilizationResponseSchema = z.object({
-  reportData: z.unknown()
+  status: z.unknown()
 }).passthrough();
 
 // Input schema for patients.gdprDelete
@@ -416,7 +394,8 @@ export const patients_exportSchema = z.object({
 export const patients_exportResponseSchema = z.object({
   patient demographics: z.unknown(),
   rental history: z.unknown(),
-  invoice history: z.unknown()
+  invoice history: z.unknown(),
+  payments: z.unknown()
 }).passthrough();
 
 // Validate helper — throws on schema mismatch

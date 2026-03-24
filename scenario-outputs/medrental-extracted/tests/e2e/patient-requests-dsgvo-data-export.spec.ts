@@ -13,21 +13,22 @@ const TEST_CLINIC_ID = parseInt(process.env.TEST_CLINIC_ID || process.env.TEST_T
 test.describe("Browser: Patient requests DSGVO data export", () => {
   test("Patient requests DSGVO data export — happy path", async ({ page, request }) => {
     // Actor: Patient representative (nurse)
-    // Success criteria: Download starts (JSON file); File contains: patient demographics, rental history, invoice history
+    // Success criteria: File contains: patient demographics, rental history, invoice history
 
     // Step 1: Patient representative (nurse) logs in
     // Step 2: Navigates to /patients/:id
     await page.goto(`${BASE_URL}/patients/`);
     // Step 3: Clicks "Export Patient Data (DSGVO)"
     await page.getByRole("button", { name: /Export Patient Data (DSGVO)/i }).click();
+    // Step 4: Download starts (JSON file)
 
     // API double-verify — resource state must match UI
     const loginResp = await request.post(`${BASE_URL}/api/auth/login`, {
       headers: { "Content-Type": "application/json" },
-      data: { json: { username: process.env.TECH_USER || "tech@medrental.com", password: process.env.TECH_PASS || "TechPass1!" } },
+      data: { json: { username: process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com", password: process.env.E2E_TECHNICIAN_PASS || "TechPass2026x" } },
     });
     const adminCookie = loginResp.headers()["set-cookie"] || "";
-    const { data } = await trpcQuery(request, "/api/patients/:id/export",
+    const { data } = await trpcQuery(request, "GET /api/patients/:id/export",
       { clinicId: TEST_CLINIC_ID }, adminCookie);
     expect(data).toBeTruthy();
     // Kills: UI shows success but state not persisted

@@ -1,10 +1,10 @@
 {
-  "behaviors": 121,
-  "apiSecurityFiles": 9,
+  "behaviors": 116,
+  "apiSecurityFiles": 8,
   "browserE2eFiles": 11,
-  "totalProofs": 404,
+  "totalProofs": 336,
   "helpers": 7,
-  "zipSizeKB": 179,
+  "zipSizeKB": 157,
   "checksPassed": 48,
   "checksFailed": 0,
   "allFiles": [
@@ -50,7 +50,6 @@
     "tests/security/auth-matrix.spec.ts",
     "tests/security/csrf.spec.ts",
     "tests/security/idor.spec.ts",
-    "tests/security/rate-limit.spec.ts",
     "tests/uat/authentication.feature",
     "tests/uat/cancellation-policy.feature",
     "tests/uat/csrf-protection.feature",

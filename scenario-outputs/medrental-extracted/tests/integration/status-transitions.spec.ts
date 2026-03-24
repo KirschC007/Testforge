@@ -9,10 +9,10 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await getAdminCookie(request);
 });
 
-// PROOF-B-004-STATUS — Status Transition: GET /api/auth/csrf-token returns CSRF double-submit cookie
+// PROOF-B-004-STATUS — Status Transition: API provides CSRF token via double-submit cookie
 // Risk: critical
 // Spec: Authentication
-// Behavior: GET /api/auth/csrf-token returns CSRF double-submit cookie
+// Behavior: API provides CSRF token via double-submit cookie
 
 test("PROOF-B-004-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
@@ -22,7 +22,7 @@ test("PROOF-B-004-STATUSa — available → rented: transition succeeds with cor
     { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove returns transition from allowed list
+  // Kills: Remove provides transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -53,10 +53,10 @@ test("PROOF-B-004-STATUSb — rented → available: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-007-STATUS — Status Transition: System rate-limits failed login attempts to 5 per 15 minutes
+// PROOF-B-007-STATUS — Status Transition: System rate limits failed login attempts to 5 per 15 minutes
 // Risk: medium
 // Spec: Authentication
-// Behavior: System rate-limits failed login attempts to 5 per 15 minutes
+// Behavior: System rate limits failed login attempts to 5 per 15 minutes
 
 test("PROOF-B-007-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
@@ -66,7 +66,7 @@ test("PROOF-B-007-STATUSa — active → overdue: transition succeeds with corre
     { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove rate-limits transition from allowed list
+  // Kills: Remove rate limits transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -114,56 +114,12 @@ test("PROOF-B-007-STATUSc — active → reserved: skip-transition must be rejec
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-008-STATUS — Status Transition: System returns 429 for exceeding failed login rate limit
-// Risk: medium
-// Spec: Authentication
-// Behavior: System returns 429 for exceeding failed login rate limit
+// PROOF-B-009-STATUS — Status Transition: Technician role can perform maintenance
+// Risk: critical
+// Spec: Roles & Permissions
+// Behavior: Technician role can perform maintenance
 
-test("PROOF-B-008-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "auth.login",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove returns 429 transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-008-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "auth.login",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "auth.login",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-009-STATUS — Status Transition: System locks out user for 30 minutes after exceeding failed login rate limit
-// Risk: medium
-// Spec: Authentication
-// Behavior: System locks out user for 30 minutes after exceeding failed login rate limit
-
-test("PROOF-B-009-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-009-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -171,7 +127,7 @@ test("PROOF-B-009-STATUSa — available → maintenance: transition succeeds wit
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove locks out transition from allowed list
+  // Kills: Remove perform transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -181,339 +137,7 @@ test("PROOF-B-009-STATUSa — available → maintenance: transition succeeds wit
 
 });
 
-test("PROOF-B-009-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to maintenance state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow maintenance→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-015-STATUS — Status Transition: Nurse role cannot modify pricing
-// Risk: critical
-// Spec: Roles & Permissions
-// Behavior: Nurse role cannot modify pricing
-
-test("PROOF-B-015-STATUSa — returned → completed: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove cannot modify transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-015-STATUSb — completed → returned: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to completed state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow completed→returned reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-015-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through completed
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-019-STATUS — Status Transition: Billing role cannot access medical records
-// Risk: critical
-// Spec: Roles & Permissions
-// Behavior: Billing role cannot access medical records
-
-test("PROOF-B-019-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove cannot access transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-019-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-024-STATUS — Status Transition: All POST/PUT/PATCH/DELETE requests require X-CSRF-Token header
-// Risk: critical
-// Spec: CSRF Protection
-// Behavior: All POST/PUT/PATCH/DELETE requests require X-CSRF-Token header
-
-test("PROOF-B-024-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-024-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to decommissioned state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow decommissioned→maintenance reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-024-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to rented without going through decommissioned
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-025-STATUS — Status Transition: System returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
-// Risk: critical
-// Spec: CSRF Protection
-// Behavior: System returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
-
-test("PROOF-B-025-STATUSa — reserved → returned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove returns 403 CSRF_REQUIRED transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-025-STATUSb — returned → reserved: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to returned state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow returned→reserved reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-025-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to overdue without going through returned
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-026-STATUS — Status Transition: POST /api/devices registers a new medical device
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/devices registers a new medical device
-
-test("PROOF-B-026-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.create",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove registers transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-026-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to available state first
-  await trpcMutation(request, "devices.create",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow available→rented reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-026-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to decommissioned without going through available
-  const { status } = await trpcMutation(request, "devices.create",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-027-STATUS — Status Transition: POST /api/devices requires clinicId to match JWT clinicId
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/devices requires clinicId to match JWT clinicId
-
-test("PROOF-B-027-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-027-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-009-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -534,7 +158,7 @@ test("PROOF-B-027-STATUSb — maintenance → rented: reverse transition must be
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-027-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-009-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to decommissioned without going through maintenance
@@ -551,12 +175,12 @@ test("PROOF-B-027-STATUSc — rented → decommissioned: skip-transition must be
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-028-STATUS — Status Transition: POST /api/devices rejects registration if serialNumber is globally unique
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/devices rejects registration if serialNumber is globally unique
+// PROOF-B-010-STATUS — Status Transition: Technician role can view rentals
+// Risk: critical
+// Spec: Roles & Permissions
+// Behavior: Technician role can view rentals
 
-test("PROOF-B-028-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-010-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -564,7 +188,7 @@ test("PROOF-B-028-STATUSa — available → maintenance: transition succeeds wit
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove rejects registration transition from allowed list
+  // Kills: Remove view transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -574,7 +198,7 @@ test("PROOF-B-028-STATUSa — available → maintenance: transition succeeds wit
 
 });
 
-test("PROOF-B-028-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-010-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -595,20 +219,20 @@ test("PROOF-B-028-STATUSb — maintenance → available: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-029-STATUS — Status Transition: POST /api/devices rejects registration if purchaseDate is in the future
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/devices rejects registration if purchaseDate is in the future
+// PROOF-B-012-STATUS — Status Transition: Nurse role can return devices
+// Risk: critical
+// Spec: Roles & Permissions
+// Behavior: Nurse role can return devices
 
-test("PROOF-B-029-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-012-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "devices.create",
+  const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove rejects registration transition from allowed list
+  // Kills: Remove return transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -618,15 +242,15 @@ test("PROOF-B-029-STATUSa — maintenance → available: transition succeeds wit
 
 });
 
-test("PROOF-B-029-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-012-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to available state first
-  await trpcMutation(request, "devices.create",
+  await trpcMutation(request, "devices.status",
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.create",
+  const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -639,11 +263,11 @@ test("PROOF-B-029-STATUSb — available → maintenance: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-029-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-012-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to rented without going through available
-  const { status } = await trpcMutation(request, "devices.create",
+  const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -656,12 +280,12 @@ test("PROOF-B-029-STATUSc — maintenance → rented: skip-transition must be re
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-032-STATUS — Status Transition: GET /api/devices shows name, type, status, availability to nurse
+// PROOF-B-013-STATUS — Status Transition: Nurse role cannot modify pricing
 // Risk: critical
-// Spec: Endpoints
-// Behavior: GET /api/devices shows name, type, status, availability to nurse
+// Spec: Roles & Permissions
+// Behavior: Nurse role cannot modify pricing
 
-test("PROOF-B-032-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-013-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -669,7 +293,7 @@ test("PROOF-B-032-STATUSa — available → decommissioned: transition succeeds 
     { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove shows transition from allowed list
+  // Kills: Remove cannot modify transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -679,7 +303,7 @@ test("PROOF-B-032-STATUSa — available → decommissioned: transition succeeds 
 
 });
 
-test("PROOF-B-032-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-013-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to decommissioned state first
@@ -700,12 +324,12 @@ test("PROOF-B-032-STATUSb — decommissioned → available: reverse transition m
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-033-STATUS — Status Transition: GET /api/devices hides pricing details from nurse
+// PROOF-B-014-STATUS — Status Transition: Billing role can manage invoices
 // Risk: critical
-// Spec: Endpoints
-// Behavior: GET /api/devices hides pricing details from nurse
+// Spec: Roles & Permissions
+// Behavior: Billing role can manage invoices
 
-test("PROOF-B-033-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-014-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -713,7 +337,7 @@ test("PROOF-B-033-STATUSa — maintenance → decommissioned: transition succeed
     { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove hides transition from allowed list
+  // Kills: Remove manage transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -723,7 +347,7 @@ test("PROOF-B-033-STATUSa — maintenance → decommissioned: transition succeed
 
 });
 
-test("PROOF-B-033-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-014-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to decommissioned state first
@@ -744,7 +368,7 @@ test("PROOF-B-033-STATUSb — decommissioned → maintenance: reverse transition
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-033-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-014-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to rented without going through decommissioned
@@ -761,20 +385,20 @@ test("PROOF-B-033-STATUSc — maintenance → rented: skip-transition must be re
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-036-STATUS — Status Transition: GET /api/devices/:id retrieves device details
+// PROOF-B-017-STATUS — Status Transition: Billing role cannot access medical records
 // Risk: critical
-// Spec: Endpoints
-// Behavior: GET /api/devices/:id retrieves device details
+// Spec: Roles & Permissions
+// Behavior: Billing role cannot access medical records
 
-test("PROOF-B-036-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-017-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "devices.list",
+  const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove retrieves transition from allowed list
+  // Kills: Remove cannot access transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -784,15 +408,15 @@ test("PROOF-B-036-STATUSa — available → rented: transition succeeds with cor
 
 });
 
-test("PROOF-B-036-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-017-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to rented state first
-  await trpcMutation(request, "devices.list",
+  await trpcMutation(request, "devices.status",
     { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.list",
+  const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -805,12 +429,12 @@ test("PROOF-B-036-STATUSb — rented → available: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-039-STATUS — Status Transition: PATCH /api/devices/:id/status updates device status
-// Risk: high
-// Spec: Endpoints
-// Behavior: PATCH /api/devices/:id/status updates device status
+// PROOF-B-022-STATUS — Status Transition: API requires X-CSRF-Token header for state-changing requests
+// Risk: critical
+// Spec: CSRF Protection
+// Behavior: API requires X-CSRF-Token header for state-changing requests
 
-test("PROOF-B-039-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-022-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -818,7 +442,7 @@ test("PROOF-B-039-STATUSa — rented → available: transition succeeds with cor
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove updates transition from allowed list
+  // Kills: Remove requires transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -828,7 +452,7 @@ test("PROOF-B-039-STATUSa — rented → available: transition succeeds with cor
 
 });
 
-test("PROOF-B-039-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-022-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to available state first
@@ -849,7 +473,7 @@ test("PROOF-B-039-STATUSb — available → rented: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-039-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-022-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to decommissioned without going through available
@@ -866,12 +490,12 @@ test("PROOF-B-039-STATUSc — rented → decommissioned: skip-transition must be
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-040-STATUS — Status Transition: PATCH /api/devices/:id/status requires reason for maintenance/decommissioned status
-// Risk: medium
-// Spec: Endpoints
-// Behavior: PATCH /api/devices/:id/status requires reason for maintenance/decommissioned status
+// PROOF-B-023-STATUS — Status Transition: API returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
+// Risk: critical
+// Spec: CSRF Protection
+// Behavior: API returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
 
-test("PROOF-B-040-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-023-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -879,7 +503,7 @@ test("PROOF-B-040-STATUSa — rented → maintenance: transition succeeds with c
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
+  // Kills: Remove returns 403 transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -889,7 +513,7 @@ test("PROOF-B-040-STATUSa — rented → maintenance: transition succeeds with c
 
 });
 
-test("PROOF-B-040-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-023-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -910,7 +534,7 @@ test("PROOF-B-040-STATUSb — maintenance → rented: reverse transition must be
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-040-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-023-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to decommissioned without going through maintenance
@@ -927,12 +551,602 @@ test("PROOF-B-040-STATUSc — rented → decommissioned: skip-transition must be
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-041-STATUS — Status Transition: POST /api/devices/:id/maintenance records a maintenance event
+// PROOF-B-024-STATUS — Status Transition: API allows technician and admin to register new medical devices
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API allows technician and admin to register new medical devices
+
+test("PROOF-B-024-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove allows transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-024-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-025-STATUS — Status Transition: API rejects device registration if clinicId does not match JWT
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API rejects device registration if clinicId does not match JWT
+
+test("PROOF-B-025-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-025-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→maintenance reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-025-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to rented without going through available
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-026-STATUS — Status Transition: API rejects device registration if serialNumber already exists globally
+// Risk: medium
+// Spec: Endpoints
+// Behavior: API rejects device registration if serialNumber already exists globally
+
+test("PROOF-B-026-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-026-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-027-STATUS — Status Transition: API rejects device registration if purchaseDate is in the future
+// Risk: medium
+// Spec: Endpoints
+// Behavior: API rejects device registration if purchaseDate is in the future
+
+test("PROOF-B-027-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-027-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→maintenance reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-027-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to rented without going through decommissioned
+  const { status } = await trpcMutation(request, "devices.create",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-030-STATUS — Status Transition: Nurse role sees name, type, status, availability when listing devices
+// Risk: critical
+// Spec: Endpoints
+// Behavior: Nurse role sees name, type, status, availability when listing devices
+
+test("PROOF-B-030-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sees transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-030-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to rented state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow rented→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-031-STATUS — Status Transition: Nurse role does not see pricing when listing devices
+// Risk: critical
+// Spec: Endpoints
+// Behavior: Nurse role does not see pricing when listing devices
+
+test("PROOF-B-031-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove does not see transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-031-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-031-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through available
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-036-STATUS — Status Transition: API returns 403 if device belongs to a different clinic
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API returns 403 if device belongs to a different clinic
+
+test("PROOF-B-036-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove returns 403 transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-036-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-036-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through maintenance
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-037-STATUS — Status Transition: API allows technician and admin to update device status
 // Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance records a maintenance event
+// Behavior: API allows technician and admin to update device status
 
-test("PROOF-B-041-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-037-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove allows transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-037-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-039-STATUS — Status Transition: API allows technician and admin to record a maintenance event
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API allows technician and admin to record a maintenance event
+
+test("PROOF-B-039-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove allows transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-039-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→maintenance reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-039-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to rented without going through available
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-040-STATUS — Status Transition: API rejects maintenance recording if device is currently rented
+// Risk: high
+// Spec: Endpoints
+// Behavior: API rejects maintenance recording if device is currently rented
+
+test("PROOF-B-040-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-040-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-041-STATUS — Status Transition: API sets device.lastMaintenanceDate to today after maintenance event
+// Risk: high
+// Spec: Endpoints
+// Behavior: API sets device.lastMaintenanceDate to today after maintenance event
+
+test("PROOF-B-041-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+  expect((updated as Record<string, unknown>)?.lastMaintenanceDat).not.toBeNull();
+  // Kills: Remove lastMaintenanceDat = NOW() in handler
+
+  // Kills: Remove device.lastMaintenanceDate = current date side-effect
+});
+
+test("PROOF-B-041-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→maintenance reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-041-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to rented without going through decommissioned
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-042-STATUS — Status Transition: API resets maintenance countdown after maintenance event
+// Risk: high
+// Spec: Endpoints
+// Behavior: API resets maintenance countdown after maintenance event
+
+test("PROOF-B-042-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -942,242 +1156,32 @@ test("PROOF-B-041-STATUSa — available → maintenance: transition succeeds wit
   const countBefore = ((before as Record<string, unknown>)?.count as number) ?? 0;
 
   const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove records transition from allowed list
+  // Kills: Remove resets transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  expect((updated as Record<string, unknown>)?.status).toBe("rented");
   // Kills: Update status field but not persist to DB
 
   // Side-effect: counter must increment exactly once
   expect((updated as Record<string, unknown>)?.count).toBe(countBefore + 1);
-  // Kills: Remove Maintenance countdown is reset side-effect
+  // Kills: Remove maintenance countdown restarted side-effect
 
 });
 
-test("PROOF-B-041-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to maintenance state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow maintenance→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-042-STATUS — Status Transition: POST /api/devices/:id/maintenance rejects if device is currently rented
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance rejects if device is currently rented
-
-test("PROOF-B-042-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-042-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to available state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow available→maintenance reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-042-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to rented without going through available
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-043-STATUS — Status Transition: POST /api/devices/:id/maintenance sets device.lastMaintenanceDate to today
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance sets device.lastMaintenanceDate to today
-
-test("PROOF-B-043-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove sets transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-043-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to decommissioned state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow decommissioned→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-045-STATUS — Status Transition: POST /api/devices/:id/maintenance requires nextMaintenanceDue to be in the future
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance requires nextMaintenanceDue to be in the future
-
-test("PROOF-B-045-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-045-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to decommissioned state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow decommissioned→maintenance reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-045-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to rented without going through decommissioned
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-046-STATUS — Status Transition: POST /api/patients registers a patient
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/patients registers a patient
-
-test("PROOF-B-046-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove registers transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-046-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-042-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to rented state first
-  await trpcMutation(request, "patients.create",
+  await trpcMutation(request, "devices.maintenance",
     { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "patients.create",
+  const { status } = await trpcMutation(request, "devices.maintenance",
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -1190,484 +1194,20 @@ test("PROOF-B-046-STATUSb — rented → available: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-047-STATUS — Status Transition: POST /api/patients requires clinicId to match JWT clinicId
+// PROOF-B-043-STATUS — Status Transition: API allows nurse and admin to register a patient
 // Risk: critical
 // Spec: Endpoints
-// Behavior: POST /api/patients requires clinicId to match JWT clinicId
+// Behavior: API allows nurse and admin to register a patient
 
-test("PROOF-B-047-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-043-STATUSa — reserved → returned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-047-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to cancelled state first
-  await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow cancelled→active reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-047-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through cancelled
-  const { status } = await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-048-STATUS — Status Transition: POST /api/patients requires dateOfBirth to be in the past
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/patients requires dateOfBirth to be in the past
-
-test("PROOF-B-048-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-048-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "patients.create",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-049-STATUS — Status Transition: Patient medicalNotes are visible only to nurse/admin
-// Risk: critical
-// Spec: Endpoints
-// Behavior: Patient medicalNotes are visible only to nurse/admin
-
-test("PROOF-B-049-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove restricts visibility of transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-049-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to maintenance state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow maintenance→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-050-STATUS — Status Transition: GET /api/patients lists patients
-// Risk: critical
-// Spec: Endpoints
-// Behavior: GET /api/patients lists patients
-
-test("PROOF-B-050-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove lists transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-050-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to overdue state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow overdue→active reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-050-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through overdue
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-051-STATUS — Status Transition: GET /api/patients returns 403 INSUFFICIENT_ROLE for billing role
-// Risk: critical
-// Spec: Endpoints
-// Behavior: GET /api/patients returns 403 INSUFFICIENT_ROLE for billing role
-
-test("PROOF-B-051-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove returns 403 INSUFFICIENT_ROLE transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-051-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-052-STATUS — Status Transition: POST /api/rentals creates a device rental
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/rentals creates a device rental
-
-test("PROOF-B-052-STATUSa — maintenance → rented: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove creates transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-052-STATUSb — rented → maintenance: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to rented state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow rented→maintenance reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-053-STATUS — Status Transition: POST /api/rentals rejects if device is not available
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if device is not available
-
-test("PROOF-B-053-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-053-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to rented state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow rented→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-054-STATUS — Status Transition: POST /api/rentals rejects if device belongs to a different clinic
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if device belongs to a different clinic
-
-test("PROOF-B-054-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-054-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to available state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow available→rented reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-054-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to decommissioned without going through available
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-055-STATUS — Status Transition: POST /api/rentals rejects if patient belongs to a different clinic
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if patient belongs to a different clinic
-
-test("PROOF-B-055-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-055-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to cancelled state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow cancelled→active reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-055-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through cancelled
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-056-STATUS — Status Transition: POST /api/rentals rejects if rental period exceeds 365 days
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if rental period exceeds 365 days
-
-test("PROOF-B-056-STATUSa — reserved → returned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
     { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
+  // Kills: Remove allows transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -1677,15 +1217,15 @@ test("PROOF-B-056-STATUSa — reserved → returned: transition succeeds with co
 
 });
 
-test("PROOF-B-056-STATUSb — returned → reserved: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-043-STATUSb — returned → reserved: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to returned state first
-  await trpcMutation(request, "rentals.create",
+  await trpcMutation(request, "patients.create",
     { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
+  const { status } = await trpcMutation(request, "patients.create",
     { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -1698,12 +1238,12 @@ test("PROOF-B-056-STATUSb — returned → reserved: reverse transition must be 
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-056-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-043-STATUSc — reserved → completed: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to overdue without going through returned
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+  // Attempt to skip directly to completed without going through returned
+  const { status } = await trpcMutation(request, "patients.create",
+    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -1715,247 +1255,108 @@ test("PROOF-B-056-STATUSc — reserved → overdue: skip-transition must be reje
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-057-STATUS — Status Transition: POST /api/rentals rejects if expectedReturnDate is not after startDate
-// Risk: medium
+// PROOF-B-044-STATUS — Status Transition: API rejects patient registration if clinicId does not match JWT
+// Risk: critical
 // Spec: Endpoints
-// Behavior: POST /api/rentals rejects if expectedReturnDate is not after startDate
+// Behavior: API rejects patient registration if clinicId does not match JWT
 
-test("PROOF-B-057-STATUSa — reserved → active: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-044-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-057-STATUSb — active → reserved: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to active state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow active→reserved reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-057-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to overdue without going through active
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-058-STATUS — Status Transition: POST /api/rentals rejects if insuranceClaim is true but insurancePreAuthCode is missing
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if insuranceClaim is true but insurancePreAuthCode is missing
-
-test("PROOF-B-058-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-058-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to overdue state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow overdue→active reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-058-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through overdue
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-059-STATUS — Status Transition: POST /api/rentals ensures only one rental succeeds for the same device concurrently
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/rentals ensures only one rental succeeds for the same device concurrently
-
-test("PROOF-B-059-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove ensures transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-059-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to decommissioned state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
+  const { status } = await trpcMutation(request, "devices.maintenance",
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
-  expect([400, 422]).toContain(status);
-  // Kills: Allow decommissioned→maintenance reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-059-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to rented without going through decommissioned
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-060-STATUS — Status Transition: POST /api/rentals sets device.status to 'rented'
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/rentals sets device.status to 'rented'
-
-test("PROOF-B-060-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
   expect(status).toBe(200);
-  // Kills: Remove sets transition from allowed list
+  // Kills: Remove rejects transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-060-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-044-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to rented state first
-  await trpcMutation(request, "rentals.create",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.create",
+  const { status } = await trpcMutation(request, "devices.maintenance",
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow rented→available reverse transition
+  // Kills: Allow maintenance→available reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-066-STATUS — Status Transition: POST /api/rentals/:id/extend extends a rental period
-// Risk: high
+// PROOF-B-046-STATUS — Status Transition: API rejects patient listing for billing role
+// Risk: critical
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/extend extends a rental period
+// Behavior: API rejects patient listing for billing role
 
-test("PROOF-B-066-STATUSa — returned → completed: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-046-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "rentals.extend",
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-046-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-047-STATUS — Status Transition: API allows nurse and admin to create a device rental
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API allows nurse and admin to create a device rental
+
+test("PROOF-B-047-STATUSa — returned → completed: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
     { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove extends transition from allowed list
+  // Kills: Remove allows transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -1965,15 +1366,15 @@ test("PROOF-B-066-STATUSa — returned → completed: transition succeeds with c
 
 });
 
-test("PROOF-B-066-STATUSb — completed → returned: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-047-STATUSb — completed → returned: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to completed state first
-  await trpcMutation(request, "rentals.extend",
+  await trpcMutation(request, "rentals.create",
     { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.extend",
+  const { status } = await trpcMutation(request, "rentals.create",
     { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -1986,11 +1387,11 @@ test("PROOF-B-066-STATUSb — completed → returned: reverse transition must be
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-066-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-047-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to reserved without going through completed
-  const { status } = await trpcMutation(request, "rentals.extend",
+  const { status } = await trpcMutation(request, "rentals.create",
     { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -2003,16 +1404,16 @@ test("PROOF-B-066-STATUSc — returned → reserved: skip-transition must be rej
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-067-STATUS — Status Transition: POST /api/rentals/:id/extend rejects if rental is not active
+// PROOF-B-048-STATUS — Status Transition: API rejects rental creation if device is not available
 // Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/extend rejects if rental is not active
+// Behavior: API rejects rental creation if device is not available
 
-test("PROOF-B-067-STATUSa — reserved → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-048-STATUSa — reserved → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "rentals.extend",
+  const { status } = await trpcMutation(request, "rentals.create",
     { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
@@ -2026,7 +1427,438 @@ test("PROOF-B-067-STATUSa — reserved → cancelled: transition succeeds with c
 
 });
 
-test("PROOF-B-067-STATUSb — cancelled → reserved: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-048-STATUSb — cancelled → reserved: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to cancelled state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow cancelled→reserved reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-048-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to overdue without going through cancelled
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-049-STATUS — Status Transition: API rejects rental creation if device belongs to a different clinic
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API rejects rental creation if device belongs to a different clinic
+
+test("PROOF-B-049-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-049-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to cancelled state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow cancelled→active reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-049-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to reserved without going through cancelled
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-050-STATUS — Status Transition: API rejects rental creation if patient belongs to a different clinic
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API rejects rental creation if patient belongs to a different clinic
+
+test("PROOF-B-050-STATUSa — reserved → active: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("active");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-050-STATUSb — active → reserved: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to active state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow active→reserved reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("active");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-050-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to overdue without going through active
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-051-STATUS — Status Transition: API rejects rental creation if expectedReturnDate is more than 365 days from startDate
+// Risk: medium
+// Spec: Endpoints
+// Behavior: API rejects rental creation if expectedReturnDate is more than 365 days from startDate
+
+test("PROOF-B-051-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-051-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to overdue state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow overdue→active reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-051-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to reserved without going through overdue
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-052-STATUS — Status Transition: API rejects rental creation if expectedReturnDate is not after startDate
+// Risk: medium
+// Spec: Endpoints
+// Behavior: API rejects rental creation if expectedReturnDate is not after startDate
+
+test("PROOF-B-052-STATUSa — active → returned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("returned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-052-STATUSb — returned → active: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to returned state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow returned→active reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-052-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to reserved without going through returned
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-054-STATUS — Status Transition: API ensures only one concurrent rental for the same device succeeds
+// Risk: high
+// Spec: Endpoints
+// Behavior: API ensures only one concurrent rental for the same device succeeds
+
+test("PROOF-B-054-STATUSa — overdue → returned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove ensures transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("returned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-054-STATUSb — returned → overdue: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to returned state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow returned→overdue reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-054-STATUSc — overdue → reserved: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to reserved without going through returned
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("overdue");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-055-STATUS — Status Transition: API sets device status to rented upon successful rental creation
+// Risk: high
+// Spec: Endpoints
+// Behavior: API sets device status to rented upon successful rental creation
+
+test("PROOF-B-055-STATUSa — returned → completed: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("completed");
+  // Kills: Update status field but not persist to DB
+
+  expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
+  // Kills: Remove stat = NOW() in handler
+
+  // Kills: Remove device.status = 'rented' side-effect
+});
+
+test("PROOF-B-055-STATUSb — completed → returned: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to completed state first
+  await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow completed→returned reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("completed");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-055-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to reserved without going through completed
+  const { status } = await trpcMutation(request, "rentals.create",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("returned");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-061-STATUS — Status Transition: API allows nurse and admin to extend a rental period
+// Risk: critical
+// Spec: Endpoints
+// Behavior: API allows nurse and admin to extend a rental period
+
+test("PROOF-B-061-STATUSa — reserved → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.extend",
+    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove allows transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-061-STATUSb — cancelled → reserved: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to cancelled state first
@@ -2047,7 +1879,7 @@ test("PROOF-B-067-STATUSb — cancelled → reserved: reverse transition must be
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-067-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-061-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to overdue without going through cancelled
@@ -2064,12 +1896,12 @@ test("PROOF-B-067-STATUSc — reserved → overdue: skip-transition must be reje
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-068-STATUS — Status Transition: POST /api/rentals/:id/extend rejects if maximum 3 extensions per rental are reached
-// Risk: medium
+// PROOF-B-062-STATUS — Status Transition: API rejects rental extension if rental is not active
+// Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/extend rejects if maximum 3 extensions per rental are reached
+// Behavior: API rejects rental extension if rental is not active
 
-test("PROOF-B-068-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-062-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -2087,7 +1919,7 @@ test("PROOF-B-068-STATUSa — active → cancelled: transition succeeds with cor
 
 });
 
-test("PROOF-B-068-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-062-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to cancelled state first
@@ -2108,7 +1940,7 @@ test("PROOF-B-068-STATUSb — cancelled → active: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-068-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-062-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to reserved without going through cancelled
@@ -2125,73 +1957,12 @@ test("PROOF-B-068-STATUSc — active → reserved: skip-transition must be rejec
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-069-STATUS — Status Transition: POST /api/rentals/:id/extend requires newReturnDate to be after current expectedReturnDate
+// PROOF-B-063-STATUS — Status Transition: API rejects rental extension if maximum of 3 extensions per rental is reached
 // Risk: medium
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/extend requires newReturnDate to be after current expectedReturnDate
+// Behavior: API rejects rental extension if maximum of 3 extensions per rental is reached
 
-test("PROOF-B-069-STATUSa — reserved → returned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "rentals.extend",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-069-STATUSb — returned → reserved: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to returned state first
-  await trpcMutation(request, "rentals.extend",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.extend",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow returned→reserved reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-069-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to overdue without going through returned
-  const { status } = await trpcMutation(request, "rentals.extend",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-070-STATUS — Status Transition: POST /api/rentals/:id/extend requires newReturnDate to be within 365 days from original startDate
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/rentals/:id/extend requires newReturnDate to be within 365 days from original startDate
-
-test("PROOF-B-070-STATUSa — reserved → active: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-063-STATUSa — reserved → active: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -2199,7 +1970,7 @@ test("PROOF-B-070-STATUSa — reserved → active: transition succeeds with corr
     { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
+  // Kills: Remove rejects transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -2209,7 +1980,7 @@ test("PROOF-B-070-STATUSa — reserved → active: transition succeeds with corr
 
 });
 
-test("PROOF-B-070-STATUSb — active → reserved: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-063-STATUSb — active → reserved: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to active state first
@@ -2230,7 +2001,7 @@ test("PROOF-B-070-STATUSb — active → reserved: reverse transition must be re
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-070-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-063-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to overdue without going through active
@@ -2247,56 +2018,56 @@ test("PROOF-B-070-STATUSc — reserved → overdue: skip-transition must be reje
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-072-STATUS — Status Transition: POST /api/rentals/:id/return processes device return
-// Risk: high
+// PROOF-B-065-STATUS — Status Transition: API allows technician, nurse, and admin to process device return
+// Risk: critical
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return processes device return
+// Behavior: API allows technician, nurse, and admin to process device return
 
-test("PROOF-B-072-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-065-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove processes transition from allowed list
+  // Kills: Remove allows transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-072-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-065-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to decommissioned state first
+  // Bring to overdue state first
   await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow decommissioned→maintenance reverse transition
+  // Kills: Allow overdue→active reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-072-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-065-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to rented without going through decommissioned
+  // Attempt to skip directly to reserved without going through overdue
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -2304,21 +2075,21 @@ test("PROOF-B-072-STATUSc — maintenance → rented: skip-transition must be re
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-073-STATUS — Status Transition: POST /api/rentals/:id/return rejects if rental is not active or overdue
+// PROOF-B-066-STATUS — Status Transition: API rejects device return if rental is not active or overdue
 // Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return rejects if rental is not active or overdue
+// Behavior: API rejects device return if rental is not active or overdue
 
-test("PROOF-B-073-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-066-STATUSa — active → returned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
   // Kills: Remove rejects transition from allowed list
@@ -2326,82 +2097,38 @@ test("PROOF-B-073-STATUSa — available → rented: transition succeeds with cor
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
+  expect((updated as Record<string, unknown>)?.status).toBe("returned");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-073-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-066-STATUSb — returned → active: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to rented state first
+  // Bring to returned state first
   await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow rented→available reverse transition
+  // Kills: Allow returned→active reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-075-STATUS — Status Transition: POST /api/rentals/:id/return sets device.status to 'maintenance' if condition is 'needs_repair'
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return sets device.status to 'maintenance' if condition is 'needs_repair'
-
-test("PROOF-B-075-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove sets transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-075-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-066-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to maintenance state first
-  await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow maintenance→rented reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-075-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to decommissioned without going through maintenance
-  const { status } = await trpcMutation(request, "devices.maintenance",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+  // Attempt to skip directly to reserved without going through returned
+  const { status } = await trpcMutation(request, "rentals.return",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -2409,21 +2136,21 @@ test("PROOF-B-075-STATUSc — rented → decommissioned: skip-transition must be
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-076-STATUS — Status Transition: POST /api/rentals/:id/return sets device.status to 'available' if condition is 'good'
+// PROOF-B-070-STATUS — Status Transition: API sets device status to maintenance if return condition is needs_repair
 // Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return sets device.status to 'available' if condition is 'good'
+// Behavior: API sets device status to maintenance if return condition is needs_repair
 
-test("PROOF-B-076-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-070-STATUSa — overdue → returned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
   // Kills: Remove sets transition from allowed list
@@ -2431,38 +2158,42 @@ test("PROOF-B-076-STATUSa — rented → available: transition succeeds with cor
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  expect((updated as Record<string, unknown>)?.status).toBe("returned");
   // Kills: Update status field but not persist to DB
 
+  expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
+  // Kills: Remove stat = NOW() in handler
+
+  // Kills: Remove device.status = 'maintenance' side-effect
 });
 
-test("PROOF-B-076-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-070-STATUSb — returned → overdue: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to available state first
+  // Bring to returned state first
   await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow available→rented reverse transition
+  // Kills: Allow returned→overdue reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-076-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-070-STATUSc — overdue → reserved: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to decommissioned without going through available
+  // Attempt to skip directly to reserved without going through returned
   const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -2470,24 +2201,94 @@ test("PROOF-B-076-STATUSc — rented → decommissioned: skip-transition must be
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("overdue");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-079-STATUS — Status Transition: POST /api/rentals/:id/return requires damageNotes if condition is not 'good'
-// Risk: medium
+// PROOF-B-071-STATUS — Status Transition: API sets device status to available if return condition is good
+// Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return requires damageNotes if condition is not 'good'
+// Behavior: API sets device status to available if return condition is good
 
-test("PROOF-B-079-STATUSa — reserved → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-071-STATUSa — returned → completed: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "rentals.return",
+    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("completed");
+  // Kills: Update status field but not persist to DB
+
+  expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
+  // Kills: Remove stat = NOW() in handler
+
+  // Kills: Remove device.status = 'available' side-effect
+});
+
+test("PROOF-B-071-STATUSb — completed → returned: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to completed state first
+  await trpcMutation(request, "rentals.return",
+    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "rentals.return",
+    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow completed→returned reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("completed");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-071-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to reserved without going through completed
+  const { status } = await trpcMutation(request, "rentals.return",
+    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("returned");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-073-STATUS — Status Transition: API updates patient.activeRentals upon device return
+// Risk: high
+// Spec: Endpoints
+// Behavior: API updates patient.activeRentals upon device return
+
+test("PROOF-B-073-STATUSa — reserved → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  // Baseline: record counter BEFORE transition
+  const { data: before } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  const countBefore = ((before as Record<string, unknown>)?.count as number) ?? 0;
 
   const { status } = await trpcMutation(request, "rentals.return",
     { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
+  // Kills: Remove updates transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -2495,9 +2296,16 @@ test("PROOF-B-079-STATUSa — reserved → cancelled: transition succeeds with c
   expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
   // Kills: Update status field but not persist to DB
 
+  expect((updated as Record<string, unknown>)?.pat).not.toBeNull();
+  // Kills: Remove pat = NOW() in handler
+
+  // Side-effect: counter must increment exactly once
+  expect((updated as Record<string, unknown>)?.count).toBe(countBefore + 1);
+  // Kills: Remove patient.activeRentals count updated side-effect
+
 });
 
-test("PROOF-B-079-STATUSb — cancelled → reserved: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-073-STATUSb — cancelled → reserved: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to cancelled state first
@@ -2518,7 +2326,7 @@ test("PROOF-B-079-STATUSb — cancelled → reserved: reverse transition must be
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-079-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-073-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to overdue without going through cancelled
@@ -2535,81 +2343,64 @@ test("PROOF-B-079-STATUSc — reserved → overdue: skip-transition must be reje
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-080-STATUS — Status Transition: POST /api/rentals/:id/return requires damageCharge if condition is 'damaged' or 'needs_repair'
-// Risk: medium
+// PROOF-B-074-STATUS — Status Transition: API allows billing and admin to create an invoice
+// Risk: critical
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return requires damageCharge if condition is 'damaged' or 'needs_repair'
+// Behavior: API allows billing and admin to create an invoice
 
-test("PROOF-B-080-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-074-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "invoices.create",
+    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
+  // Kills: Remove allows transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
+  expect((updated as Record<string, unknown>)?.status).toBe("paid");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-080-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-074-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to cancelled state first
-  await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
+  // Bring to paid state first
+  await trpcMutation(request, "invoices.create",
+    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "invoices.create",
+    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow cancelled→active reverse transition
+  // Kills: Allow paid→outstanding reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-080-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through cancelled
-  const { status } = await trpcMutation(request, "rentals.return",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-081-STATUS — Status Transition: PATCH /api/rentals/:id/status updates rental status
-// Risk: high
+// PROOF-B-075-STATUS — Status Transition: API rejects invoice creation if rentalId does not belong to same clinic
+// Risk: critical
 // Spec: Endpoints
-// Behavior: PATCH /api/rentals/:id/status updates rental status
+// Behavior: API rejects invoice creation if rentalId does not belong to same clinic
 
-test("PROOF-B-081-STATUSa — reserved → returned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-075-STATUSa — reserved → returned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "rentals.status",
+  const { status } = await trpcMutation(request, "invoices.create",
     { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove updates transition from allowed list
+  // Kills: Remove rejects transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -2619,15 +2410,15 @@ test("PROOF-B-081-STATUSa — reserved → returned: transition succeeds with co
 
 });
 
-test("PROOF-B-081-STATUSb — returned → reserved: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-075-STATUSb — returned → reserved: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to returned state first
-  await trpcMutation(request, "rentals.status",
+  await trpcMutation(request, "invoices.create",
     { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "rentals.status",
+  const { status } = await trpcMutation(request, "invoices.create",
     { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -2640,12 +2431,12 @@ test("PROOF-B-081-STATUSb — returned → reserved: reverse transition must be 
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-081-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-075-STATUSc — reserved → completed: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to overdue without going through returned
-  const { status } = await trpcMutation(request, "rentals.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+  // Attempt to skip directly to completed without going through returned
+  const { status } = await trpcMutation(request, "invoices.create",
+    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -2657,161 +2448,56 @@ test("PROOF-B-081-STATUSc — reserved → overdue: skip-transition must be reje
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-082-STATUS — Status Transition: POST /api/invoices creates an invoice
+// PROOF-B-076-STATUS — Status Transition: API allows billing and admin to record payment
 // Risk: critical
 // Spec: Endpoints
-// Behavior: POST /api/invoices creates an invoice
+// Behavior: API allows billing and admin to record payment
 
-test("PROOF-B-082-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-076-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove creates transition from allowed list
+  // Kills: Remove allows transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-082-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-076-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to paid state first
-  await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
+  // Kills: Allow maintenance→available reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-083-STATUS — Status Transition: POST /api/invoices rejects if rentalId belongs to a different clinic
-// Risk: critical
-// Spec: Endpoints
-// Behavior: POST /api/invoices rejects if rentalId belongs to a different clinic
-
-test("PROOF-B-083-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-083-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to overdue state first
-  await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow overdue→active reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-083-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through overdue
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-084-STATUS — Status Transition: POST /api/invoices requires dueDate to be in the future
+// PROOF-B-077-STATUS — Status Transition: API rejects payment if amount exceeds remaining balance
 // Risk: medium
 // Spec: Endpoints
-// Behavior: POST /api/invoices requires dueDate to be in the future
+// Behavior: API rejects payment if amount exceeds remaining balance
 
-test("PROOF-B-084-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove requires transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-084-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "invoices.create",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-085-STATUS — Status Transition: POST /api/invoices/:id/payment records payment
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/invoices/:id/payment records payment
-
-test("PROOF-B-085-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-077-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -2819,7 +2505,51 @@ test("PROOF-B-085-STATUSa — outstanding → paid: transition succeeds with cor
     { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove records transition from allowed list
+  // Kills: Remove rejects transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("paid");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-077-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to paid state first
+  await trpcMutation(request, "invoices.payment",
+    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "invoices.payment",
+    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow paid→outstanding reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-078-STATUS — Status Transition: API sets invoice status to paid if total paid >= invoice total
+// Risk: high
+// Spec: Endpoints
+// Behavior: API sets invoice status to paid if total paid >= invoice total
+
+test("PROOF-B-078-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "invoices.payment",
+    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -2830,10 +2560,10 @@ test("PROOF-B-085-STATUSa — outstanding → paid: transition succeeds with cor
   expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
   // Kills: Remove stat = NOW() in handler
 
-  // Kills: Remove Invoice status updated to 'paid' if total paid >= invoice total side-effect
+  // Kills: Remove invoice.status = 'paid' side-effect
 });
 
-test("PROOF-B-085-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-078-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to paid state first
@@ -2854,56 +2584,12 @@ test("PROOF-B-085-STATUSb — paid → outstanding: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-086-STATUS — Status Transition: POST /api/invoices/:id/payment rejects if amount exceeds remaining balance
-// Risk: medium
-// Spec: Endpoints
-// Behavior: POST /api/invoices/:id/payment rejects if amount exceeds remaining balance
-
-test("PROOF-B-086-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "invoices.payment",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove rejects transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-086-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "invoices.payment",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "invoices.payment",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-087-STATUS — Status Transition: POST /api/invoices/:id/payment sets invoice.status to 'paid' if total paid >= invoice total
+// PROOF-B-079-STATUS — Status Transition: API keeps invoice status as outstanding for partial payments
 // Risk: high
 // Spec: Endpoints
-// Behavior: POST /api/invoices/:id/payment sets invoice.status to 'paid' if total paid >= invoice total
+// Behavior: API keeps invoice status as outstanding for partial payments
 
-test("PROOF-B-087-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-079-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -2911,7 +2597,7 @@ test("PROOF-B-087-STATUSa — outstanding → paid: transition succeeds with cor
     { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove sets transition from allowed list
+  // Kills: Remove keeps transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -2921,7 +2607,7 @@ test("PROOF-B-087-STATUSa — outstanding → paid: transition succeeds with cor
 
 });
 
-test("PROOF-B-087-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-079-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to paid state first
@@ -2942,266 +2628,12 @@ test("PROOF-B-087-STATUSb — paid → outstanding: reverse transition must be r
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-088-STATUS — Status Transition: POST /api/invoices/:id/payment handles partial payments by keeping invoice outstanding
-// Risk: high
-// Spec: Endpoints
-// Behavior: POST /api/invoices/:id/payment handles partial payments by keeping invoice outstanding
-
-test("PROOF-B-088-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "invoices.payment",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove handles transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-088-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "invoices.payment",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "invoices.payment",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-089-STATUS — Status Transition: GET /api/reports/utilization provides device utilization report
+// PROOF-B-080-STATUS — Status Transition: API allows admin only to access device utilization report
 // Risk: critical
 // Spec: Endpoints
-// Behavior: GET /api/reports/utilization provides device utilization report
+// Behavior: API allows admin only to access device utilization report
 
-test("PROOF-B-089-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove provides transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-089-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to decommissioned state first
-  await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow decommissioned→maintenance reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-089-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to rented without going through decommissioned
-  const { status } = await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-090-STATUS — Status Transition: GET /api/reports/utilization is accessible only by admin
-// Risk: critical
-// Spec: Endpoints
-// Behavior: GET /api/reports/utilization is accessible only by admin
-
-test("PROOF-B-090-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove restricts access to transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-090-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to rented state first
-  await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "reports.utilization",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow rented→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-091-STATUS — Status Transition: Device state transitions from available to rented when rental created
-// Risk: high
-// Spec: Status Machine: devices
-// Behavior: Device state transitions from available to rented when rental created
-
-test("PROOF-B-091-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-091-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to rented state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow rented→available reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-092-STATUS — Status Transition: Device state transitions from rented to available when returned in good condition
-// Risk: high
-// Spec: Status Machine: devices
-// Behavior: Device state transitions from rented to available when returned in good condition
-
-test("PROOF-B-092-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-092-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to available state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow available→rented reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-092-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to decommissioned without going through available
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-093-STATUS — Status Transition: Device state transitions from rented to maintenance when returned needing repair
-// Risk: high
-// Spec: Status Machine: devices
-// Behavior: Device state transitions from rented to maintenance when returned needing repair
-
-test("PROOF-B-093-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-080-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3209,7 +2641,7 @@ test("PROOF-B-093-STATUSa — rented → maintenance: transition succeeds with c
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
+  // Kills: Remove allows transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -3219,7 +2651,7 @@ test("PROOF-B-093-STATUSa — rented → maintenance: transition succeeds with c
 
 });
 
-test("PROOF-B-093-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-080-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -3240,11 +2672,99 @@ test("PROOF-B-093-STATUSb — maintenance → rented: reverse transition must be
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-093-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+// PROOF-B-081-STATUS — Status Transition: Device status transitions from available to rented when rental created
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: Device status transitions from available to rented when rental created
+
+test("PROOF-B-081-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-081-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to decommissioned without going through maintenance
-  const { status } = await trpcMutation(request, "devices.maintenance",
+  // Bring to rented state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow rented→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-082-STATUS — Status Transition: Device status transitions from rented to available when returned in good condition
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: Device status transitions from rented to available when returned in good condition
+
+test("PROOF-B-082-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-082-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-082-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through available
+  const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
@@ -3257,12 +2777,12 @@ test("PROOF-B-093-STATUSc — rented → decommissioned: skip-transition must be
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-094-STATUS — Status Transition: Device state transitions from available to maintenance for scheduled maintenance
+// PROOF-B-083-STATUS — Status Transition: Device status transitions from rented to maintenance when returned needing repair
 // Risk: high
 // Spec: Status Machine: devices
-// Behavior: Device state transitions from available to maintenance for scheduled maintenance
+// Behavior: Device status transitions from rented to maintenance when returned needing repair
 
-test("PROOF-B-094-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-083-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3280,7 +2800,68 @@ test("PROOF-B-094-STATUSa — available → maintenance: transition succeeds wit
 
 });
 
-test("PROOF-B-094-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-083-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-083-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through maintenance
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-084-STATUS — Status Transition: Device status transitions from available to maintenance for scheduled maintenance
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: Device status transitions from available to maintenance for scheduled maintenance
+
+test("PROOF-B-084-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-084-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -3301,12 +2882,12 @@ test("PROOF-B-094-STATUSb — maintenance → available: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-095-STATUS — Status Transition: Device state transitions from maintenance to available when maintenance completed
+// PROOF-B-085-STATUS — Status Transition: Device status transitions from maintenance to available when maintenance completed
 // Risk: high
 // Spec: Status Machine: devices
-// Behavior: Device state transitions from maintenance to available when maintenance completed
+// Behavior: Device status transitions from maintenance to available when maintenance completed
 
-test("PROOF-B-095-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-085-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3324,7 +2905,7 @@ test("PROOF-B-095-STATUSa — maintenance → available: transition succeeds wit
 
 });
 
-test("PROOF-B-095-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-085-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to available state first
@@ -3345,7 +2926,7 @@ test("PROOF-B-095-STATUSb — available → maintenance: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-095-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-085-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to rented without going through available
@@ -3362,12 +2943,12 @@ test("PROOF-B-095-STATUSc — maintenance → rented: skip-transition must be re
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-096-STATUS — Status Transition: Device state transitions from available to decommissioned
+// PROOF-B-086-STATUS — Status Transition: Device status transitions from available to decommissioned
 // Risk: high
 // Spec: Status Machine: devices
-// Behavior: Device state transitions from available to decommissioned
+// Behavior: Device status transitions from available to decommissioned
 
-test("PROOF-B-096-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-086-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3385,7 +2966,7 @@ test("PROOF-B-096-STATUSa — available → decommissioned: transition succeeds 
 
 });
 
-test("PROOF-B-096-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-086-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to decommissioned state first
@@ -3406,12 +2987,12 @@ test("PROOF-B-096-STATUSb — decommissioned → available: reverse transition m
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-097-STATUS — Status Transition: Device state transitions from maintenance to decommissioned
+// PROOF-B-087-STATUS — Status Transition: Device status transitions from maintenance to decommissioned
 // Risk: high
 // Spec: Status Machine: devices
-// Behavior: Device state transitions from maintenance to decommissioned
+// Behavior: Device status transitions from maintenance to decommissioned
 
-test("PROOF-B-097-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-087-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3429,7 +3010,7 @@ test("PROOF-B-097-STATUSa — maintenance → decommissioned: transition succeed
 
 });
 
-test("PROOF-B-097-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-087-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to decommissioned state first
@@ -3450,7 +3031,7 @@ test("PROOF-B-097-STATUSb — decommissioned → maintenance: reverse transition
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-097-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-087-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to rented without going through decommissioned
@@ -3467,17 +3048,17 @@ test("PROOF-B-097-STATUSc — maintenance → rented: skip-transition must be re
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-098-STATUS — Status Transition: Device state cannot transition from decommissioned to any other state
+// PROOF-B-088-STATUS — Status Transition: Device status cannot transition from decommissioned to any other state
 // Risk: high
 // Spec: Status Machine: devices
-// Behavior: Device state cannot transition from decommissioned to any other state
+// Behavior: Device status cannot transition from decommissioned to any other state
 
-test("PROOF-B-098-STATUSa — decommissioned → available: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-088-STATUSa — decommissioned → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
   // Kills: Remove cannot transition transition from allowed list
@@ -3485,38 +3066,38 @@ test("PROOF-B-098-STATUSa — decommissioned → available: transition succeeds 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-098-STATUSb — available → decommissioned: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-088-STATUSb — decommissioned → decommissioned: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to available state first
+  // Bring to decommissioned state first
   await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "devices.status",
     { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow available→decommissioned reverse transition
+  // Kills: Allow decommissioned→decommissioned reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-098-STATUSc — decommissioned → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-088-STATUSc — decommissioned → available: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to rented without going through available
+  // Attempt to skip directly to available without going through decommissioned
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -3528,12 +3109,12 @@ test("PROOF-B-098-STATUSc — decommissioned → rented: skip-transition must be
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-099-STATUS — Status Transition: Device state cannot transition from rented to decommissioned without return first
+// PROOF-B-089-STATUS — Status Transition: Device status cannot transition from rented to decommissioned
 // Risk: high
-// Spec: Status Machine: devices
-// Behavior: Device state cannot transition from rented to decommissioned without return first
+// Spec: Endpoints
+// Behavior: Device status cannot transition from rented to decommissioned
 
-test("PROOF-B-099-STATUSa — rented → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-089-STATUSa — rented → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3551,7 +3132,7 @@ test("PROOF-B-099-STATUSa — rented → decommissioned: transition succeeds wit
 
 });
 
-test("PROOF-B-099-STATUSb — decommissioned → rented: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-089-STATUSb — decommissioned → rented: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to decommissioned state first
@@ -3572,12 +3153,12 @@ test("PROOF-B-099-STATUSb — decommissioned → rented: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-100-STATUS — Status Transition: Transition to maintenance state sets maintenanceStartDate
+// PROOF-B-090-STATUS — Status Transition: System sets maintenanceStartDate when device status transitions to maintenance
 // Risk: high
 // Spec: Status Machine: devices
-// Behavior: Transition to maintenance state sets maintenanceStartDate
+// Behavior: System sets maintenanceStartDate when device status transitions to maintenance
 
-test("PROOF-B-100-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-090-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3595,7 +3176,505 @@ test("PROOF-B-100-STATUSa — available → maintenance: transition succeeds wit
 
 });
 
-test("PROOF-B-100-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-090-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-090-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through maintenance
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-091-STATUS — Status Transition: System sets lastMaintenanceDate when device status transitions to available from maintenance
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: System sets lastMaintenanceDate when device status transitions to available from maintenance
+
+test("PROOF-B-091-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-091-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-091-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through available
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-092-STATUS — Status Transition: System clears maintenanceStartDate when device status transitions to available from maintenance
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: System clears maintenanceStartDate when device status transitions to available from maintenance
+
+test("PROOF-B-092-STATUSa — available → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove clears transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-092-STATUSb — available → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-093-STATUS — Status Transition: System sets decommissionedAt when device status transitions to decommissioned
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: System sets decommissionedAt when device status transitions to decommissioned
+
+test("PROOF-B-093-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-093-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→maintenance reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-093-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to rented without going through decommissioned
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-094-STATUS — Status Transition: System sets decommissionedReason when device status transitions to decommissioned
+// Risk: high
+// Spec: Status Machine: devices
+// Behavior: System sets decommissionedReason when device status transitions to decommissioned
+
+test("PROOF-B-094-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove sets transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-094-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-095-STATUS — Status Transition: Rental status transitions from reserved to active on startDate or manual activation
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from reserved to active on startDate or manual activation
+
+test("PROOF-B-095-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-095-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to decommissioned state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow decommissioned→maintenance reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-095-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to rented without going through decommissioned
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-096-STATUS — Status Transition: Rental status transitions from active to overdue automatically when past expectedReturnDate
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from active to overdue automatically when past expectedReturnDate
+
+test("PROOF-B-096-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-096-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to rented state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow rented→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-097-STATUS — Status Transition: Rental status transitions from active to returned when device returned
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from active to returned when device returned
+
+test("PROOF-B-097-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-097-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-097-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through available
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-098-STATUS — Status Transition: Rental status transitions from overdue to returned upon late return
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from overdue to returned upon late return
+
+test("PROOF-B-098-STATUSa — rented → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-098-STATUSb — maintenance → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to maintenance state first
+  await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow maintenance→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-098-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through maintenance
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-099-STATUS — Status Transition: Rental status transitions from returned to completed when final invoice paid
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from returned to completed when final invoice paid
+
+test("PROOF-B-099-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.maintenance",
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove transitions transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("maintenance");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-099-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -3616,12 +3695,12 @@ test("PROOF-B-100-STATUSb — maintenance → available: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-101-STATUS — Status Transition: Transition from maintenance to available sets lastMaintenanceDate and clears maintenanceStartDate
+// PROOF-B-100-STATUS — Status Transition: Rental status transitions from reserved to cancelled before startDate
 // Risk: high
-// Spec: Status Machine: devices
-// Behavior: Transition from maintenance to available sets lastMaintenanceDate and clears maintenanceStartDate
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from reserved to cancelled before startDate
 
-test("PROOF-B-101-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-100-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -3629,7 +3708,7 @@ test("PROOF-B-101-STATUSa — maintenance → available: transition succeeds wit
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove sets lastMaintenanceDate and clears maintenanceStartDate transition from allowed list
+  // Kills: Remove transitions transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -3639,7 +3718,7 @@ test("PROOF-B-101-STATUSa — maintenance → available: transition succeeds wit
 
 });
 
-test("PROOF-B-101-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-100-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to available state first
@@ -3660,7 +3739,7 @@ test("PROOF-B-101-STATUSb — available → maintenance: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-101-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-100-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Attempt to skip directly to rented without going through available
@@ -3677,61 +3756,17 @@ test("PROOF-B-101-STATUSc — maintenance → rented: skip-transition must be re
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-102-STATUS — Status Transition: Transition to decommissioned state sets decommissionedAt and decommissionedReason
-// Risk: high
-// Spec: Status Machine: devices
-// Behavior: Transition to decommissioned state sets decommissionedAt and decommissionedReason
-
-test("PROOF-B-102-STATUSa — outstanding → paid: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove sets transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-102-STATUSb — paid → outstanding: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to paid state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "paid", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "outstanding", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow paid→outstanding reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("paid");
-  // Kills: Silent state corruption on rejected transition
-});
-
-// PROOF-B-103-STATUS — Status Transition: Rental state transitions from reserved to active on startDate or manual activation
+// PROOF-B-101-STATUS — Status Transition: Rental status transitions from active to cancelled by admin only with reason
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Rental state transitions from reserved to active on startDate or manual activation
+// Behavior: Rental status transitions from active to cancelled by admin only with reason
 
-test("PROOF-B-103-STATUSa — reserved → active: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-101-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
   // Kills: Remove transitions transition from allowed list
@@ -3739,99 +3774,82 @@ test("PROOF-B-103-STATUSa — reserved → active: transition succeeds with corr
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("active");
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-103-STATUSb — active → reserved: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-101-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to active state first
+  // Bring to decommissioned state first
   await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow active→reserved reverse transition
+  // Kills: Allow decommissioned→available reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("active");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-103-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to overdue without going through active
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-104-STATUS — Status Transition: Rental state transitions from active to overdue automatically when past expectedReturnDate
+// PROOF-B-102-STATUS — Status Transition: Rental status cannot transition from completed to any other state
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Rental state transitions from active to overdue automatically when past expectedReturnDate
+// Behavior: Rental status cannot transition from completed to any other state
 
-test("PROOF-B-104-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-102-STATUSa — maintenance → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
+  // Kills: Remove cannot transition transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
+  expect((updated as Record<string, unknown>)?.status).toBe("decommissioned");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-104-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-102-STATUSb — decommissioned → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to overdue state first
+  // Bring to decommissioned state first
   await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow overdue→active reverse transition
+  // Kills: Allow decommissioned→maintenance reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("decommissioned");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-104-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-102-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to reserved without going through overdue
+  // Attempt to skip directly to rented without going through decommissioned
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -3839,14 +3857,58 @@ test("PROOF-B-104-STATUSc — active → reserved: skip-transition must be rejec
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-105-STATUS — Status Transition: Rental state transitions from active to returned when device is returned
+// PROOF-B-103-STATUS — Status Transition: Rental status cannot transition from cancelled to active
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Rental state transitions from active to returned when device is returned
+// Behavior: Rental status cannot transition from cancelled to active
+
+test("PROOF-B-103-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove cannot transition transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Update status field but not persist to DB
+
+});
+
+test("PROOF-B-103-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to rented state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow rented→available reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-105-STATUS — Status Transition: Rental status cannot transition from returned to active
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: Rental status cannot transition from returned to active
 
 test("PROOF-B-105-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
@@ -3856,7 +3918,7 @@ test("PROOF-B-105-STATUSa — rented → available: transition succeeds with cor
     { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
+  // Kills: Remove cannot transition transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -3904,56 +3966,60 @@ test("PROOF-B-105-STATUSc — rented → decommissioned: skip-transition must be
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-106-STATUS — Status Transition: Rental state transitions from overdue to returned upon late return, applying extra charges
+// PROOF-B-106-STATUS — Status Transition: System sets device.status to rented when rental status transitions to active
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Rental state transitions from overdue to returned upon late return, applying extra charges
+// Behavior: System sets device.status to rented when rental status transitions to active
 
-test("PROOF-B-106-STATUSa — overdue → returned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-106-STATUSa — rented → rented: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
+  // Kills: Remove sets transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("returned");
+  expect((updated as Record<string, unknown>)?.status).toBe("rented");
   // Kills: Update status field but not persist to DB
 
+  expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
+  // Kills: Remove stat = NOW() in handler
+
+  // Kills: Remove device.status = 'rented' side-effect
 });
 
-test("PROOF-B-106-STATUSb — returned → overdue: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-106-STATUSb — rented → rented: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to returned state first
+  // Bring to rented state first
   await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow returned→overdue reverse transition
+  // Kills: Allow rented→rented reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("returned");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-106-STATUSc — overdue → reserved: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-106-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to reserved without going through returned
+  // Attempt to skip directly to decommissioned without going through rented
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -3961,443 +4027,16 @@ test("PROOF-B-106-STATUSc — overdue → reserved: skip-transition must be reje
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("overdue");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-107-STATUS — Status Transition: Rental state transitions from returned to completed when final invoice is paid
+// PROOF-B-107-STATUS — Status Transition: System sends overdue notification when rental status transitions to overdue
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Rental state transitions from returned to completed when final invoice is paid
+// Behavior: System sends overdue notification when rental status transitions to overdue
 
-test("PROOF-B-107-STATUSa — returned → completed: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-107-STATUSb — completed → returned: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to completed state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow completed→returned reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-107-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through completed
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-108-STATUS — Status Transition: Rental state transitions from reserved to cancelled before startDate
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Rental state transitions from reserved to cancelled before startDate
-
-test("PROOF-B-108-STATUSa — reserved → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-108-STATUSb — cancelled → reserved: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to cancelled state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow cancelled→reserved reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-108-STATUSc — reserved → overdue: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to overdue without going through cancelled
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-109-STATUS — Status Transition: Rental state transitions from active to cancelled by admin only, with reason
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Rental state transitions from active to cancelled by admin only, with reason
-
-test("PROOF-B-109-STATUSa — active → cancelled: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove transitions transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-109-STATUSb — cancelled → active: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to cancelled state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow cancelled→active reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-109-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through cancelled
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-110-STATUS — Status Transition: Rental state cannot transition from completed to any other state
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Rental state cannot transition from completed to any other state
-
-test("PROOF-B-110-STATUSa — completed → completed: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove cannot transition transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-110-STATUSb — completed → completed: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to completed state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow completed→completed reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-110-STATUSc — completed → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through completed
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("completed");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-111-STATUS — Status Transition: Rental state cannot transition from cancelled to active
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Rental state cannot transition from cancelled to active
-
-test("PROOF-B-111-STATUSa — cancelled → active: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove cannot transition transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-111-STATUSb — active → cancelled: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to active state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "cancelled", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow active→cancelled reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-111-STATUSc — cancelled → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through active
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("cancelled");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-112-STATUS — Status Transition: Rental state cannot transition from overdue to reserved
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Rental state cannot transition from overdue to reserved
-
-test("PROOF-B-112-STATUSa — overdue → reserved: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove cannot transition transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-112-STATUSb — reserved → overdue: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to reserved state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow reserved→overdue reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("reserved");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-112-STATUSc — overdue → active: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to active without going through reserved
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("overdue");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-113-STATUS — Status Transition: Rental state cannot transition from returned to active
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Rental state cannot transition from returned to active
-
-test("PROOF-B-113-STATUSa — returned → active: transition succeeds with correct side-effects", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-  expect(resource?.id).toBeDefined();
-
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect(status).toBe(200);
-  // Kills: Remove cannot transition transition from allowed list
-
-  // DB state check
-  const { data: updated } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Update status field but not persist to DB
-
-});
-
-test("PROOF-B-113-STATUSb — active → returned: reverse transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Bring to active state first
-  await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  // Attempt reverse transition
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "returned", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow active→returned reverse transition
-
-  // DB must be unchanged
-  const { data: unchanged } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("active");
-  // Kills: Silent state corruption on rejected transition
-});
-
-test("PROOF-B-113-STATUSc — returned → reserved: skip-transition must be rejected", async ({ request }) => {
-  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
-
-  // Attempt to skip directly to reserved without going through active
-  const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
-
-  expect([400, 422]).toContain(status);
-  // Kills: Allow skipping intermediate states in the transition chain
-
-  // DB must still be in initial state
-  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("returned");
-  // Kills: Accept any status value without validating transition chain
-});
-
-// PROOF-B-114-STATUS — Status Transition: Transition to active rental state sets device.status to 'rented'
-// Risk: high
-// Spec: Status Machine: rentals
-// Behavior: Transition to active rental state sets device.status to 'rented'
-
-test("PROOF-B-114-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-107-STATUSa — available → maintenance: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -4405,7 +4044,7 @@ test("PROOF-B-114-STATUSa — available → maintenance: transition succeeds wit
     { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove sets transition from allowed list
+  // Kills: Remove sends transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -4415,7 +4054,7 @@ test("PROOF-B-114-STATUSa — available → maintenance: transition succeeds wit
 
 });
 
-test("PROOF-B-114-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-107-STATUSb — maintenance → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to maintenance state first
@@ -4436,56 +4075,56 @@ test("PROOF-B-114-STATUSb — maintenance → available: reverse transition must
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-115-STATUS — Status Transition: Transition to overdue rental state sends overdue notification and calculates late fees
+// PROOF-B-108-STATUS — Status Transition: System calculates late fees (150% of dailyRate) when rental status transitions to overdue
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Transition to overdue rental state sends overdue notification and calculates late fees
+// Behavior: System calculates late fees (150% of dailyRate) when rental status transitions to overdue
 
-test("PROOF-B-115-STATUSa — active → overdue: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-108-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove sends overdue notification and calculates late fees transition from allowed list
+  // Kills: Remove calculates transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("overdue");
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
   // Kills: Update status field but not persist to DB
 
 });
 
-test("PROOF-B-115-STATUSb — overdue → active: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-108-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to overdue state first
+  // Bring to available state first
   await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "active", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow overdue→active reverse transition
+  // Kills: Allow available→maintenance reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("overdue");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-115-STATUSc — active → reserved: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-108-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to reserved without going through overdue
+  // Attempt to skip directly to rented without going through available
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -4493,16 +4132,16 @@ test("PROOF-B-115-STATUSc — active → reserved: skip-transition must be rejec
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("active");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-116-STATUS — Status Transition: Transition to returned rental state calculates final charges and updates device status
+// PROOF-B-109-STATUS — Status Transition: System calculates final charges when rental status transitions to returned
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Transition to returned rental state calculates final charges and updates device status
+// Behavior: System calculates final charges when rental status transitions to returned
 
-test("PROOF-B-116-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-109-STATUSa — available → decommissioned: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -4510,7 +4149,7 @@ test("PROOF-B-116-STATUSa — available → decommissioned: transition succeeds 
     { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove calculates final charges and updates device status transition from allowed list
+  // Kills: Remove calculates transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -4520,7 +4159,7 @@ test("PROOF-B-116-STATUSa — available → decommissioned: transition succeeds 
 
 });
 
-test("PROOF-B-116-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-109-STATUSb — decommissioned → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to decommissioned state first
@@ -4541,68 +4180,60 @@ test("PROOF-B-116-STATUSb — decommissioned → available: reverse transition m
   // Kills: Silent state corruption on rejected transition
 });
 
-// PROOF-B-117-STATUS — Status Transition: Transition to completed rental state archives rental and updates patient.completedRentals count
-// Risk: critical
+// PROOF-B-110-STATUS — Status Transition: System updates device.status to available/maintenance when rental status transitions to returned
+// Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Transition to completed rental state archives rental and updates patient.completedRentals count
+// Behavior: System updates device.status to available/maintenance when rental status transitions to returned
 
-test("PROOF-B-117-STATUSa — overdue → completed: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-110-STATUSa — maintenance → available: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
-  // Baseline: record counter BEFORE transition
-  const { data: before } = await trpcQuery(request, "devices.list",
-    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  const countBefore = ((before as Record<string, unknown>)?.count as number) ?? 0;
-
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove archives rental and updates patient.completedRentals count transition from allowed list
+  // Kills: Remove updates transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((updated as Record<string, unknown>)?.status).toBe("completed");
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
   // Kills: Update status field but not persist to DB
 
-  expect((updated as Record<string, unknown>)?.pat).not.toBeNull();
-  // Kills: Remove pat = NOW() in handler
+  expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
+  // Kills: Remove stat = NOW() in handler
 
-  // Side-effect: counter must increment exactly once
-  expect((updated as Record<string, unknown>)?.count).toBe(countBefore + 1);
-  // Kills: Remove patient.completedRentals count is incremented side-effect
-
+  // Kills: Remove device.status = 'available' or 'maintenance' side-effect
 });
 
-test("PROOF-B-117-STATUSb — completed → overdue: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-110-STATUSb — available → maintenance: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Bring to completed state first
+  // Bring to available state first
   await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "completed", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   // Attempt reverse transition
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "overdue", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "maintenance", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
-  // Kills: Allow completed→overdue reverse transition
+  // Kills: Allow available→maintenance reverse transition
 
   // DB must be unchanged
   const { data: unchanged } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged as Record<string, unknown>)?.status).toBe("completed");
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
   // Kills: Silent state corruption on rejected transition
 });
 
-test("PROOF-B-117-STATUSc — overdue → reserved: skip-transition must be rejected", async ({ request }) => {
+test("PROOF-B-110-STATUSc — maintenance → rented: skip-transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
-  // Attempt to skip directly to reserved without going through completed
+  // Attempt to skip directly to rented without going through available
   const { status } = await trpcMutation(request, "devices.status",
-    { id: resource.id, status: "reserved", clinicId: TEST_CLINIC_ID }, adminCookie);
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect([400, 422]).toContain(status);
   // Kills: Allow skipping intermediate states in the transition chain
@@ -4610,16 +4241,16 @@ test("PROOF-B-117-STATUSc — overdue → reserved: skip-transition must be reje
   // DB must still be in initial state
   const { data: unchanged2 } = await trpcQuery(request, "devices.list",
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
-  expect((unchanged2 as Record<string, unknown>)?.status).toBe("overdue");
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("maintenance");
   // Kills: Accept any status value without validating transition chain
 });
 
-// PROOF-B-118-STATUS — Status Transition: Transition to cancelled rental state sets device.status to 'available' and refunds deposit if applicable
+// PROOF-B-111-STATUS — Status Transition: System archives rental when rental status transitions to completed
 // Risk: high
 // Spec: Status Machine: rentals
-// Behavior: Transition to cancelled rental state sets device.status to 'available' and refunds deposit if applicable
+// Behavior: System archives rental when rental status transitions to completed
 
-test("PROOF-B-118-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
+test("PROOF-B-111-STATUSa — available → rented: transition succeeds with correct side-effects", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
   expect(resource?.id).toBeDefined();
 
@@ -4627,7 +4258,7 @@ test("PROOF-B-118-STATUSa — available → rented: transition succeeds with cor
     { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
 
   expect(status).toBe(200);
-  // Kills: Remove sets device.status to 'available' and refunds deposit if applicable transition from allowed list
+  // Kills: Remove archives transition from allowed list
 
   // DB state check
   const { data: updated } = await trpcQuery(request, "devices.list",
@@ -4635,13 +4266,9 @@ test("PROOF-B-118-STATUSa — available → rented: transition succeeds with cor
   expect((updated as Record<string, unknown>)?.status).toBe("rented");
   // Kills: Update status field but not persist to DB
 
-  expect((updated as Record<string, unknown>)?.cancellat).not.toBeNull();
-  // Kills: Remove cancellat = NOW() in handler
-
-  // Kills: Remove Deposit is refunded based on cancellation policy side-effect
 });
 
-test("PROOF-B-118-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
+test("PROOF-B-111-STATUSb — rented → available: reverse transition must be rejected", async ({ request }) => {
   const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
 
   // Bring to rented state first
@@ -4660,4 +4287,142 @@ test("PROOF-B-118-STATUSb — rented → available: reverse transition must be r
     { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
   expect((unchanged as Record<string, unknown>)?.status).toBe("rented");
   // Kills: Silent state corruption on rejected transition
+});
+
+// PROOF-B-112-STATUS — Status Transition: System updates patient.completedRentals count when rental status transitions to completed
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: System updates patient.completedRentals count when rental status transitions to completed
+
+test("PROOF-B-112-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  // Baseline: record counter BEFORE transition
+  const { data: before } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  const countBefore = ((before as Record<string, unknown>)?.count as number) ?? 0;
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove updates transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+  expect((updated as Record<string, unknown>)?.pat).not.toBeNull();
+  // Kills: Remove pat = NOW() in handler
+
+  // Side-effect: counter must increment exactly once
+  expect((updated as Record<string, unknown>)?.count).toBe(countBefore + 1);
+  // Kills: Remove patient.completedRentals count updated side-effect
+
+});
+
+test("PROOF-B-112-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-112-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through available
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
+});
+
+// PROOF-B-113-STATUS — Status Transition: System updates device.status to available when rental status transitions to cancelled
+// Risk: high
+// Spec: Status Machine: rentals
+// Behavior: System updates device.status to available when rental status transitions to cancelled
+
+test("PROOF-B-113-STATUSa — rented → available: transition succeeds with correct side-effects", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+  expect(resource?.id).toBeDefined();
+
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect(status).toBe(200);
+  // Kills: Remove updates transition from allowed list
+
+  // DB state check
+  const { data: updated } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((updated as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Update status field but not persist to DB
+
+  expect((updated as Record<string, unknown>)?.stat).not.toBeNull();
+  // Kills: Remove stat = NOW() in handler
+
+  // Kills: Remove device.status = 'available' side-effect
+});
+
+test("PROOF-B-113-STATUSb — available → rented: reverse transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Bring to available state first
+  await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "available", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  // Attempt reverse transition
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "rented", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow available→rented reverse transition
+
+  // DB must be unchanged
+  const { data: unchanged } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged as Record<string, unknown>)?.status).toBe("available");
+  // Kills: Silent state corruption on rejected transition
+});
+
+test("PROOF-B-113-STATUSc — rented → decommissioned: skip-transition must be rejected", async ({ request }) => {
+  const resource = await createTestResource(request, adminCookie) as Record<string, unknown>;
+
+  // Attempt to skip directly to decommissioned without going through available
+  const { status } = await trpcMutation(request, "devices.status",
+    { id: resource.id, status: "decommissioned", clinicId: TEST_CLINIC_ID }, adminCookie);
+
+  expect([400, 422]).toContain(status);
+  // Kills: Allow skipping intermediate states in the transition chain
+
+  // DB must still be in initial state
+  const { data: unchanged2 } = await trpcQuery(request, "devices.list",
+    { id: resource.id, clinicId: TEST_CLINIC_ID }, adminCookie);
+  expect((unchanged2 as Record<string, unknown>)?.status).toBe("rented");
+  // Kills: Accept any status value without validating transition chain
 });

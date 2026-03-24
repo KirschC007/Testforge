@@ -3,12 +3,12 @@ import { BASE_URL, trpcMutation, trpcQuery } from "../../helpers/api";
 import { getAdminCookie } from "../../helpers/auth";
 import { TEST_CLINIC_ID } from "../../helpers/factories";
 
-// Proof: PROOF-B-059-CONCURRENCY
-// Behavior: POST /api/rentals ensures only one rental succeeds for the same device concurrently
+// Proof: PROOF-B-054-CONCURRENCY
+// Behavior: API ensures only one concurrent rental for the same device succeeds
 // Risk: high
-// Kills: Remove mutex/lock around ensures in rentals.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for single successful rental update
+// Kills: Remove mutex/lock around ensures in rentals.create | Allow both concurrent requests to succeed (double-booking) | Not using atomic DB operation for single concurrent rental update
 
-function basePayload_PROOF_B_059_CONCURRENCY() {
+function basePayload_PROOF_B_054_CONCURRENCY() {
   return {
     clinicId: TEST_CLINIC_ID,
     deviceId: 1,
@@ -25,7 +25,7 @@ function basePayload_PROOF_B_059_CONCURRENCY() {
   };
 }
 
-test.describe("Concurrency: POST /api/rentals ensures only one rental succeeds for the same device concurrently", () => {
+test.describe("Concurrency: API ensures only one concurrent rental for the same device succeeds", () => {
   let cookie: string;
 
   test.beforeAll(async ({ request }) => {
@@ -37,7 +37,7 @@ test.describe("Concurrency: POST /api/rentals ensures only one rental succeeds f
     // Fire ${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "rentals.create", basePayload_PROOF_B_059_CONCURRENCY(), cookie)
+        trpcMutation(request, "rentals.create", basePayload_PROOF_B_054_CONCURRENCY(), cookie)
       )
     );
     // At most one must succeed (or all must return deterministic results)
@@ -50,11 +50,11 @@ test.describe("Concurrency: POST /api/rentals ensures only one rental succeeds f
     expect(errorCount).toBe(0);
   });
 
-  test("concurrent ensures must not create duplicate single successful rentals", async ({ request }) => {
+  test("concurrent ensures must not create duplicate single concurrent rentals", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        trpcMutation(request, "rentals.create", basePayload_PROOF_B_059_CONCURRENCY(), cookie)
+        trpcMutation(request, "rentals.create", basePayload_PROOF_B_054_CONCURRENCY(), cookie)
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
@@ -71,7 +71,7 @@ test.describe("Concurrency: POST /api/rentals ensures only one rental succeeds f
     // Perform concurrent operations
     await Promise.all(
       Array.from({ length: 3 }, () =>
-        trpcMutation(request, "rentals.create", basePayload_PROOF_B_059_CONCURRENCY(), cookie)
+        trpcMutation(request, "rentals.create", basePayload_PROOF_B_054_CONCURRENCY(), cookie)
       )
     );
     // Verify system state is consistent (no partial writes, no corruption)

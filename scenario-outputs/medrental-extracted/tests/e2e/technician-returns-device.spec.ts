@@ -13,7 +13,7 @@ const TEST_CLINIC_ID = parseInt(process.env.TEST_CLINIC_ID || process.env.TEST_T
 test.describe("Browser: Technician returns device", () => {
   test("Technician returns device — happy path", async ({ page, request }) => {
     // Actor: Technician
-    // Success criteria: Rental status changes to "returned"; API verify: device.status is "available" or "maintenance" depending on condition
+    // Success criteria: Rental status changes to "returned"; device.status is "available" or "maintenance" depending on condition
 
     // Step 1: Technician logs in
     // Step 2: Technician navigates to /rentals (filters by "active")

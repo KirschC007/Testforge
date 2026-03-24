@@ -12,8 +12,8 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
  */
 export async function loginViaUI(
   page: Page,
-  email = process.env.TECH_USER || "tech@medrental.com@test.com",
-  password = process.env.TECH_PASS || "TechPass1!"
+  email = process.env.E2E_TECHNICIAN_USER || "test-technician@medrental.com@test.com",
+  password = process.env.E2E_TECHNICIAN_PASS || "TechPass2026x"
 ): Promise<void> {
   await page.goto(`${BASE_URL}/login`);
   // Try label-based selectors first (most robust)
@@ -35,7 +35,7 @@ export async function loginAsRole(
   role: string
 ): Promise<void> {
   const envUser = process.env[`E2E_${role.toUpperCase()}_USER`] || `${role}@test.com`;
-  const envPass = process.env[`E2E_${role.toUpperCase()}_PASS`] || "TechPass1!";
+  const envPass = process.env[`E2E_${role.toUpperCase()}_PASS`] || "TechPass2026x";
   await loginViaUI(page, envUser, envPass);
 }
 

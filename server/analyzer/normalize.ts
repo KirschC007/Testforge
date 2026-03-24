@@ -10,6 +10,8 @@
  *   "ownerDatas.export"        → "owners.export"
  */
 export function normalizeEndpointName(raw: string, method?: string): string {
+  // Strip trpc. prefix if present (e.g. "trpc.appointments.create" → "appointments.create")
+  if (raw.startsWith("trpc.")) raw = raw.slice(5);
   // FIRST: If raw IS a REST path (starts with /), convert to dot-notation
   if (raw.startsWith("/")) {
     // "/api/owners/:id/gdpr" → "owners.gdprDelete"

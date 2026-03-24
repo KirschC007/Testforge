@@ -10,29 +10,30 @@ Feature: Roles & Permissions
   Scenario: Technician role can manage device inventory
     Given the system is in a valid state
     When technician manage device inventory
-    # Spec: "`technician`: manage device inventory, perform maintenance, view rentals"
+    # Spec: "`technician`: manage device inventory"
 
   Scenario: Technician role can perform maintenance
     Given the system is in a valid state
     When technician perform maintenance
-    # Spec: "`technician`: manage device inventory, perform maintenance, view rentals"
+    # Spec: "`technician`: perform maintenance"
 
   Scenario: Technician role can view rentals
     Given the system is in a valid state
     When technician view rentals
-    # Spec: "`technician`: manage device inventory, perform maintenance, view rentals"
+    # Spec: "`technician`: view rentals"
 
   Scenario: Nurse role can create rentals for patients
     Given the system is in a valid state
     When nurse create rentals for patients
-    # Spec: "`nurse`: create rentals for patients, return devices, cannot modify pricing"
+    # Spec: "`nurse`: create rentals for patients"
 
   Scenario: Nurse role can return devices
     Given the system is in a valid state
     When nurse return devices
-    # Spec: "`nurse`: create rentals for patients, return devices, cannot modify pricing"
+    # Spec: "`nurse`: return devices"
 
   Scenario: Nurse role cannot modify pricing
     Given the system is in a valid state
     When nurse cannot modify pricing
-    # Spec: "`nurse`: create rentals for patients, return devices, cannot modify pricing"
+    Then action rejected
+    # Spec: "`nurse`: cannot modify pricing"

@@ -13,7 +13,7 @@ const TEST_CLINIC_ID = parseInt(process.env.TEST_CLINIC_ID || process.env.TEST_T
 test.describe("Browser: Nurse creates rental for patient", () => {
   test("Nurse creates rental for patient — happy path", async ({ page, request }) => {
     // Actor: Nurse
-    // Success criteria: System shows rental confirmation with rental ID; API verify: rental exists with status "reserved", device.status changed to "rented"
+    // Success criteria: rental exists with status "reserved"; device.status changed to "rented"
 
     // Step 1: Nurse logs in via /login
     // Step 2: Nurse navigates to /rentals/new
@@ -28,6 +28,8 @@ test.describe("Browser: Nurse creates rental for patient", () => {
     // await page.getByLabel(/fieldname/i).fill("value");
     // Step 7: Nurse clicks "Create Rental"
     await page.getByRole("button", { name: /Create Rental/i }).click();
+    // Step 8: System shows rental confirmation with rental ID
+    await expect(page.getByText(/success/i)).toBeVisible({ timeout: 10000 });
 
   });
 

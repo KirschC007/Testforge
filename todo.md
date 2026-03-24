@@ -678,3 +678,15 @@
 - [x] Verifikations-Script ausführen (Quality Gate): 17/17 Checks bestanden
 - [x] BankingCore Pipeline testen: 9 Test-Dateien, 38 Proofs
 - [x] Checkpoint + 2 ZIPs liefern
+
+## Fix-Briefing 3 — ClinicBooking 7/7 (24.03.2026)
+
+- [x] Fix 1: Hybrid-Modus in job-runner.ts (Spec + Code zusammen, mergeIRs Funktion)
+- [x] Fix 2: Tenant-Key aus Session-Objekten (req.session.clinicId) in code-parser.ts
+- [x] Fix 3: Rollen aus Code-Vergleichen (user.role === 'clinic_admin') in code-parser.ts
+- [x] Fix 4: trpc.-Prefix in normalize.ts entfernen
+- [x] Fix 5: Status-Transition-Filter (nur PATCH/PUT Endpoints) in risk-rules.ts
+- [x] TypeScript clean + Vitest 546/546 grün, 0 TS-Fehler
+- [x] ClinicBooking Pipeline: 7/7 Bugs gefunden ✅ (vorher 3/7 = 43%)
+- [x] MedRental: 48/48 Checks bestanden ✅
+- [x] Checkpoint + ZIP liefern

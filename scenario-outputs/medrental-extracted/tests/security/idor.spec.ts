@@ -70,10 +70,10 @@ test("PROOF-B-001-IDORb — Tenant A cannot mutate Tenant B resource via patient
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-004-IDOR — IDOR: Cross-tenant access to CSRF double-submit cookie must be rejected
+// PROOF-B-004-IDOR — IDOR: Cross-tenant access to CSRF token must be rejected
 // Risk: CRITICAL
 // Spec: Authentication
-// Behavior: GET /api/auth/csrf-token returns CSRF double-submit cookie
+// Behavior: API provides CSRF token via double-submit cookie
 
 test("PROOF-B-004-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -164,10 +164,10 @@ test("PROOF-B-005-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-007-IDOR — IDOR: Cross-tenant access to failed logins must be rejected
+// PROOF-B-007-IDOR — IDOR: Cross-tenant access to failed login attempts must be rejected
 // Risk: CRITICAL
 // Spec: Authentication
-// Behavior: System rate-limits failed login attempts to 5 per 15 minutes
+// Behavior: System rate limits failed login attempts to 5 per 15 minutes
 
 test("PROOF-B-007-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -211,10 +211,10 @@ test("PROOF-B-007-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-008-IDOR — IDOR: Cross-tenant access to failed login attempt must be rejected
+// PROOF-B-008-IDOR — IDOR: Cross-tenant access to device inventory must be rejected
 // Risk: CRITICAL
-// Spec: Authentication
-// Behavior: System returns 429 for exceeding failed login rate limit
+// Spec: Roles & Permissions
+// Behavior: Technician role can manage device inventory
 
 test("PROOF-B-008-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -228,7 +228,7 @@ test("PROOF-B-008-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in auth.login query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -248,20 +248,20 @@ test("PROOF-B-008-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via auth.login
-  const crossTenant = await trpcQuery(request, "auth.login",
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
     { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in auth.login
+  // Kills: Missing tenant ownership check in devices.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-009-IDOR — IDOR: Cross-tenant access to user must be rejected
+// PROOF-B-009-IDOR — IDOR: Cross-tenant access to maintenance must be rejected
 // Risk: CRITICAL
-// Spec: Authentication
-// Behavior: System locks out user for 30 minutes after exceeding failed login rate limit
+// Spec: Roles & Permissions
+// Behavior: Technician role can perform maintenance
 
 test("PROOF-B-009-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -275,7 +275,7 @@ test("PROOF-B-009-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in auth.login query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -295,20 +295,20 @@ test("PROOF-B-009-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via auth.login
-  const crossTenant = await trpcQuery(request, "auth.login",
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
     { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in auth.login
+  // Kills: Missing tenant ownership check in devices.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-010-IDOR — IDOR: Cross-tenant access to device inventory must be rejected
+// PROOF-B-010-IDOR — IDOR: Cross-tenant access to rentals must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Technician role can manage device inventory
+// Behavior: Technician role can view rentals
 
 test("PROOF-B-010-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -322,7 +322,7 @@ test("PROOF-B-010-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in patients.export query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -342,20 +342,20 @@ test("PROOF-B-010-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via patients.export
-  const crossTenant = await trpcQuery(request, "patients.export",
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
     { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in patients.export
+  // Kills: Missing tenant ownership check in devices.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-011-IDOR — IDOR: Cross-tenant access to maintenance must be rejected
+// PROOF-B-011-IDOR — IDOR: Cross-tenant access to rentals for patients must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Technician role can perform maintenance
+// Behavior: Nurse role can create rentals for patients
 
 test("PROOF-B-011-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -399,10 +399,10 @@ test("PROOF-B-011-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-012-IDOR — IDOR: Cross-tenant access to rentals must be rejected
+// PROOF-B-012-IDOR — IDOR: Cross-tenant access to devices must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Technician role can view rentals
+// Behavior: Nurse role can return devices
 
 test("PROOF-B-012-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -446,10 +446,10 @@ test("PROOF-B-012-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-013-IDOR — IDOR: Cross-tenant access to rentals for patients must be rejected
+// PROOF-B-013-IDOR — IDOR: Cross-tenant access to pricing must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Nurse role can create rentals for patients
+// Behavior: Nurse role cannot modify pricing
 
 test("PROOF-B-013-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -493,10 +493,10 @@ test("PROOF-B-013-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-014-IDOR — IDOR: Cross-tenant access to devices must be rejected
+// PROOF-B-014-IDOR — IDOR: Cross-tenant access to invoices must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Nurse role can return devices
+// Behavior: Billing role can manage invoices
 
 test("PROOF-B-014-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -540,10 +540,10 @@ test("PROOF-B-014-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-015-IDOR — IDOR: Cross-tenant access to pricing must be rejected
+// PROOF-B-015-IDOR — IDOR: Cross-tenant access to payments must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Nurse role cannot modify pricing
+// Behavior: Billing role can process payments
 
 test("PROOF-B-015-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -587,10 +587,10 @@ test("PROOF-B-015-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-016-IDOR — IDOR: Cross-tenant access to invoices must be rejected
+// PROOF-B-016-IDOR — IDOR: Cross-tenant access to insurance claims must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Billing role can manage invoices
+// Behavior: Billing role can process insurance claims
 
 test("PROOF-B-016-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -634,10 +634,10 @@ test("PROOF-B-016-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-017-IDOR — IDOR: Cross-tenant access to payments must be rejected
+// PROOF-B-017-IDOR — IDOR: Cross-tenant access to medical records must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Billing role can process payments
+// Behavior: Billing role cannot access medical records
 
 test("PROOF-B-017-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -681,10 +681,10 @@ test("PROOF-B-017-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-018-IDOR — IDOR: Cross-tenant access to insurance claims must be rejected
+// PROOF-B-018-IDOR — IDOR: Cross-tenant access to full access within clinic must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Billing role can process insurance claims
+// Behavior: Admin role has full access within clinic
 
 test("PROOF-B-018-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -728,10 +728,10 @@ test("PROOF-B-018-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-019-IDOR — IDOR: Cross-tenant access to medical records must be rejected
+// PROOF-B-019-IDOR — IDOR: Cross-tenant access to staff must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Billing role cannot access medical records
+// Behavior: Admin role can manage staff
 
 test("PROOF-B-019-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -775,10 +775,10 @@ test("PROOF-B-019-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-020-IDOR — IDOR: Cross-tenant access to full access within clinic must be rejected
+// PROOF-B-020-IDOR — IDOR: Cross-tenant access to reports must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Admin role has full access within clinic
+// Behavior: Admin role can manage reports
 
 test("PROOF-B-020-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -822,10 +822,10 @@ test("PROOF-B-020-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-021-IDOR — IDOR: Cross-tenant access to staff must be rejected
+// PROOF-B-021-IDOR — IDOR: Cross-tenant access to pricing must be rejected
 // Risk: CRITICAL
 // Spec: Roles & Permissions
-// Behavior: Admin role can manage staff
+// Behavior: Admin role can manage pricing
 
 test("PROOF-B-021-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -869,10 +869,10 @@ test("PROOF-B-021-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-022-IDOR — IDOR: Cross-tenant access to reports must be rejected
+// PROOF-B-022-IDOR — IDOR: Cross-tenant access to X-CSRF-Token header must be rejected
 // Risk: CRITICAL
-// Spec: Roles & Permissions
-// Behavior: Admin role can access reports
+// Spec: CSRF Protection
+// Behavior: API requires X-CSRF-Token header for state-changing requests
 
 test("PROOF-B-022-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -916,10 +916,10 @@ test("PROOF-B-022-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-023-IDOR — IDOR: Cross-tenant access to pricing must be rejected
+// PROOF-B-023-IDOR — IDOR: Cross-tenant access to CSRF_REQUIRED must be rejected
 // Risk: CRITICAL
-// Spec: Roles & Permissions
-// Behavior: Admin role can manage pricing
+// Spec: CSRF Protection
+// Behavior: API returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
 
 test("PROOF-B-023-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -963,10 +963,10 @@ test("PROOF-B-023-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-024-IDOR — IDOR: Cross-tenant access to X-CSRF-Token header must be rejected
+// PROOF-B-024-IDOR — IDOR: Cross-tenant access to registration of new medical devices must be rejected
 // Risk: CRITICAL
-// Spec: CSRF Protection
-// Behavior: All POST/PUT/PATCH/DELETE requests require X-CSRF-Token header
+// Spec: Endpoints
+// Behavior: API allows technician and admin to register new medical devices
 
 test("PROOF-B-024-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -980,7 +980,7 @@ test("PROOF-B-024-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
+  // Kills: Remove clinicId filter in devices.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -989,7 +989,7 @@ test("PROOF-B-024-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-024-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-024-IDORb — Tenant A cannot mutate Tenant B resource via devices.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1000,20 +1000,37 @@ test("PROOF-B-024-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to mutate Tenant B resource via devices.create
+  const crossTenant = await trpcMutation(request, "devices.create",
+    {
+        clinicId: TEST_CLINIC_B_ID,
+        serialNumber: "test-serialNumber",
+        name: "test-title",
+        type: "wheelchair",
+        manufacturer: "test-manufacturer",
+        purchaseDate: "test-purchaseDate",
+        purchasePrice: 100,
+        dailyRate: 50,
+        accessories: "test-accessories",
+        maintenanceIntervalDays: 7,
+        notes: "test-notes",
+    }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
+  // Kills: Missing tenant ownership check in devices.create
+  // Kills: Allow cross-tenant mutations on devices.create
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-025-IDOR — IDOR: Cross-tenant access to request must be rejected
+// PROOF-B-025-IDOR — IDOR: Cross-tenant access to device registration must be rejected
 // Risk: CRITICAL
-// Spec: CSRF Protection
-// Behavior: System returns 403 CSRF_REQUIRED for missing or invalid X-CSRF-Token header
+// Spec: Endpoints
+// Behavior: API rejects device registration if clinicId does not match JWT
 
 test("PROOF-B-025-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1027,7 +1044,7 @@ test("PROOF-B-025-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
+  // Kills: Remove clinicId filter in devices.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -1036,7 +1053,7 @@ test("PROOF-B-025-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-025-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-025-IDORb — Tenant A cannot mutate Tenant B resource via devices.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1047,20 +1064,37 @@ test("PROOF-B-025-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to mutate Tenant B resource via devices.create
+  const crossTenant = await trpcMutation(request, "devices.create",
+    {
+        clinicId: TEST_CLINIC_B_ID,
+        serialNumber: "test-serialNumber",
+        name: "test-title",
+        type: "wheelchair",
+        manufacturer: "test-manufacturer",
+        purchaseDate: "test-purchaseDate",
+        purchasePrice: 100,
+        dailyRate: 50,
+        accessories: "test-accessories",
+        maintenanceIntervalDays: 7,
+        notes: "test-notes",
+    }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
+  // Kills: Missing tenant ownership check in devices.create
+  // Kills: Allow cross-tenant mutations on devices.create
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-026-IDOR — IDOR: Cross-tenant access to new medical device must be rejected
+// PROOF-B-026-IDOR — IDOR: Cross-tenant access to device registration must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices registers a new medical device
+// Behavior: API rejects device registration if serialNumber already exists globally
 
 test("PROOF-B-026-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1121,10 +1155,10 @@ test("PROOF-B-026-IDORb — Tenant A cannot mutate Tenant B resource via devices
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-027-IDOR — IDOR: Cross-tenant access to clinicId match must be rejected
+// PROOF-B-027-IDOR — IDOR: Cross-tenant access to device registration must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices requires clinicId to match JWT clinicId
+// Behavior: API rejects device registration if purchaseDate is in the future
 
 test("PROOF-B-027-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1185,10 +1219,10 @@ test("PROOF-B-027-IDORb — Tenant A cannot mutate Tenant B resource via devices
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-028-IDOR — IDOR: Cross-tenant access to device must be rejected
+// PROOF-B-028-IDOR — IDOR: Cross-tenant access to listing of devices must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices rejects registration if serialNumber is globally unique
+// Behavior: API allows all roles to list devices
 
 test("PROOF-B-028-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1202,7 +1236,7 @@ test("PROOF-B-028-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.create query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -1211,7 +1245,7 @@ test("PROOF-B-028-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-028-IDORb — Tenant A cannot mutate Tenant B resource via devices.create", async ({ request }) => {
+test("PROOF-B-028-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1222,37 +1256,20 @@ test("PROOF-B-028-IDORb — Tenant A cannot mutate Tenant B resource via devices
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via devices.create
-  const crossTenant = await trpcMutation(request, "devices.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        serialNumber: "test-serialNumber",
-        name: "test-title",
-        type: "wheelchair",
-        manufacturer: "test-manufacturer",
-        purchaseDate: "test-purchaseDate",
-        purchasePrice: 100,
-        dailyRate: 50,
-        accessories: "test-accessories",
-        maintenanceIntervalDays: 7,
-        notes: "test-notes",
-    }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.create
-  // Kills: Allow cross-tenant mutations on devices.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
+  // Kills: Missing tenant ownership check in devices.list
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-029-IDOR — IDOR: Cross-tenant access to device must be rejected
+// PROOF-B-029-IDOR — IDOR: Cross-tenant access to all device fields must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices rejects registration if purchaseDate is in the future
+// Behavior: Technician/admin roles see all device fields when listing devices
 
 test("PROOF-B-029-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1266,7 +1283,7 @@ test("PROOF-B-029-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.create query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -1275,7 +1292,7 @@ test("PROOF-B-029-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-029-IDORb — Tenant A cannot mutate Tenant B resource via devices.create", async ({ request }) => {
+test("PROOF-B-029-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1286,37 +1303,20 @@ test("PROOF-B-029-IDORb — Tenant A cannot mutate Tenant B resource via devices
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via devices.create
-  const crossTenant = await trpcMutation(request, "devices.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        serialNumber: "test-serialNumber",
-        name: "test-title",
-        type: "wheelchair",
-        manufacturer: "test-manufacturer",
-        purchaseDate: "test-purchaseDate",
-        purchasePrice: 100,
-        dailyRate: 50,
-        accessories: "test-accessories",
-        maintenanceIntervalDays: 7,
-        notes: "test-notes",
-    }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.create
-  // Kills: Allow cross-tenant mutations on devices.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
+  // Kills: Missing tenant ownership check in devices.list
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-030-IDOR — IDOR: Cross-tenant access to devices must be rejected
+// PROOF-B-030-IDOR — IDOR: Cross-tenant access to name, type, status, availability of devices must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices lists devices
+// Behavior: Nurse role sees name, type, status, availability when listing devices
 
 test("PROOF-B-030-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1360,10 +1360,10 @@ test("PROOF-B-030-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-031-IDOR — IDOR: Cross-tenant access to all device fields must be rejected
+// PROOF-B-031-IDOR — IDOR: Cross-tenant access to pricing of devices must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices shows all device fields to technician/admin
+// Behavior: Nurse role does not see pricing when listing devices
 
 test("PROOF-B-031-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1407,10 +1407,10 @@ test("PROOF-B-031-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-032-IDOR — IDOR: Cross-tenant access to name, type, status, availability must be rejected
+// PROOF-B-032-IDOR — IDOR: Cross-tenant access to name, type, dailyRate, purchasePrice of devices must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices shows name, type, status, availability to nurse
+// Behavior: Billing role sees name, type, dailyRate, purchasePrice when listing devices
 
 test("PROOF-B-032-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1454,10 +1454,10 @@ test("PROOF-B-032-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-033-IDOR — IDOR: Cross-tenant access to pricing details must be rejected
+// PROOF-B-033-IDOR — IDOR: Cross-tenant access to maintenance details of devices must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices hides pricing details from nurse
+// Behavior: Billing role does not see maintenance details when listing devices
 
 test("PROOF-B-033-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1501,10 +1501,10 @@ test("PROOF-B-033-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-034-IDOR — IDOR: Cross-tenant access to name, type, dailyRate, purchasePrice must be rejected
+// PROOF-B-034-IDOR — IDOR: Cross-tenant access to getting device details must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices shows name, type, dailyRate, purchasePrice to billing
+// Behavior: API allows all roles to get device details with role-based field visibility
 
 test("PROOF-B-034-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1548,57 +1548,10 @@ test("PROOF-B-034-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-035-IDOR — IDOR: Cross-tenant access to maintenance details must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: GET /api/devices hides maintenance details from billing
-
-test("PROOF-B-035-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-035-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
 // PROOF-B-036-IDOR — IDOR: Cross-tenant access to device details must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices/:id retrieves device details
+// Behavior: API returns 403 if device belongs to a different clinic
 
 test("PROOF-B-036-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1642,59 +1595,12 @@ test("PROOF-B-036-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-038-IDOR — IDOR: Cross-tenant access to device must be rejected
+// PROOF-B-037-IDOR — IDOR: Cross-tenant access to updating device status must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/devices/:id returns 403 if device belongs to different clinic
+// Behavior: API allows technician and admin to update device status
 
-test("PROOF-B-038-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-038-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-039-IDOR — IDOR: Cross-tenant access to device status must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: PATCH /api/devices/:id/status updates device status
-
-test("PROOF-B-039-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-037-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1715,7 +1621,7 @@ test("PROOF-B-039-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-039-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-037-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1736,10 +1642,104 @@ test("PROOF-B-039-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-041-IDOR — IDOR: Cross-tenant access to maintenance event must be rejected
+// PROOF-B-039-IDOR — IDOR: Cross-tenant access to recording maintenance event must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance records a maintenance event
+// Behavior: API allows technician and admin to record a maintenance event
+
+test("PROOF-B-039-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+  // Positive control: Tenant B can access its own data
+  const ownData = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(ownData.status).toBe(200);
+  // Kills: Block all cross-tenant access including legitimate access
+
+  // Attack: Tenant A attempts to access Tenant B data
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Remove clinicId filter in devices.maintenance query
+
+  // Side-effect check: No Tenant B data must be in the response
+  const responseText = JSON.stringify(crossTenant.data ?? "");
+  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
+  // Kills: Return empty array instead of 403 on cross-tenant access
+  // Kills: Return all records without tenant isolation
+});
+
+test("PROOF-B-039-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+  // Get a Tenant B resource ID (create one if needed)
+  const tenantBList = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
+  if (!resourceId) {
+    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
+    resourceId = (created as Record<string, unknown>)?.id;
+    expect(resourceId).toBeDefined();
+  }
+
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.maintenance
+  const crossTenant = await trpcQuery(request, "devices.maintenance",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Missing tenant ownership check in devices.maintenance
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
+});
+
+// PROOF-B-040-IDOR — IDOR: Cross-tenant access to maintenance recording must be rejected
+// Risk: CRITICAL
+// Spec: Endpoints
+// Behavior: API rejects maintenance recording if device is currently rented
+
+test("PROOF-B-040-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+  // Positive control: Tenant B can access its own data
+  const ownData = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(ownData.status).toBe(200);
+  // Kills: Block all cross-tenant access including legitimate access
+
+  // Attack: Tenant A attempts to access Tenant B data
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Remove clinicId filter in devices.maintenance query
+
+  // Side-effect check: No Tenant B data must be in the response
+  const responseText = JSON.stringify(crossTenant.data ?? "");
+  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
+  // Kills: Return empty array instead of 403 on cross-tenant access
+  // Kills: Return all records without tenant isolation
+});
+
+test("PROOF-B-040-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+  // Get a Tenant B resource ID (create one if needed)
+  const tenantBList = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
+  if (!resourceId) {
+    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
+    resourceId = (created as Record<string, unknown>)?.id;
+    expect(resourceId).toBeDefined();
+  }
+
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.maintenance
+  const crossTenant = await trpcQuery(request, "devices.maintenance",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Missing tenant ownership check in devices.maintenance
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
+});
+
+// PROOF-B-041-IDOR — IDOR: Cross-tenant access to device.lastMaintenanceDate must be rejected
+// Risk: CRITICAL
+// Spec: Endpoints
+// Behavior: API sets device.lastMaintenanceDate to today after maintenance event
 
 test("PROOF-B-041-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1783,10 +1783,10 @@ test("PROOF-B-041-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-042-IDOR — IDOR: Cross-tenant access to maintenance event must be rejected
+// PROOF-B-042-IDOR — IDOR: Cross-tenant access to maintenance countdown must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance rejects if device is currently rented
+// Behavior: API resets maintenance countdown after maintenance event
 
 test("PROOF-B-042-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1830,10 +1830,10 @@ test("PROOF-B-042-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-043-IDOR — IDOR: Cross-tenant access to device.lastMaintenanceDate must be rejected
+// PROOF-B-043-IDOR — IDOR: Cross-tenant access to registration of a patient must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance sets device.lastMaintenanceDate to today
+// Behavior: API allows nurse and admin to register a patient
 
 test("PROOF-B-043-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1847,7 +1847,7 @@ test("PROOF-B-043-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.maintenance query
+  // Kills: Remove clinicId filter in patients.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -1856,7 +1856,7 @@ test("PROOF-B-043-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-043-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-043-IDORb — Tenant A cannot mutate Tenant B resource via patients.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1867,20 +1867,99 @@ test("PROOF-B-043-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.maintenance
-  const crossTenant = await trpcQuery(request, "devices.maintenance",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to mutate Tenant B resource via patients.create
+  const crossTenant = await trpcMutation(request, "patients.create",
+    {
+        clinicId: TEST_CLINIC_B_ID,
+        firstName: "test-title",
+        lastName: "test-title",
+        dateOfBirth: "test-dateOfBirth",
+        email: "test-email",
+        phone: "test-phone",
+        insuranceProvider: "test-insuranceProvider",
+        insuranceNumber: "test-insuranceNumber",
+        address: "test-address",
+        medicalNotes: "test-medicalNotes",
+    }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.maintenance
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
+  // Kills: Missing tenant ownership check in patients.create
+  // Kills: Allow cross-tenant mutations on patients.create
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-045-IDOR — IDOR: Cross-tenant access to nextMaintenanceDue must be rejected
+// PROOF-B-044-IDOR — IDOR: Cross-tenant access to patient registration must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/devices/:id/maintenance requires nextMaintenanceDue to be in the future
+// Behavior: API rejects patient registration if clinicId does not match JWT
+
+test("PROOF-B-044-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+  // Positive control: Tenant B can access its own data
+  const ownData = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(ownData.status).toBe(200);
+  // Kills: Block all cross-tenant access including legitimate access
+
+  // Attack: Tenant A attempts to access Tenant B data
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Remove clinicId filter in patients.create query
+
+  // Side-effect check: No Tenant B data must be in the response
+  const responseText = JSON.stringify(crossTenant.data ?? "");
+  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
+  // Kills: Return empty array instead of 403 on cross-tenant access
+  // Kills: Return all records without tenant isolation
+});
+
+test("PROOF-B-044-IDORb — Tenant A cannot mutate Tenant B resource via patients.create", async ({ request }) => {
+  // Get a Tenant B resource ID (create one if needed)
+  const tenantBList = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
+  if (!resourceId) {
+    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
+    resourceId = (created as Record<string, unknown>)?.id;
+    expect(resourceId).toBeDefined();
+  }
+
+  // Attack: Tenant A tries to mutate Tenant B resource via patients.create
+  const crossTenant = await trpcMutation(request, "patients.create",
+    {
+        clinicId: TEST_CLINIC_B_ID,
+        firstName: "test-title",
+        lastName: "test-title",
+        dateOfBirth: "test-dateOfBirth",
+        email: "test-email",
+        phone: "test-phone",
+        insuranceProvider: "test-insuranceProvider",
+        insuranceNumber: "test-insuranceNumber",
+        address: "test-address",
+        medicalNotes: "test-medicalNotes",
+    }, tenantACookie);
+
+  expect([401, 403]).toContain(crossTenant.status);
+  // Kills: Missing tenant ownership check in patients.create
+  // Kills: Allow cross-tenant mutations on patients.create
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
+});
+
+// PROOF-B-045-IDOR — IDOR: Cross-tenant access to listing of patients must be rejected
+// Risk: CRITICAL
+// Spec: Endpoints
+// Behavior: API allows nurse and admin to list patients
 
 test("PROOF-B-045-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1894,7 +1973,7 @@ test("PROOF-B-045-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.maintenance query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -1914,20 +1993,20 @@ test("PROOF-B-045-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.maintenance
-  const crossTenant = await trpcQuery(request, "devices.maintenance",
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
     { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.maintenance
+  // Kills: Missing tenant ownership check in devices.list
   expect(crossTenant.data).toBeNull();
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-046-IDOR — IDOR: Cross-tenant access to patient must be rejected
+// PROOF-B-046-IDOR — IDOR: Cross-tenant access to patient listing must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/patients registers a patient
+// Behavior: API rejects patient listing for billing role
 
 test("PROOF-B-046-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -1941,7 +2020,7 @@ test("PROOF-B-046-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in patients.create query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -1950,7 +2029,7 @@ test("PROOF-B-046-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-046-IDORb — Tenant A cannot mutate Tenant B resource via patients.create", async ({ request }) => {
+test("PROOF-B-046-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -1961,36 +2040,20 @@ test("PROOF-B-046-IDORb — Tenant A cannot mutate Tenant B resource via patient
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via patients.create
-  const crossTenant = await trpcMutation(request, "patients.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        firstName: "test-title",
-        lastName: "test-title",
-        dateOfBirth: "test-dateOfBirth",
-        email: "test-email",
-        phone: "test-phone",
-        insuranceProvider: "test-insuranceProvider",
-        insuranceNumber: "test-insuranceNumber",
-        address: "test-address",
-        medicalNotes: "test-medicalNotes",
-    }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in patients.create
-  // Kills: Allow cross-tenant mutations on patients.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
+  // Kills: Missing tenant ownership check in devices.list
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-047-IDOR — IDOR: Cross-tenant access to clinicId match must be rejected
+// PROOF-B-047-IDOR — IDOR: Cross-tenant access to creation of a device rental must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/patients requires clinicId to match JWT clinicId
+// Behavior: API allows nurse and admin to create a device rental
 
 test("PROOF-B-047-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2004,7 +2067,7 @@ test("PROOF-B-047-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in patients.create query
+  // Kills: Remove clinicId filter in rentals.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2013,7 +2076,7 @@ test("PROOF-B-047-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-047-IDORb — Tenant A cannot mutate Tenant B resource via patients.create", async ({ request }) => {
+test("PROOF-B-047-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2024,24 +2087,26 @@ test("PROOF-B-047-IDORb — Tenant A cannot mutate Tenant B resource via patient
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via patients.create
-  const crossTenant = await trpcMutation(request, "patients.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
+  const crossTenant = await trpcMutation(request, "rentals.create",
     {
         clinicId: TEST_CLINIC_B_ID,
-        firstName: "test-title",
-        lastName: "test-title",
-        dateOfBirth: "test-dateOfBirth",
-        email: "test-email",
-        phone: "test-phone",
-        insuranceProvider: "test-insuranceProvider",
-        insuranceNumber: "test-insuranceNumber",
-        address: "test-address",
-        medicalNotes: "test-medicalNotes",
+        deviceId: resourceId,
+        patientId: resourceId,
+        startDate: "test-startDate",
+        expectedReturnDate: "test-expectedReturnDate",
+        dailyRate: 50,
+        deposit: 1,
+        insuranceClaim: "test-insuranceClaim",
+        insurancePreAuthCode: "test-insurancePreAuthCode",
+        prescriptionId: resourceId,
+        accessories: "test-accessories",
+        notes: "test-notes",
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in patients.create
-  // Kills: Allow cross-tenant mutations on patients.create
+  // Kills: Missing tenant ownership check in rentals.create
+  // Kills: Allow cross-tenant mutations on rentals.create
 
   // Verify resource was NOT modified
   const verify = await trpcQuery(request, "devices.list",
@@ -2050,10 +2115,10 @@ test("PROOF-B-047-IDORb — Tenant A cannot mutate Tenant B resource via patient
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-048-IDOR — IDOR: Cross-tenant access to dateOfBirth must be rejected
+// PROOF-B-048-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/patients requires dateOfBirth to be in the past
+// Behavior: API rejects rental creation if device is not available
 
 test("PROOF-B-048-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2067,7 +2132,7 @@ test("PROOF-B-048-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in patients.create query
+  // Kills: Remove clinicId filter in rentals.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2076,7 +2141,7 @@ test("PROOF-B-048-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-048-IDORb — Tenant A cannot mutate Tenant B resource via patients.create", async ({ request }) => {
+test("PROOF-B-048-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2087,24 +2152,26 @@ test("PROOF-B-048-IDORb — Tenant A cannot mutate Tenant B resource via patient
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via patients.create
-  const crossTenant = await trpcMutation(request, "patients.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
+  const crossTenant = await trpcMutation(request, "rentals.create",
     {
         clinicId: TEST_CLINIC_B_ID,
-        firstName: "test-title",
-        lastName: "test-title",
-        dateOfBirth: "test-dateOfBirth",
-        email: "test-email",
-        phone: "test-phone",
-        insuranceProvider: "test-insuranceProvider",
-        insuranceNumber: "test-insuranceNumber",
-        address: "test-address",
-        medicalNotes: "test-medicalNotes",
+        deviceId: resourceId,
+        patientId: resourceId,
+        startDate: "test-startDate",
+        expectedReturnDate: "test-expectedReturnDate",
+        dailyRate: 50,
+        deposit: 1,
+        insuranceClaim: "test-insuranceClaim",
+        insurancePreAuthCode: "test-insurancePreAuthCode",
+        prescriptionId: resourceId,
+        accessories: "test-accessories",
+        notes: "test-notes",
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in patients.create
-  // Kills: Allow cross-tenant mutations on patients.create
+  // Kills: Missing tenant ownership check in rentals.create
+  // Kills: Allow cross-tenant mutations on rentals.create
 
   // Verify resource was NOT modified
   const verify = await trpcQuery(request, "devices.list",
@@ -2113,10 +2180,10 @@ test("PROOF-B-048-IDORb — Tenant A cannot mutate Tenant B resource via patient
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-049-IDOR — IDOR: Cross-tenant access to patient medicalNotes must be rejected
+// PROOF-B-049-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: Patient medicalNotes are visible only to nurse/admin
+// Behavior: API rejects rental creation if device belongs to a different clinic
 
 test("PROOF-B-049-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2130,7 +2197,7 @@ test("PROOF-B-049-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in patients.create query
+  // Kills: Remove clinicId filter in rentals.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2139,7 +2206,7 @@ test("PROOF-B-049-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-049-IDORb — Tenant A cannot mutate Tenant B resource via patients.create", async ({ request }) => {
+test("PROOF-B-049-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2150,24 +2217,26 @@ test("PROOF-B-049-IDORb — Tenant A cannot mutate Tenant B resource via patient
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via patients.create
-  const crossTenant = await trpcMutation(request, "patients.create",
+  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
+  const crossTenant = await trpcMutation(request, "rentals.create",
     {
         clinicId: TEST_CLINIC_B_ID,
-        firstName: "test-title",
-        lastName: "test-title",
-        dateOfBirth: "test-dateOfBirth",
-        email: "test-email",
-        phone: "test-phone",
-        insuranceProvider: "test-insuranceProvider",
-        insuranceNumber: "test-insuranceNumber",
-        address: "test-address",
-        medicalNotes: "test-medicalNotes",
+        deviceId: resourceId,
+        patientId: resourceId,
+        startDate: "test-startDate",
+        expectedReturnDate: "test-expectedReturnDate",
+        dailyRate: 50,
+        deposit: 1,
+        insuranceClaim: "test-insuranceClaim",
+        insurancePreAuthCode: "test-insurancePreAuthCode",
+        prescriptionId: resourceId,
+        accessories: "test-accessories",
+        notes: "test-notes",
     }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in patients.create
-  // Kills: Allow cross-tenant mutations on patients.create
+  // Kills: Missing tenant ownership check in rentals.create
+  // Kills: Allow cross-tenant mutations on rentals.create
 
   // Verify resource was NOT modified
   const verify = await trpcQuery(request, "devices.list",
@@ -2176,10 +2245,10 @@ test("PROOF-B-049-IDORb — Tenant A cannot mutate Tenant B resource via patient
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-050-IDOR — IDOR: Cross-tenant access to patients must be rejected
+// PROOF-B-050-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/patients lists patients
+// Behavior: API rejects rental creation if patient belongs to a different clinic
 
 test("PROOF-B-050-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2193,7 +2262,7 @@ test("PROOF-B-050-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
+  // Kills: Remove clinicId filter in rentals.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2202,7 +2271,7 @@ test("PROOF-B-050-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-050-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-050-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2213,20 +2282,38 @@ test("PROOF-B-050-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
+  const crossTenant = await trpcMutation(request, "rentals.create",
+    {
+        clinicId: TEST_CLINIC_B_ID,
+        deviceId: resourceId,
+        patientId: resourceId,
+        startDate: "test-startDate",
+        expectedReturnDate: "test-expectedReturnDate",
+        dailyRate: 50,
+        deposit: 1,
+        insuranceClaim: "test-insuranceClaim",
+        insurancePreAuthCode: "test-insurancePreAuthCode",
+        prescriptionId: resourceId,
+        accessories: "test-accessories",
+        notes: "test-notes",
+    }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
+  // Kills: Missing tenant ownership check in rentals.create
+  // Kills: Allow cross-tenant mutations on rentals.create
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-051-IDOR — IDOR: Cross-tenant access to patient list request must be rejected
+// PROOF-B-051-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/patients returns 403 INSUFFICIENT_ROLE for billing role
+// Behavior: API rejects rental creation if expectedReturnDate is more than 365 days from startDate
 
 test("PROOF-B-051-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2240,7 +2327,7 @@ test("PROOF-B-051-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
+  // Kills: Remove clinicId filter in rentals.create query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2249,7 +2336,7 @@ test("PROOF-B-051-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-051-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-051-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2260,20 +2347,38 @@ test("PROOF-B-051-IDORb — Tenant A cannot read individual Tenant B resource", 
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
+  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
+  const crossTenant = await trpcMutation(request, "rentals.create",
+    {
+        clinicId: TEST_CLINIC_B_ID,
+        deviceId: resourceId,
+        patientId: resourceId,
+        startDate: "test-startDate",
+        expectedReturnDate: "test-expectedReturnDate",
+        dailyRate: 50,
+        deposit: 1,
+        insuranceClaim: "test-insuranceClaim",
+        insurancePreAuthCode: "test-insurancePreAuthCode",
+        prescriptionId: resourceId,
+        accessories: "test-accessories",
+        notes: "test-notes",
+    }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
+  // Kills: Missing tenant ownership check in rentals.create
+  // Kills: Allow cross-tenant mutations on rentals.create
+
+  // Verify resource was NOT modified
+  const verify = await trpcQuery(request, "devices.list",
+    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
+  expect(verify.status).toBe(200);
+  // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-052-IDOR — IDOR: Cross-tenant access to device rental must be rejected
+// PROOF-B-052-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals creates a device rental
+// Behavior: API rejects rental creation if expectedReturnDate is not after startDate
 
 test("PROOF-B-052-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2335,75 +2440,10 @@ test("PROOF-B-052-IDORb — Tenant A cannot mutate Tenant B resource via rentals
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-053-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
+// PROOF-B-054-IDOR — IDOR: Cross-tenant access to single concurrent rental must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals rejects if device is not available
-
-test("PROOF-B-053-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.create query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-053-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
-  const crossTenant = await trpcMutation(request, "rentals.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        deviceId: resourceId,
-        patientId: resourceId,
-        startDate: "test-startDate",
-        expectedReturnDate: "test-expectedReturnDate",
-        dailyRate: 50,
-        deposit: 1,
-        insuranceClaim: "test-insuranceClaim",
-        insurancePreAuthCode: "test-insurancePreAuthCode",
-        prescriptionId: resourceId,
-        accessories: "test-accessories",
-        notes: "test-notes",
-    }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.create
-  // Kills: Allow cross-tenant mutations on rentals.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
-});
-
-// PROOF-B-054-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if device belongs to a different clinic
+// Behavior: API ensures only one concurrent rental for the same device succeeds
 
 test("PROOF-B-054-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2465,10 +2505,10 @@ test("PROOF-B-054-IDORb — Tenant A cannot mutate Tenant B resource via rentals
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-055-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
+// PROOF-B-055-IDOR — IDOR: Cross-tenant access to device.status must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals rejects if patient belongs to a different clinic
+// Behavior: API sets device status to rented upon successful rental creation
 
 test("PROOF-B-055-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2530,75 +2570,10 @@ test("PROOF-B-055-IDORb — Tenant A cannot mutate Tenant B resource via rentals
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-056-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
+// PROOF-B-057-IDOR — IDOR: Cross-tenant access to listing of rentals must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals rejects if rental period exceeds 365 days
-
-test("PROOF-B-056-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.create query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-056-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
-  const crossTenant = await trpcMutation(request, "rentals.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        deviceId: resourceId,
-        patientId: resourceId,
-        startDate: "test-startDate",
-        expectedReturnDate: "test-expectedReturnDate",
-        dailyRate: 50,
-        deposit: 1,
-        insuranceClaim: "test-insuranceClaim",
-        insurancePreAuthCode: "test-insurancePreAuthCode",
-        prescriptionId: resourceId,
-        accessories: "test-accessories",
-        notes: "test-notes",
-    }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.create
-  // Kills: Allow cross-tenant mutations on rentals.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
-});
-
-// PROOF-B-057-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: POST /api/rentals rejects if expectedReturnDate is not after startDate
+// Behavior: API allows all roles to list rentals
 
 test("PROOF-B-057-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2612,7 +2587,7 @@ test("PROOF-B-057-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.create query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2621,7 +2596,7 @@ test("PROOF-B-057-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-057-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
+test("PROOF-B-057-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2632,38 +2607,20 @@ test("PROOF-B-057-IDORb — Tenant A cannot mutate Tenant B resource via rentals
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
-  const crossTenant = await trpcMutation(request, "rentals.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        deviceId: resourceId,
-        patientId: resourceId,
-        startDate: "test-startDate",
-        expectedReturnDate: "test-expectedReturnDate",
-        dailyRate: 50,
-        deposit: 1,
-        insuranceClaim: "test-insuranceClaim",
-        insurancePreAuthCode: "test-insurancePreAuthCode",
-        prescriptionId: resourceId,
-        accessories: "test-accessories",
-        notes: "test-notes",
-    }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.create
-  // Kills: Allow cross-tenant mutations on rentals.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
+  // Kills: Missing tenant ownership check in devices.list
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-058-IDOR — IDOR: Cross-tenant access to rental creation must be rejected
+// PROOF-B-058-IDOR — IDOR: Cross-tenant access to all rentals must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals rejects if insuranceClaim is true but insurancePreAuthCode is missing
+// Behavior: Nurse role sees all rentals when listing rentals
 
 test("PROOF-B-058-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2677,7 +2634,7 @@ test("PROOF-B-058-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.create query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2686,7 +2643,7 @@ test("PROOF-B-058-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-058-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
+test("PROOF-B-058-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2697,38 +2654,20 @@ test("PROOF-B-058-IDORb — Tenant A cannot mutate Tenant B resource via rentals
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
-  const crossTenant = await trpcMutation(request, "rentals.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        deviceId: resourceId,
-        patientId: resourceId,
-        startDate: "test-startDate",
-        expectedReturnDate: "test-expectedReturnDate",
-        dailyRate: 50,
-        deposit: 1,
-        insuranceClaim: "test-insuranceClaim",
-        insurancePreAuthCode: "test-insurancePreAuthCode",
-        prescriptionId: resourceId,
-        accessories: "test-accessories",
-        notes: "test-notes",
-    }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.create
-  // Kills: Allow cross-tenant mutations on rentals.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
+  // Kills: Missing tenant ownership check in devices.list
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-059-IDOR — IDOR: Cross-tenant access to single successful rental must be rejected
+// PROOF-B-059-IDOR — IDOR: Cross-tenant access to all rentals with financial data must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals ensures only one rental succeeds for the same device concurrently
+// Behavior: Billing role sees all rentals with financial data when listing rentals
 
 test("PROOF-B-059-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2742,7 +2681,7 @@ test("PROOF-B-059-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.create query
+  // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
   const responseText = JSON.stringify(crossTenant.data ?? "");
@@ -2751,7 +2690,7 @@ test("PROOF-B-059-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-059-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
+test("PROOF-B-059-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2762,38 +2701,20 @@ test("PROOF-B-059-IDORb — Tenant A cannot mutate Tenant B resource via rentals
     expect(resourceId).toBeDefined();
   }
 
-  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
-  const crossTenant = await trpcMutation(request, "rentals.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        deviceId: resourceId,
-        patientId: resourceId,
-        startDate: "test-startDate",
-        expectedReturnDate: "test-expectedReturnDate",
-        dailyRate: 50,
-        deposit: 1,
-        insuranceClaim: "test-insuranceClaim",
-        insurancePreAuthCode: "test-insurancePreAuthCode",
-        prescriptionId: resourceId,
-        accessories: "test-accessories",
-        notes: "test-notes",
-    }, tenantACookie);
+  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
+  const crossTenant = await trpcQuery(request, "devices.list",
+    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.create
-  // Kills: Allow cross-tenant mutations on rentals.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
+  // Kills: Missing tenant ownership check in devices.list
+  expect(crossTenant.data).toBeNull();
+  // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-060-IDOR — IDOR: Cross-tenant access to device.status must be rejected
+// PROOF-B-060-IDOR — IDOR: Cross-tenant access to device-focused view of rentals must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals sets device.status to 'rented'
+// Behavior: Technician role sees device-focused view of rentals when listing rentals
 
 test("PROOF-B-060-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -2807,71 +2728,6 @@ test("PROOF-B-060-IDORa — Tenant A cannot list Tenant B resources", async ({ r
     { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
 
   expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.create query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-060-IDORb — Tenant A cannot mutate Tenant B resource via rentals.create", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to mutate Tenant B resource via rentals.create
-  const crossTenant = await trpcMutation(request, "rentals.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        deviceId: resourceId,
-        patientId: resourceId,
-        startDate: "test-startDate",
-        expectedReturnDate: "test-expectedReturnDate",
-        dailyRate: 50,
-        deposit: 1,
-        insuranceClaim: "test-insuranceClaim",
-        insurancePreAuthCode: "test-insurancePreAuthCode",
-        prescriptionId: resourceId,
-        accessories: "test-accessories",
-        notes: "test-notes",
-    }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.create
-  // Kills: Allow cross-tenant mutations on rentals.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
-});
-
-// PROOF-B-062-IDOR — IDOR: Cross-tenant access to rentals must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: GET /api/rentals lists rentals
-
-test("PROOF-B-062-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
   // Kills: Remove clinicId filter in devices.list query
 
   // Side-effect check: No Tenant B data must be in the response
@@ -2881,7 +2737,7 @@ test("PROOF-B-062-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-062-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-060-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -2902,153 +2758,12 @@ test("PROOF-B-062-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-063-IDOR — IDOR: Cross-tenant access to all rentals must be rejected
+// PROOF-B-061-IDOR — IDOR: Cross-tenant access to extending a rental period must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/rentals shows all rentals to nurse
+// Behavior: API allows nurse and admin to extend a rental period
 
-test("PROOF-B-063-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-063-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-064-IDOR — IDOR: Cross-tenant access to all rentals with financial data must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: GET /api/rentals shows all rentals with financial data to billing
-
-test("PROOF-B-064-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-064-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-065-IDOR — IDOR: Cross-tenant access to device-focused view of rentals must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: GET /api/rentals shows device-focused view to technician
-
-test("PROOF-B-065-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-065-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-066-IDOR — IDOR: Cross-tenant access to rental period must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: POST /api/rentals/:id/extend extends a rental period
-
-test("PROOF-B-066-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-061-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3069,7 +2784,7 @@ test("PROOF-B-066-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-066-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-061-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3090,12 +2805,12 @@ test("PROOF-B-066-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-072-IDOR — IDOR: Cross-tenant access to device return must be rejected
+// PROOF-B-065-IDOR — IDOR: Cross-tenant access to processing device return must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/rentals/:id/return processes device return
+// Behavior: API allows technician, nurse, and admin to process device return
 
-test("PROOF-B-072-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-065-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3116,7 +2831,7 @@ test("PROOF-B-072-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-072-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-065-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3137,59 +2852,12 @@ test("PROOF-B-072-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-081-IDOR — IDOR: Cross-tenant access to rental status must be rejected
+// PROOF-B-074-IDOR — IDOR: Cross-tenant access to creation of an invoice must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: PATCH /api/rentals/:id/status updates rental status
+// Behavior: API allows billing and admin to create an invoice
 
-test("PROOF-B-081-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in rentals.status query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-081-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via rentals.status
-  const crossTenant = await trpcQuery(request, "rentals.status",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in rentals.status
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-082-IDOR — IDOR: Cross-tenant access to invoice must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: POST /api/invoices creates an invoice
-
-test("PROOF-B-082-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-074-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3210,7 +2878,7 @@ test("PROOF-B-082-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-082-IDORb — Tenant A cannot mutate Tenant B resource via invoices.create", async ({ request }) => {
+test("PROOF-B-074-IDORb — Tenant A cannot mutate Tenant B resource via invoices.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3241,12 +2909,12 @@ test("PROOF-B-082-IDORb — Tenant A cannot mutate Tenant B resource via invoice
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-083-IDOR — IDOR: Cross-tenant access to invoice creation must be rejected
+// PROOF-B-075-IDOR — IDOR: Cross-tenant access to invoice creation must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/invoices rejects if rentalId belongs to a different clinic
+// Behavior: API rejects invoice creation if rentalId does not belong to same clinic
 
-test("PROOF-B-083-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-075-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3267,7 +2935,7 @@ test("PROOF-B-083-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-083-IDORb — Tenant A cannot mutate Tenant B resource via invoices.create", async ({ request }) => {
+test("PROOF-B-075-IDORb — Tenant A cannot mutate Tenant B resource via invoices.create", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3298,69 +2966,12 @@ test("PROOF-B-083-IDORb — Tenant A cannot mutate Tenant B resource via invoice
   // Kills: Mutation succeeds but returns 403 after the fact
 });
 
-// PROOF-B-084-IDOR — IDOR: Cross-tenant access to dueDate must be rejected
+// PROOF-B-076-IDOR — IDOR: Cross-tenant access to recording payment must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: POST /api/invoices requires dueDate to be in the future
+// Behavior: API allows billing and admin to record payment
 
-test("PROOF-B-084-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in invoices.create query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-084-IDORb — Tenant A cannot mutate Tenant B resource via invoices.create", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to mutate Tenant B resource via invoices.create
-  const crossTenant = await trpcMutation(request, "invoices.create",
-    {
-        clinicId: TEST_CLINIC_B_ID,
-        rentalId: resourceId,
-        items: "test-items",
-        dueDate: "test-dueDate",
-    }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in invoices.create
-  // Kills: Allow cross-tenant mutations on invoices.create
-
-  // Verify resource was NOT modified
-  const verify = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(verify.status).toBe(200);
-  // Kills: Mutation succeeds but returns 403 after the fact
-});
-
-// PROOF-B-085-IDOR — IDOR: Cross-tenant access to payment must be rejected
-// Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: POST /api/invoices/:id/payment records payment
-
-test("PROOF-B-085-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-076-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3381,7 +2992,7 @@ test("PROOF-B-085-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-085-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-076-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3402,12 +3013,12 @@ test("PROOF-B-085-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-089-IDOR — IDOR: Cross-tenant access to device utilization report must be rejected
+// PROOF-B-080-IDOR — IDOR: Cross-tenant access to access to device utilization report must be rejected
 // Risk: CRITICAL
 // Spec: Endpoints
-// Behavior: GET /api/reports/utilization provides device utilization report
+// Behavior: API allows admin only to access device utilization report
 
-test("PROOF-B-089-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-080-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3428,7 +3039,7 @@ test("PROOF-B-089-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-089-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-080-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3449,57 +3060,10 @@ test("PROOF-B-089-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-090-IDOR — IDOR: Cross-tenant access to device utilization report must be rejected
+// PROOF-B-101-IDOR — IDOR: Cross-tenant access to from active to cancelled must be rejected
 // Risk: CRITICAL
-// Spec: Endpoints
-// Behavior: GET /api/reports/utilization is accessible only by admin
-
-test("PROOF-B-090-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in reports.utilization query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-090-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via reports.utilization
-  const crossTenant = await trpcQuery(request, "reports.utilization",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in reports.utilization
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-101-IDOR — IDOR: Cross-tenant access to device must be rejected
-// Risk: CRITICAL
-// Spec: Status Machine: devices
-// Behavior: Transition from maintenance to available sets lastMaintenanceDate and clears maintenanceStartDate
+// Spec: Status Machine: rentals
+// Behavior: Rental status transitions from active to cancelled by admin only with reason
 
 test("PROOF-B-101-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
@@ -3543,12 +3107,12 @@ test("PROOF-B-101-IDORb — Tenant A cannot read individual Tenant B resource", 
   // Kills: Return resource data without tenant check
 });
 
-// PROOF-B-109-IDOR — IDOR: Cross-tenant access to from active to cancelled must be rejected
+// PROOF-B-111-IDOR — IDOR: Cross-tenant access to rental must be rejected
 // Risk: CRITICAL
 // Spec: Status Machine: rentals
-// Behavior: Rental state transitions from active to cancelled by admin only, with reason
+// Behavior: System archives rental when rental status transitions to completed
 
-test("PROOF-B-109-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
+test("PROOF-B-111-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
   // Positive control: Tenant B can access its own data
   const ownData = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
@@ -3569,242 +3133,7 @@ test("PROOF-B-109-IDORa — Tenant A cannot list Tenant B resources", async ({ r
   // Kills: Return all records without tenant isolation
 });
 
-test("PROOF-B-109-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-115-IDOR — IDOR: Cross-tenant access to rental must be rejected
-// Risk: CRITICAL
-// Spec: Status Machine: rentals
-// Behavior: Transition to overdue rental state sends overdue notification and calculates late fees
-
-test("PROOF-B-115-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-115-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-116-IDOR — IDOR: Cross-tenant access to rental must be rejected
-// Risk: CRITICAL
-// Spec: Status Machine: rentals
-// Behavior: Transition to returned rental state calculates final charges and updates device status
-
-test("PROOF-B-116-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-116-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-117-IDOR — IDOR: Cross-tenant access to rental must be rejected
-// Risk: CRITICAL
-// Spec: Status Machine: rentals
-// Behavior: Transition to completed rental state archives rental and updates patient.completedRentals count
-
-test("PROOF-B-117-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-117-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-118-IDOR — IDOR: Cross-tenant access to rental must be rejected
-// Risk: CRITICAL
-// Spec: Status Machine: rentals
-// Behavior: Transition to cancelled rental state sets device.status to 'available' and refunds deposit if applicable
-
-test("PROOF-B-118-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-118-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
-  // Get a Tenant B resource ID (create one if needed)
-  const tenantBList = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  let resourceId = (tenantBList.data as Array<Record<string, unknown>>)?.[0]?.id;
-  if (!resourceId) {
-    const created = await createTestResource(request, tenantBCookie, { clinicId: TEST_CLINIC_B_ID });
-    resourceId = (created as Record<string, unknown>)?.id;
-    expect(resourceId).toBeDefined();
-  }
-
-  // Attack: Tenant A tries to read specific Tenant B resource via devices.list
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { id: resourceId, clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Missing tenant ownership check in devices.list
-  expect(crossTenant.data).toBeNull();
-  // Kills: Return resource data without tenant check
-});
-
-// PROOF-B-121-IDOR — IDOR: Cross-tenant access to rental cancellation must be rejected
-// Risk: CRITICAL
-// Spec: Cancellation Policy
-// Behavior: System provides no deposit refund for cancellation after startDate (admin only), charging for days used
-
-test("PROOF-B-121-IDORa — Tenant A cannot list Tenant B resources", async ({ request }) => {
-  // Positive control: Tenant B can access its own data
-  const ownData = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);
-  expect(ownData.status).toBe(200);
-  // Kills: Block all cross-tenant access including legitimate access
-
-  // Attack: Tenant A attempts to access Tenant B data
-  const crossTenant = await trpcQuery(request, "devices.list",
-    { clinicId: TEST_CLINIC_B_ID }, tenantACookie);
-
-  expect([401, 403]).toContain(crossTenant.status);
-  // Kills: Remove clinicId filter in devices.list query
-
-  // Side-effect check: No Tenant B data must be in the response
-  const responseText = JSON.stringify(crossTenant.data ?? "");
-  expect(responseText).not.toContain(String(TEST_CLINIC_B_ID));
-  // Kills: Return empty array instead of 403 on cross-tenant access
-  // Kills: Return all records without tenant isolation
-});
-
-test("PROOF-B-121-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
+test("PROOF-B-111-IDORb — Tenant A cannot read individual Tenant B resource", async ({ request }) => {
   // Get a Tenant B resource ID (create one if needed)
   const tenantBList = await trpcQuery(request, "devices.list",
     { clinicId: TEST_CLINIC_B_ID }, tenantBCookie);

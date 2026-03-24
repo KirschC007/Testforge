@@ -24,14 +24,14 @@ jobs:
       - run: npx playwright test tests/security/ --project=api-security
         env:
           BASE_URL: ${{ secrets.STAGING_URL }}
-          TECH_USER: ${{ secrets.TECH_USER }}
-          TECH_PASS: ${{ secrets.TECH_PASS }}
-          NURSE_USER: ${{ secrets.NURSE_USER }}
-          NURSE_PASS: ${{ secrets.NURSE_PASS }}
-          BILLING_USER: ${{ secrets.BILLING_USER }}
-          BILLING_PASS: ${{ secrets.BILLING_PASS }}
-          ADMIN_USER: ${{ secrets.ADMIN_USER }}
-          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+          E2E_TECHNICIAN_USER: ${{ secrets.E2E_TECHNICIAN_USER }}
+          E2E_TECHNICIAN_PASS: ${{ secrets.E2E_TECHNICIAN_PASS }}
+          E2E_NURSE_USER: ${{ secrets.E2E_NURSE_USER }}
+          E2E_NURSE_PASS: ${{ secrets.E2E_NURSE_PASS }}
+          E2E_BILLING_USER: ${{ secrets.E2E_BILLING_USER }}
+          E2E_BILLING_PASS: ${{ secrets.E2E_BILLING_PASS }}
+          E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER }}
+          E2E_ADMIN_PASS: ${{ secrets.E2E_ADMIN_PASS }}
           TEST_TENANT_ID: ${{ secrets.TEST_TENANT_ID }}
           TEST_TENANT_B_ID: ${{ secrets.TEST_TENANT_B_ID }}
           DEBUG_API_TOKEN: ${{ secrets.DEBUG_API_TOKEN }}
@@ -56,14 +56,14 @@ jobs:
       - run: npx playwright test tests/integration/ tests/compliance/ tests/business/ --project=api-security
         env:
           BASE_URL: ${{ secrets.STAGING_URL }}
-          TECH_USER: ${{ secrets.TECH_USER }}
-          TECH_PASS: ${{ secrets.TECH_PASS }}
-          NURSE_USER: ${{ secrets.NURSE_USER }}
-          NURSE_PASS: ${{ secrets.NURSE_PASS }}
-          BILLING_USER: ${{ secrets.BILLING_USER }}
-          BILLING_PASS: ${{ secrets.BILLING_PASS }}
-          ADMIN_USER: ${{ secrets.ADMIN_USER }}
-          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+          E2E_TECHNICIAN_USER: ${{ secrets.E2E_TECHNICIAN_USER }}
+          E2E_TECHNICIAN_PASS: ${{ secrets.E2E_TECHNICIAN_PASS }}
+          E2E_NURSE_USER: ${{ secrets.E2E_NURSE_USER }}
+          E2E_NURSE_PASS: ${{ secrets.E2E_NURSE_PASS }}
+          E2E_BILLING_USER: ${{ secrets.E2E_BILLING_USER }}
+          E2E_BILLING_PASS: ${{ secrets.E2E_BILLING_PASS }}
+          E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER }}
+          E2E_ADMIN_PASS: ${{ secrets.E2E_ADMIN_PASS }}
           TEST_TENANT_ID: ${{ secrets.TEST_TENANT_ID }}
           DEBUG_API_TOKEN: ${{ secrets.DEBUG_API_TOKEN }}
       - uses: actions/upload-artifact@v4
@@ -87,14 +87,14 @@ jobs:
       - run: npx playwright test tests/e2e/ --project=browser-e2e
         env:
           BASE_URL: ${{ secrets.STAGING_URL }}
-          TECH_USER: ${{ secrets.TECH_USER }}
-          TECH_PASS: ${{ secrets.TECH_PASS }}
-          NURSE_USER: ${{ secrets.NURSE_USER }}
-          NURSE_PASS: ${{ secrets.NURSE_PASS }}
-          BILLING_USER: ${{ secrets.BILLING_USER }}
-          BILLING_PASS: ${{ secrets.BILLING_PASS }}
-          ADMIN_USER: ${{ secrets.ADMIN_USER }}
-          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+          E2E_TECHNICIAN_USER: ${{ secrets.E2E_TECHNICIAN_USER }}
+          E2E_TECHNICIAN_PASS: ${{ secrets.E2E_TECHNICIAN_PASS }}
+          E2E_NURSE_USER: ${{ secrets.E2E_NURSE_USER }}
+          E2E_NURSE_PASS: ${{ secrets.E2E_NURSE_PASS }}
+          E2E_BILLING_USER: ${{ secrets.E2E_BILLING_USER }}
+          E2E_BILLING_PASS: ${{ secrets.E2E_BILLING_PASS }}
+          E2E_ADMIN_USER: ${{ secrets.E2E_ADMIN_USER }}
+          E2E_ADMIN_PASS: ${{ secrets.E2E_ADMIN_PASS }}
           TEST_TENANT_ID: ${{ secrets.TEST_TENANT_ID }}
           DEBUG_API_TOKEN: ${{ secrets.DEBUG_API_TOKEN }}
       - uses: actions/upload-artifact@v4

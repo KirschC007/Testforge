@@ -51,17 +51,39 @@ export async function runAnalysisJob(
   let llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
 
   if (isCodeScan) {
-    // Code-Scan path: deterministic static analysis, no LLM call
-    console.log(`[TestForge] Code-Scan detected — using deterministic code parser (no LLM)`);
-    await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien werden analysiert (deterministisch, kein LLM-Call)...`);
-    const codeResult = parseCodeToIR(options!.codeFiles!);
-    analysisResult = {
-      ir: codeResult.ir,
-      qualityScore: codeResult.qualityScore,
-      specType: codeResult.specType,
-    };
-    llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
-    console.log(`[TestForge] Code-Scan done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+    const hasSpec = specText && specText.length > 100;
+    if (hasSpec) {
+      // Hybrid-Modus: Code-Parser (deterministisch) + LLM-Parser (Rollen, Status-Machine, DSGVO)
+      console.log(`[TestForge] Hybrid-Modus — Code-Parser + LLM-Parser (Spec: ${specText.length} chars, ${options!.codeFiles!.length} files)`);
+      await progress(1, `Hybrid-Modus: Code-Parser + Spec-Analyse (${options!.codeFiles!.length} Dateien + ${Math.round(specText.length / 1024)}KB Spec)...`);
+      const codeResult = parseCodeToIR(options!.codeFiles!);
+      // Run LLM parser on spec to get roles, status machine, constraints, DSGVO
+      const SMART_PARSER_THRESHOLD = 50000;
+      const specResult = specText.length >= SMART_PARSER_THRESHOLD
+        ? await parseSpecSmart(specText)
+        : await parseSpec(specText);
+      // Merge: Code-Endpoints have priority, Spec-Roles/Status/Constraints fill gaps
+      const mergedIR = mergeIRs(codeResult.ir, specResult.ir);
+      analysisResult = {
+        ir: mergedIR,
+        qualityScore: codeResult.qualityScore,
+        specType: `hybrid:${codeResult.specType}`,
+      };
+      llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
+      console.log(`[TestForge] Hybrid-Modus done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+    } else {
+      // Code-only path: deterministic static analysis, no LLM call
+      console.log(`[TestForge] Code-Scan detected — using deterministic code parser (no LLM)`);
+      await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien werden analysiert (deterministisch, kein LLM-Call)...`);
+      const codeResult = parseCodeToIR(options!.codeFiles!);
+      analysisResult = {
+        ir: codeResult.ir,
+        qualityScore: codeResult.qualityScore,
+        specType: codeResult.specType,
+      };
+      llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
+      console.log(`[TestForge] Code-Scan done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+    }
   } else {
     const { isOpenAPIDocument, parseOpenAPI } = await import("../openapi-parser");
     if (isOpenAPIDocument(specText)) {
@@ -247,4 +269,56 @@ export async function runAnalysisJob(
   console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
 
   return { analysisResult, riskModel, validatedSuite, report, testFiles, helpers, llmCheckerStats, extendedSuite };
+}
+
+// ─── Hybrid-Modus: Merge Code-IR + Spec-IR ─────────────────────────────────────
+// Code-Endpoints have priority; Spec fills in roles, status machine, constraints, DSGVO
+function mergeIRs(
+  codeIR: import("./types").AnalysisIR,
+  specIR: import("./types").AnalysisIR
+): import("./types").AnalysisIR {
+  // Merge behaviors: code behaviors first, then spec behaviors not already covered
+  const codeBehaviorTitles = new Set(codeIR.behaviors.map(b => b.title?.toLowerCase() ?? ""));
+  const specBehaviorsNew = specIR.behaviors.filter(b => !codeBehaviorTitles.has(b.title?.toLowerCase() ?? ""));
+  const behaviors = [...codeIR.behaviors, ...specBehaviorsNew];
+
+  // Merge endpoints: code endpoints have priority (real paths), spec fills gaps
+  const codeEndpointNames = new Set(codeIR.apiEndpoints.map(e => e.name));
+  const specEndpointsNew = specIR.apiEndpoints.filter(e => !codeEndpointNames.has(e.name));
+  const apiEndpoints = [...codeIR.apiEndpoints, ...specEndpointsNew];
+
+  // Auth model: prefer spec (has roles from LLM), fallback to code
+  const authModel = specIR.authModel ?? codeIR.authModel;
+  // If code found roles, merge them into spec authModel
+  if (authModel && codeIR.authModel?.roles && codeIR.authModel.roles.length > 0) {
+    const existingRoleNames = new Set((authModel.roles ?? []).map(r => r.name));
+    const newRoles = codeIR.authModel.roles.filter(r => !existingRoleNames.has(r.name));
+    authModel.roles = [...(authModel.roles ?? []), ...newRoles];
+  }
+  // Tenant model: prefer code (has real field names), fallback to spec
+  const tenantModel = codeIR.tenantModel ?? specIR.tenantModel;
+
+  // Status machine: prefer spec (LLM extracts state names), fallback to code
+  const statusMachine = specIR.statusMachine ?? codeIR.statusMachine;
+  const statusMachines = [...(specIR.statusMachines ?? []), ...(codeIR.statusMachines ?? [])];
+
+  // PII resources: merge both
+  const existingResourceNames = new Set(codeIR.resources.map(r => r.name));
+  const specResourcesNew = specIR.resources.filter(r => !existingResourceNames.has(r.name));
+  const resources = [...codeIR.resources, ...specResourcesNew];
+
+  // Enums: merge both
+  const enums = { ...(codeIR.enums ?? {}), ...(specIR.enums ?? {}) };
+
+  return {
+    ...codeIR,
+    behaviors,
+    apiEndpoints,
+    authModel,
+    tenantModel,
+    statusMachine,
+    statusMachines,
+    resources,
+    enums,
+  };
 }

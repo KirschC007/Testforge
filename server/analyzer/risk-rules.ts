@@ -70,7 +70,7 @@ export const RISK_RULES: RiskRule[] = [
     },
     priority: 90,
   },
-  // ─── Status Transition ────────────────────────────────────────────────────
+  // ─── Status Transition ────────────────────────────────────────────────
   {
     proofType: "status_transition",
     triggers: {
@@ -83,6 +83,14 @@ export const RISK_RULES: RiskRule[] = [
         "*.updateStatus", "*.status", "*.freeze", "*.unfreeze",
         "*.cancel", "*.complete", "*.archive", "*.publish", "*.approve",
         "*.reject", "*.confirm", "*.activate", "*.suspend",
+      ],
+      // Fix 5: Only PATCH/PUT/POST endpoints trigger status-transition tests (not GET)
+      conditions: [
+        (b, ep) => {
+          if (!ep) return false; // no endpoint → rely on keyword/tag match
+          const m = (ep.method || "").toUpperCase();
+          return m === "PATCH" || m === "PUT" || m === "POST";
+        },
       ],
     },
     priority: 80,

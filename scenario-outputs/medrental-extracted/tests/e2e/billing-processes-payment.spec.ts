@@ -13,7 +13,7 @@ const TEST_CLINIC_ID = parseInt(process.env.TEST_CLINIC_ID || process.env.TEST_T
 test.describe("Browser: Billing processes payment", () => {
   test("Billing processes payment — happy path", async ({ page, request }) => {
     // Actor: Billing user
-    // Success criteria: If fully paid: invoice.status → "paid"; API verify: invoice.paidAmount updated, rental.status → "completed" if final
+    // Success criteria: invoice.paidAmount updated; If fully paid: invoice.status → "paid"; rental.status → "completed" if final
 
     // Step 1: Billing user logs in
     // Step 2: Billing navigates to /billing

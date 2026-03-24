@@ -5,46 +5,44 @@
 Feature: Endpoints
   As a technician
   I want to manage endpoints
-  So that I can registers the system correctly
+  So that I can allows the system correctly
 
-  Scenario: POST /api/devices registers a new medical device
-    Given Authenticated as technician or admin
-    And Valid device data provided
-    When system registers new medical device
-    Then New device is created in the system
-    # Spec: "POST /api/devices Register a new medical device."
+  Scenario: API allows technician and admin to register new medical devices
+    Given user has technician or admin role
+    When api allows registration of new medical devices
+    Then device registered
+    # Spec: "Auth: technician, admin"
 
-  Scenario: POST /api/devices requires clinicId to match JWT clinicId
-    Given Authenticated user
-    And clinicId in request body does not match JWT clinicId
-    When system requires clinicId match
-    Then Request is rejected
+  Scenario Outline: API rejects device registration if clinicId does not match JWT
+    Given input clinicId does not match JWT clinicId
+    When api rejects device registration
+    Then HTTP 403
+    # Error cases:
+    # - clinicId mismatch → 403
     # Spec: "clinicId must match JWT → 403"
 
-  Scenario Outline: POST /api/devices rejects registration if serialNumber is globally unique
-    Given Provided serialNumber already exists in the system globally
-    When system rejects registration device
-    Then Device is not registered
-    # Error cases:
-    # - serialNumber already exists → 409 SERIAL_NUMBER_EXISTS
+  Scenario: API rejects device registration if serialNumber already exists globally
+    Given serialNumber is not globally unique
+    When api rejects device registration
+    Then HTTP 409 SERIAL_NUMBER_EXISTS
     # Spec: "serialNumber globally unique → 409 SERIAL_NUMBER_EXISTS"
 
-  Scenario Outline: POST /api/devices rejects registration if purchaseDate is in the future
-    Given Provided purchaseDate is in the future
-    When system rejects registration device
-    Then Device is not registered
+  Scenario Outline: API rejects device registration if purchaseDate is in the future
+    Given purchaseDate is in the future
+    When api rejects device registration
+    Then HTTP 400 FUTURE_PURCHASE_DATE
     # Error cases:
-    # - purchaseDate in future → 400 FUTURE_PURCHASE_DATE
+    # - future purchaseDate → 400 FUTURE_PURCHASE_DATE
     # Spec: "purchaseDate in future → 400 FUTURE_PURCHASE_DATE"
 
-  Scenario: GET /api/devices lists devices
-    Given Authenticated user
-    When system lists devices
-    Then List of devices is returned, filtered by optional parameters
-    # Spec: "GET /api/devices List devices."
+  Scenario: API allows all roles to list devices
+    Given user has any role
+    When api allows listing of devices
+    Then device list returned
+    # Spec: "Auth: all roles"
 
-  Scenario: GET /api/devices shows all device fields to technician/admin
-    Given Authenticated as technician or admin
-    When system shows all device fields
-    Then Response includes all device details
+  Scenario: Technician/admin roles see all device fields when listing devices
+    Given user has technician or admin role
+    When technician/admin roles see all device fields
+    Then full device data returned
     # Spec: "technician/admin sees all fields"
