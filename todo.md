@@ -781,4 +781,11 @@
 - [x] Fix 6: Rollen-Noise im Regex-Fallback filtern (job-runner.ts: nur echte Rollen aus extractRoles)
 - [x] Vitest 611/611 + TypeScript 0 Fehler (12 neue Tests)
 - [ ] Hey-Listen Pipeline-Test (wenn LLM-Kontingent verfügbar)
-- [ ] Checkpoint + ZIP liefern
+- [x] Checkpoint + ZIP liefern
+
+## Fix-Briefing 10 — LLM-Checker + Endpoint-Filter v7.4 (24.03.2026)
+
+- [x] Fix 2: LLM-Checker Rejection-Rate senken — verifyAnchor Title-Fallback, Threshold 0.8→0.75, Rejection-Schwelle 0.5→0.35
+- [x] Fix 3: Endpoint-Filter — isGenericEndpoint() in normalize.ts + job-runner.ts Filter
+- [x] Vitest 617/617 + TypeScript 0 Fehler (6 neue Tests)
+- [x] Checkpoint liefern

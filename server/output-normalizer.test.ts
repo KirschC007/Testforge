@@ -179,3 +179,47 @@ test("PROOF-S-001 — IDOR: applications list", async ({ page }) => {
     expect(output).toContain('"applications.getById"');
   });
 });
+
+// ─── Fix-Briefing 10: isGenericEndpoint (Fix 3) ──────────────────────────────
+
+import { isGenericEndpoint } from "../server/analyzer/normalize";
+
+describe("isGenericEndpoint — generic endpoint filter (Fix 3)", () => {
+  it("filters tRPC artifact: procedure.list", () => {
+    expect(isGenericEndpoint("procedure.list")).toBe(true);
+    expect(isGenericEndpoint("procedure.create")).toBe(true);
+    expect(isGenericEndpoint("procedure.getById")).toBe(true);
+  });
+
+  it("filters URL template variables: {slug}.list", () => {
+    expect(isGenericEndpoint("{slug}.list")).toBe(true);
+    expect(isGenericEndpoint("{id}.create")).toBe(true);
+    expect(isGenericEndpoint(":id.update")).toBe(true);
+  });
+
+  it("filters output-normalizer artifact: s.getById", () => {
+    expect(isGenericEndpoint("s.getById")).toBe(true);
+    expect(isGenericEndpoint("x.list")).toBe(true);
+  });
+
+  it("filters generic meta-names: endpoint.create, handler.list", () => {
+    expect(isGenericEndpoint("endpoint.create")).toBe(true);
+    expect(isGenericEndpoint("handler.list")).toBe(true);
+    expect(isGenericEndpoint("resource.update")).toBe(true);
+    expect(isGenericEndpoint("item.delete")).toBe(true);
+  });
+
+  it("does NOT filter real resource endpoints", () => {
+    expect(isGenericEndpoint("reservations.create")).toBe(false);
+    expect(isGenericEndpoint("users.getById")).toBe(false);
+    expect(isGenericEndpoint("restaurants.list")).toBe(false);
+    expect(isGenericEndpoint("tasks.update")).toBe(false);
+    expect(isGenericEndpoint("auth.login")).toBe(false);
+    expect(isGenericEndpoint("orders.cancel")).toBe(false);
+  });
+
+  it("does NOT filter endpoints with no dot (not in resource.action format)", () => {
+    expect(isGenericEndpoint("reservations")).toBe(false);
+    expect(isGenericEndpoint("")).toBe(false);
+  });
+});

@@ -12,7 +12,7 @@ import { generateExtendedTestSuite } from "./extended-suite";
 import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 import { parseCodeToIR, type CodeFile } from "./code-parser";
 import { discoverAPI } from "./api-discovery";
-import { normalizeEndpointName } from "./normalize";
+import { normalizeEndpointName, isGenericEndpoint } from "./normalize";
 import { sanitizeIR } from "./llm-sanitizer";
 import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
 import { extractRoles } from "./spec-regex-extractor";
@@ -193,6 +193,13 @@ export async function runAnalysisJob(
     ...ep,
     name: normalizeEndpointName(ep.name, ep.method),
   }));
+  // Fix 3: Filter generic endpoint names (procedure.list, {slug}.create, s.getById, etc.)
+  const beforeGenericFilter = analysisResult.ir.apiEndpoints.length;
+  analysisResult.ir.apiEndpoints = analysisResult.ir.apiEndpoints.filter(ep => !isGenericEndpoint(ep.name));
+  const filteredGeneric = beforeGenericFilter - analysisResult.ir.apiEndpoints.length;
+  if (filteredGeneric > 0) {
+    console.log(`[TestForge] Generic endpoint filter: removed ${filteredGeneric} generic endpoints (e.g. procedure.list, {slug}.create)`);
+  }
 
   // v5.3: Sanitizer — deterministic type fixes (ensureArray etc.) for all LLM output
   // enableLLMRepair=false: only free deterministic fixes, no extra LLM calls

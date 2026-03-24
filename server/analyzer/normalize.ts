@@ -320,3 +320,46 @@ export function sanitizeLLMOutput(raw: Record<string, unknown>): Record<string, 
     dataModels: Array.isArray(raw.dataModels) ? raw.dataModels : [],
   };
 }
+
+// ─── Fix 3: Generic Endpoint Filter ──────────────────────────────────────────
+/**
+ * Returns true if the endpoint name is too generic to be useful for test generation.
+ * Generic endpoints produce noise tests that reference non-existent procedures.
+ *
+ * Examples of generic names to filter:
+ *   "procedure.list"    → tRPC artifact (procedure is not a resource)
+ *   "{slug}.list"       → URL template variable leaked into IR
+ *   "api.create"        → framework namespace (already stripped, but belt-and-suspenders)
+ *   "s.getById"         → output-normalizer artifact (list → s)
+ *   "item.list"         → too generic to be meaningful
+ *   "endpoint.create"   → meta-name, not a real resource
+ */
+const GENERIC_RESOURCE_NAMES = new Set([
+  "procedure", "endpoint", "handler", "method", "action", "route", "path",
+  "resource", "entity", "object", "record", "item", "entry", "data",
+  "request", "response", "payload", "body", "params", "query",
+  "s", "x", "y", "z", "n", "id",
+  "api", "rest", "rpc", "grpc", "graphql", "trpc",
+  "v1", "v2", "v3", "v4",
+]);
+
+export function isGenericEndpoint(name: string): boolean {
+  if (!name || !name.includes(".")) return false;
+
+  // Filter URL template variables like {slug}.list or :id.create
+  if (/^[{:]/.test(name)) return true;
+  if (/\{[^}]+\}/.test(name)) return true;
+
+  const [resource, action] = name.split(".");
+
+  // Filter single-letter resources (output-normalizer artifact: "s.getById")
+  if (resource.length <= 1) return true;
+
+  // Filter known generic resource names
+  if (GENERIC_RESOURCE_NAMES.has(resource.toLowerCase())) return true;
+
+  // Filter if action is also generic/empty
+  if (!action || action.length === 0) return true;
+
+  return false;
+}

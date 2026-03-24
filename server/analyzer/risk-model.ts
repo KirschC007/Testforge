@@ -8,8 +8,17 @@ import { normalizeEndpointName } from "./normalize";
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
 
 function verifyAnchor(behavior: Behavior, specText: string): { found: boolean; score: number } {
+  const specLower = specText.toLowerCase();
+
+  // No anchor at all — fall back to title keyword matching
   if (!behavior.specAnchor || behavior.specAnchor.length < 10) {
-    return { found: false, score: 0.3 }; // No anchor provided — partial credit
+    // Try to find the behavior title keywords in the spec
+    const titleWords = (behavior.title || "").toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    if (titleWords.length === 0) return { found: false, score: 0.4 }; // Generous partial credit
+    const titleMatched = titleWords.filter(w => specLower.includes(w));
+    const titleScore = titleMatched.length / titleWords.length;
+    // If most title words are in spec, give decent credit
+    return { found: titleScore >= 0.6, score: Math.max(0.4, titleScore * 0.7) };
   }
 
   // Exact match
@@ -17,15 +26,22 @@ function verifyAnchor(behavior: Behavior, specText: string): { found: boolean; s
     return { found: true, score: 1.0 };
   }
 
-  // Fuzzy: check if 80% of words in anchor appear near each other in spec
+  // Fuzzy: check if 70% of words in anchor appear in spec
   const anchorWords = behavior.specAnchor.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-  if (anchorWords.length === 0) return { found: false, score: 0.2 };
+  if (anchorWords.length === 0) return { found: false, score: 0.4 };
 
-  const specLower = specText.toLowerCase();
   const matchedWords = anchorWords.filter(w => specLower.includes(w));
-  const score = matchedWords.length / anchorWords.length;
+  const anchorScore = matchedWords.length / anchorWords.length;
 
-  return { found: score >= 0.7, score };
+  // Also check title keywords as a secondary signal
+  const titleWords = (behavior.title || "").toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const titleMatched = titleWords.length > 0 ? titleWords.filter(w => specLower.includes(w)) : [];
+  const titleScore = titleWords.length > 0 ? titleMatched.length / titleWords.length : 0;
+
+  // Combine: anchor word match + title word match as bonus
+  const combinedScore = (anchorScore * 0.7) + (titleScore * 0.3);
+
+  return { found: combinedScore >= 0.5, score: combinedScore };
 }
 
 async function crossValidateBehavior(
@@ -140,46 +156,48 @@ export async function runLLMChecker(
       );
 
       // Step 3: Confidence score
+      // Fix 2: Increased anchor weight (0.4→0.45) and validation confidence weight (0.2→0.25)
+      // to reduce false-positive rejections when anchor is strong but LLM verdict is PARTIAL.
       const anchorScore = anchor.score;
-      const validationScore = validation.verdict === "CORRECT" ? 1.0 : validation.verdict === "PARTIAL" ? 0.6 : 0.2;
-      const confidence = (anchorScore * 0.4) + (validationScore * 0.4) + (validation.confidence * 0.2);
+      const validationScore = validation.verdict === "CORRECT" ? 1.0 : validation.verdict === "PARTIAL" ? 0.65 : 0.25;
+      const confidence = (anchorScore * 0.45) + (validationScore * 0.30) + (validation.confidence * 0.25);
 
-      if (confidence >= 0.8) {
+      if (confidence >= 0.75) {
+        // Fix 2: Lowered approval threshold 0.8→0.75 to avoid false-positive rejections
         return {
           behavior,
           result: { behaviorId: behavior.id, verdict: "approved", confidence, issues: [], attempts: 0, anchorFound: anchor.found },
         };
       }
 
-      if (confidence < 0.6 && validation.issues.length > 0) {
-        // Step 4: Improvement loop (max 2 attempts)
+      // Fix 2: Only enter improvement loop if confidence is very low AND anchor was NOT found
+      // Previously: confidence < 0.6 (too aggressive, triggered even for valid behaviors)
+      if (confidence < 0.5 && !anchor.found && validation.issues.length > 0) {
+        // Step 4: Improvement loop (max 1 attempt to save time)
         let current = behavior;
         let currentConfidence = confidence;
         let attempts = 0;
 
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const improved = await withTimeout(
-            improveBehavior(current, validation.issues, specText, attempt),
-            30000,
-            null
-          );
-          if (!improved) break;
+        const improved = await withTimeout(
+          improveBehavior(current, validation.issues, specText, 0),
+          30000,
+          null
+        );
+        if (improved) {
           attempts++;
-
           const newAnchor = verifyAnchor(improved, specText);
           const newValidation = await withTimeout(
             crossValidateBehavior(improved, specText),
             30000,
             { verdict: "PARTIAL" as const, confidence: 0.5, issues: [] }
           );
-          const newValidationScore = newValidation.verdict === "CORRECT" ? 1.0 : newValidation.verdict === "PARTIAL" ? 0.6 : 0.2;
-          currentConfidence = (newAnchor.score * 0.4) + (newValidationScore * 0.4) + (newValidation.confidence * 0.2);
+          const newValidationScore = newValidation.verdict === "CORRECT" ? 1.0 : newValidation.verdict === "PARTIAL" ? 0.65 : 0.25;
+          currentConfidence = (newAnchor.score * 0.45) + (newValidationScore * 0.30) + (newValidation.confidence * 0.25);
           current = improved;
-
-          if (currentConfidence >= 0.6) break;
         }
 
-        if (currentConfidence < 0.5) {
+        // Fix 2: Only reject if confidence is extremely low (< 0.35, was < 0.5)
+        if (currentConfidence < 0.35) {
           return {
             behavior: current,
             result: { behaviorId: behavior.id, verdict: "rejected", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
@@ -188,7 +206,7 @@ export async function runLLMChecker(
 
         return {
           behavior: current,
-          result: { behaviorId: behavior.id, verdict: currentConfidence >= 0.8 ? "approved" : "flagged", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
+          result: { behaviorId: behavior.id, verdict: currentConfidence >= 0.75 ? "approved" : "flagged", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
         };
       }
 
