@@ -589,11 +589,11 @@
 - [ ] Fix 3: Concurrency Cookie-Init + Payload-Typen (keine Strings statt Zahlen)
 - [ ] Fix 4: Auth-Matrix Payload escaped Strings (JSON.stringify entfernen)
 - [ ] Fix 5: Idempotency Cookie-Initialisierung
-- [ ] Fix 6: DSGVO PII-Felder (name/email/phone statt .log/.pers)
-- [ ] Fix 7: Helpers doppelt genested (ZIP-Builder in routers.ts)
-- [ ] Fix 8: DSGVO-Export Endpoint (customers.export statt customers.getById)
-- [ ] Fix 9: DSGVO-Audit Endpoint (customers.gdpr statt accounts.delete)
-- [ ] Verifikations-Script ausführen (Quality Gate)
+- [x] Fix 6: DSGVO PII-Felder (name/email/phone statt .log/.pers)
+- [x] Fix 7: Helpers doppelt genested (ZIP-Builder in routers.ts)
+- [x] Fix 8: DSGVO-Export Endpoint (customers.export statt customers.getById)
+- [x] Fix 9: DSGVO-Audit Endpoint (customers.gdpr statt accounts.delete)
+- [x] Verifikations-Script ausführen (Quality Gate): 17/17 Checks bestanden
 - [ ] BankingCore + alle Specs testen
 - [ ] 2 ZIPs liefern (Output + Code)
 
@@ -663,3 +663,18 @@
 - [x] MedRental Pipeline: 48/48 Checks bestanden ✅
 - [x] Vitest: 546/546 Tests grün, 0 TS-Fehler
 - [x] Checkpoint + ZIP
+
+## Fix-Briefing 2 Implementierung (24.03.2026)
+
+- [x] Fix 1+10: getPreferredRole() Hilfsfunktion (admin > manager > user > guest) + alle 12 Generatoren umstellen
+- [x] Fix 2: Skip-Status Text-Fallback entfernen (generateStatusTransitionTest — nur statusMachine-States)
+- [x] Fix 3: Concurrency Cookie-Init + Payload-Typen (number statt string für numerische Felder)
+- [x] Fix 4: Auth-Matrix Payload escaped Strings (JSON.stringify entfernen → direkte Werte)
+- [x] Fix 5: Idempotency Cookie-Initialisierung (getAdminCookie() vor Test)
+- [x] Fix 6: DSGVO PII-Felder (name/email/phone statt .log/.pers)
+- [x] Fix 7: Helpers doppelt genested (ZIP-Builder in routers.ts)
+- [x] Fix 8: DSGVO-Export Endpoint (customers.export statt customers.getById)
+- [x] Fix 9: DSGVO-Audit Endpoint (customers.gdpr statt accounts.delete)
+- [x] Verifikations-Script ausführen (Quality Gate): 17/17 Checks bestanden
+- [x] BankingCore Pipeline testen: 9 Test-Dateien, 38 Proofs
+- [x] Checkpoint + 2 ZIPs liefern
