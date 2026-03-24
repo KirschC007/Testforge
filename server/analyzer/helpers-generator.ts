@@ -29,9 +29,9 @@ export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const rawLoginEndpoint = ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
   const loginEndpoint = rawLoginEndpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
   const csrfEndpoint = ir.authModel?.csrfEndpoint || "";
-  const roles = ir.authModel?.roles || [
+  const roles = (ir.authModel?.roles || [
     { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" },
-  ];
+  ]).filter((r): r is typeof r & { name: string } => Boolean(r?.name && typeof r.name === "string" && r.name.trim().length > 0));
 
   // Find resources with PII for factories
   const mainResource = ir.resources.find(r => r.operations.includes("create")) || ir.resources[0];

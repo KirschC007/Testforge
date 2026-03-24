@@ -61,7 +61,7 @@ export async function runAnalysisJob(
       const codeResult = parseCodeToIR(options!.codeFiles!);
       // Run LLM parser on spec to get roles, status machine, constraints, DSGVO
       const SMART_PARSER_THRESHOLD = 50000;
-      const DECOMPOSED_THRESHOLD = 8000;
+      const DECOMPOSED_THRESHOLD = 50000;
       const specResult = specText.length >= SMART_PARSER_THRESHOLD
         ? await parseSpecSmart(specText)
         : specText.length >= DECOMPOSED_THRESHOLD
@@ -102,7 +102,7 @@ export async function runAnalysisJob(
     } else {
       // LLM path — choose parser based on spec size
       const SMART_PARSER_THRESHOLD = 50000; // 50KB+: use 3-pass smart parser
-      const DECOMPOSED_THRESHOLD = 8000;    // 8KB+: use 7-block decomposed parser
+      const DECOMPOSED_THRESHOLD = 50000;   // disabled: use standard parser for all specs < 50KB
       if (specText.length >= SMART_PARSER_THRESHOLD) {
         // Smart Parser: 3-pass architecture for large specs
         console.log(`[TestForge] Large spec (${specText.length} chars) — using Smart Parser v2.0 (3-pass)`);

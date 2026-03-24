@@ -674,15 +674,17 @@ export function enrichFromStructuralMap(ir: AnalysisIR, structuralMap: Structura
 
   // 3. Ensure status machine is complete
   if (structuralMap.statusMachine && ir.statusMachine) {
+    // Guard: ensure arrays exist before using .some()
+    if (!Array.isArray(ir.statusMachine.transitions)) ir.statusMachine.transitions = [];
+    if (!Array.isArray(ir.statusMachine.forbidden)) ir.statusMachine.forbidden = [];
     // Add any transitions from structural map that Pass 2 missed
-    for (const t of structuralMap.statusMachine.transitions) {
+    for (const t of (structuralMap.statusMachine.transitions || [])) {
       const exists = ir.statusMachine.transitions.some(x => x[0] === t[0] && x[1] === t[1]);
       if (!exists) ir.statusMachine.transitions.push(t);
     }
-    for (const f of structuralMap.statusMachine.forbidden) {
-      const exists = (ir.statusMachine.forbidden || []).some(x => x[0] === f[0] && x[1] === f[1]);
+    for (const f of (structuralMap.statusMachine.forbidden || [])) {
+      const exists = ir.statusMachine.forbidden.some(x => x[0] === f[0] && x[1] === f[1]);
       if (!exists) {
-        if (!ir.statusMachine.forbidden) ir.statusMachine.forbidden = [];
         ir.statusMachine.forbidden.push(f);
       }
     }
@@ -858,6 +860,10 @@ export async function parseSpecSmart(specText: string): Promise<AnalysisResult> 
       if (!merged.statusMachine) {
         merged.statusMachine = r.statusMachine as AnalysisIR["statusMachine"];
       } else {
+        // Guard: ensure arrays exist before using .includes() / .some()
+        if (!Array.isArray(merged.statusMachine!.states)) merged.statusMachine!.states = [];
+        if (!Array.isArray(merged.statusMachine!.transitions)) merged.statusMachine!.transitions = [];
+        if (!Array.isArray(merged.statusMachine!.forbidden)) merged.statusMachine!.forbidden = [];
         for (const s of (r.statusMachine as NonNullable<AnalysisIR["statusMachine"]>).states || []) {
           if (!merged.statusMachine!.states.includes(s)) merged.statusMachine!.states.push(s);
         }
