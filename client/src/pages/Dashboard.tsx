@@ -107,7 +107,8 @@ function ProofBreakdown({ proofs }: { proofs: any[] }) {
 function AnalysisCard({ analysis }: { analysis: any }) {
   const result = analysis.resultJson as any;
   const suite = result?.validatedSuite;
-  const specHealth = result?.analysisResult?.specHealth;
+  // Fix 2: check top-level first, then nested for older analyses
+  const specHealth = result?.specHealth || result?.analysisResult?.specHealth;
   const allProofs: any[] = suite?.proofs || [];
   const avgMutation = allProofs.length > 0
     ? allProofs.reduce((s: number, p: any) => s + (p.mutationScore || 0), 0) / allProofs.length

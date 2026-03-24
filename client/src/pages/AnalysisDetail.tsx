@@ -365,8 +365,8 @@ export default function AnalysisDetail() {
   const specDriftProofs = allProofs.filter((p: any) => p.proofType === "spec_drift").length;
   const schemaCoverage = totalEndpoints > 0 ? Math.round((specDriftProofs / totalEndpoints) * 100) : 0;
 
-  // Extract specHealth from result
-  const specHealth: SpecHealth | null = result?.analysisResult?.specHealth || null;
+  // Extract specHealth from result (Fix 2: check top-level first, then nested for older analyses)
+  const specHealth: SpecHealth | null = result?.specHealth || result?.analysisResult?.specHealth || null;
 
   // Group proofs by type
   const proofGroups = groupProofsByCategory(allProofs);
@@ -570,6 +570,129 @@ export default function AnalysisDetail() {
                 color="var(--tf-blue)"
               />
             </div>
+
+            {/* LLM Checker Stats (Fix 3) */}
+            {result?.llmCheckerStats && result.llmCheckerStats.approved + result.llmCheckerStats.rejected > 0 && (
+              <div className="bg-card border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <CheckCircle2 className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold text-sm">LLM Behavior Checker</h3>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {result.llmCheckerStats.approved + result.llmCheckerStats.flagged + result.llmCheckerStats.rejected} behaviors verified
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex-1 h-2 rounded-full overflow-hidden bg-muted flex">
+                    {result.llmCheckerStats.approved > 0 && (
+                      <div className="h-full bg-[var(--tf-green)]" style={{ width: `${(result.llmCheckerStats.approved / (result.llmCheckerStats.approved + result.llmCheckerStats.flagged + result.llmCheckerStats.rejected)) * 100}%` }} />
+                    )}
+                    {result.llmCheckerStats.flagged > 0 && (
+                      <div className="h-full bg-[var(--tf-yellow)]" style={{ width: `${(result.llmCheckerStats.flagged / (result.llmCheckerStats.approved + result.llmCheckerStats.flagged + result.llmCheckerStats.rejected)) * 100}%` }} />
+                    )}
+                    {result.llmCheckerStats.rejected > 0 && (
+                      <div className="h-full bg-[var(--tf-red)]" style={{ width: `${(result.llmCheckerStats.rejected / (result.llmCheckerStats.approved + result.llmCheckerStats.flagged + result.llmCheckerStats.rejected)) * 100}%` }} />
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-4 text-xs">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[var(--tf-green)] inline-block" /> {result.llmCheckerStats.approved} approved</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[var(--tf-yellow)] inline-block" /> {result.llmCheckerStats.flagged} flagged</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[var(--tf-red)] inline-block" /> {result.llmCheckerStats.rejected} rejected</span>
+                  <span className="text-muted-foreground ml-auto">avg confidence: {(result.llmCheckerStats.avgConfidence * 100).toFixed(0)}%</span>
+                </div>
+              </div>
+            )}
+
+            {/* IR Summary Panel (Fix 1) */}
+            {ir && (
+              <div className="bg-card border border-border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Database className="w-4 h-4 text-muted-foreground" />
+                  <h3 className="font-semibold text-sm">Spec Intelligence — Erkannte Struktur</h3>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Roles */}
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Rollen
+                    </div>
+                    {ir.authModel?.roles?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {ir.authModel.roles.map((r: any) => (
+                          <span key={r.name} className="text-xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                            {r.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">nicht erkannt</span>
+                    )}
+                  </div>
+                  {/* Tenant Key */}
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <Shield className="w-3 h-3" /> Tenant-Key
+                    </div>
+                    {ir.tenantModel?.tenantIdField ? (
+                      <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-[var(--tf-orange)]/10 text-[var(--tf-orange)]">
+                        {ir.tenantModel.tenantIdField}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">nicht erkannt</span>
+                    )}
+                  </div>
+                  {/* States */}
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <GitBranch className="w-3 h-3" /> Status-Machine
+                    </div>
+                    {ir.statusMachine?.states?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {ir.statusMachine.states.slice(0, 5).map((s: string) => (
+                          <span key={s} className="text-xs font-mono px-1.5 py-0.5 rounded bg-[var(--tf-blue)]/10 text-[var(--tf-blue)]">
+                            {s}
+                          </span>
+                        ))}
+                        {ir.statusMachine.states.length > 5 && (
+                          <span className="text-xs text-muted-foreground">+{ir.statusMachine.states.length - 5}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">keine States</span>
+                    )}
+                  </div>
+                  {/* Auth Model */}
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <Zap className="w-3 h-3" /> Auth
+                    </div>
+                    {ir.authModel?.loginEndpoint ? (
+                      <div className="space-y-1">
+                        <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-[var(--tf-green)]/10 text-[var(--tf-green)] block truncate">
+                          {ir.authModel.loginEndpoint}
+                        </span>
+                        {ir.authModel.csrfEndpoint && (
+                          <span className="text-xs text-muted-foreground">CSRF: {ir.authModel.csrfEndpoint}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">kein Login-Endpoint</span>
+                    )}
+                  </div>
+                </div>
+                {/* Endpoints count */}
+                <div className="mt-3 pt-3 border-t border-border flex items-center gap-4 text-xs text-muted-foreground">
+                  <span><span className="font-mono font-bold text-foreground">{ir.apiEndpoints?.length || 0}</span> API-Endpoints</span>
+                  <span><span className="font-mono font-bold text-foreground">{ir.behaviors?.length || 0}</span> Behaviors</span>
+                  {ir.statusMachine?.transitions?.length > 0 && (
+                    <span><span className="font-mono font-bold text-foreground">{ir.statusMachine.transitions.length}</span> Transitions</span>
+                  )}
+                  {ir.piiFields?.length > 0 && (
+                    <span><span className="font-mono font-bold text-foreground">{ir.piiFields.length}</span> PII-Felder</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Ambiguities */}
             {ir?.ambiguities?.length > 0 && (

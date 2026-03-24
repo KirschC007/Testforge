@@ -2,7 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import { generateProofs } from "./proof-generator";
 import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
 import { parseSpec, withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
-import { parseSpecSmart } from "./smart-parser";
+import { parseSpecSmart, semanticDedup } from "./smart-parser";
 import { parseSpecDecomposed } from "./spec-decomposed-parser";
 import { runLLMChecker, assessSpecHealth, buildRiskModel } from "./risk-model";
 import { generateHelpers } from "./helpers-generator";
@@ -156,6 +156,15 @@ export async function runAnalysisJob(
     }
   }
 
+  // Fix 4: Behavior dedup after LLM Checker — remove duplicates introduced by improveBehavior
+  if (analysisResult?.ir?.behaviors) {
+    const beforeDedup = analysisResult.ir.behaviors.length;
+    analysisResult.ir.behaviors = semanticDedup(analysisResult.ir.behaviors);
+    const afterDedup = analysisResult.ir.behaviors.length;
+    if (beforeDedup !== afterDedup) {
+      console.log(`[TestForge] Behavior dedup: ${beforeDedup} → ${afterDedup} (removed ${beforeDedup - afterDedup} duplicates)`);
+    }
+  }
   // API Discovery: if baseUrl provided, merge real endpoint paths into IR
   if (options?.baseUrl) {
     try {
@@ -329,7 +338,20 @@ export async function runAnalysisJob(
     content: mergeProofsToFile(proofs),
   }));
   // Ebene 5: Post-processing pass — strip residual trpc./s. prefixes from all generated content
-  const testFiles = normalizeOutputFiles(testFilesRaw);
+  const testFilesNormalized = normalizeOutputFiles(testFilesRaw);
+  // Fix 5: Filter out TODO_REPLACE stubs — proofs with unresolved endpoint placeholders
+  const testFiles = testFilesNormalized.filter(f => {
+    const hasTodoEndpoint = f.content.includes('TODO_REPLACE_WITH_LIST_ENDPOINT')
+      || f.content.includes('TODO_REPLACE_WITH_MUTATION_ENDPOINT')
+      || f.content.includes('TODO_REPLACE_WITH_STATUS_ENDPOINT')
+      || f.content.includes('TODO_REPLACE_WITH_GET_ENDPOINT')
+      || f.content.includes('TODO_REPLACE_WITH_EXPORT_ENDPOINT')
+      || f.content.includes('TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT');
+    if (hasTodoEndpoint) {
+      console.log(`[TestForge] Fix5: Filtered stub file ${f.filename} (unresolved TODO_REPLACE endpoint)`);
+    }
+    return !hasTodoEndpoint;
+  });
 
   // Extended Test Suite (6 layers)
   const extendedSuiteRaw = generateExtendedTestSuite(analysisResult, testFiles);

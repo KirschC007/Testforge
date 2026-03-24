@@ -154,6 +154,8 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
           testFileCount: result.testFiles.length,
           // Fix 4: Always store specHealth at top level for easy retrieval
           specHealth: result.analysisResult.specHealth,
+          // Fix 3: Store llmCheckerStats for UI display
+          llmCheckerStats: result.llmCheckerStats,
         } as any,
         outputZipUrl: zipUrl,
         outputZipKey: zipKey,

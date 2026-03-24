@@ -685,9 +685,18 @@ export function extractTenantModel(text: string): { entity: string; idField: str
     return { entity: eachMatch2[1].toLowerCase(), idField: eachMatch2[2] };
   }
 
+  // Pattern 7b (formerly Pattern 8): "Alle Tabellen ... haben `xId`" (German: all tables have xId)
+  // Explicit statement beats frequency heuristic — run BEFORE Pattern 7
+  const alleTabPattern = /[Aa]lle\s+Tabellen\s+.*?haben\s+[`'"']?(\w+Id)[`'"']?/;
+  const alleMatch = text.match(alleTabPattern);
+  if (alleMatch) {
+    const idField = alleMatch[1];
+    return { entity: idField.replace(/Id$/, ""), idField };
+  }
+
   // Pattern 7: Frequency heuristic — xId appearing most frequently overall → likely tenant key
   // Uses total occurrences (not just backtick) + INDEX bonus for SQL schemas
-  // Handles: "Alle Tabellen mit Restaurant-Bezug haben `restaurantId`" (99 occurrences)
+  // Handles: "restaurantId" appearing 99 times in Hey-Listen spec
   const anyIdPattern = /\b(\w+Id)\b/g;
   const idTotalFreq = new Map<string, number>();
   let bm;
@@ -715,14 +724,6 @@ export function extractTenantModel(text: string): { entity: string; idField: str
   }
   if (bestId) {
     return { entity: bestId.replace(/Id$/, ""), idField: bestId };
-  }
-
-  // Pattern 8: "Alle Tabellen ... haben `xId`" (German: all tables have xId)
-  const alleTabPattern = /[Aa]lle\s+Tabellen\s+.*?haben\s+[`'"']?(\w+Id)[`'"']?/;
-  const alleMatch = text.match(alleTabPattern);
-  if (alleMatch) {
-    const idField = alleMatch[1];
-    return { entity: idField.replace(/Id$/, ""), idField };
   }
 
   return null;

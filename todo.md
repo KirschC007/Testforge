@@ -789,3 +789,14 @@
 - [x] Fix 3: Endpoint-Filter — isGenericEndpoint() in normalize.ts + job-runner.ts Filter
 - [x] Vitest 617/617 + TypeScript 0 Fehler (6 neue Tests)
 - [x] Checkpoint liefern
+
+## Fix-Briefing 11 — Absolute Perfektion v7.5 (24.03.2026)
+
+- [x] Fix 6: Pattern 8 vor Pattern 7 in extractTenantModel (explizit schlägt Frequenz)
+- [x] Fix 4: Behavior-Dedup nach LLM-Checker in job-runner.ts (semanticDedup() aufrufen)
+- [x] Fix 5: TODO_REPLACE-Stubs aus ZIP herausfiltern (job-runner.ts vor ZIP-Build)
+- [x] Fix 2: specHealth-Fallback in AnalysisDetail + Dashboard (result?.specHealth || result?.analysisResult?.specHealth)
+- [x] Fix 3: llmCheckerStats in resultJson gespeichert + Balken-Visualisierung in AnalysisDetail
+- [x] Fix 1: IR-Summary-Panel in AnalysisDetail (Rollen, Tenant, States, AuthModel, Endpoints)
+- [x] Vitest 621/621 + TypeScript 0 Fehler (4 neue Tests)
+- [x] Checkpoint liefern

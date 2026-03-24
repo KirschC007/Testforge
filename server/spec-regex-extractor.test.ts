@@ -628,3 +628,52 @@ describe("extractRoles — noise filter (Fix 3)", () => {
     expect(roles).toContain("staff");
   });
 });
+
+// ─── Fix-Briefing 11: Pattern 7b before Pattern 7 ────────────────────────────
+import { extractTenantModel } from "../server/analyzer/spec-regex-extractor";
+
+describe("extractTenantModel — Pattern 7b before Pattern 7 (Fix 6)", () => {
+  it("Pattern 7b: explicit 'Alle Tabellen haben xId' beats frequency heuristic", () => {
+    // seriesId appears 7 times, restaurantId appears 7 times — tie
+    // but Pattern 7b matches "Alle Tabellen ... haben `restaurantId`" explicitly
+    const text = `
+      Alle Tabellen mit Restaurant-Bezug haben \`restaurantId\`.
+      seriesId is used in 7 places. restaurantId is used in 7 places.
+      seriesId seriesId seriesId seriesId seriesId seriesId seriesId
+    `;
+    const result = extractTenantModel(text);
+    expect(result?.idField).toBe("restaurantId");
+  });
+
+  it("Pattern 7 still works when no explicit statement present", () => {
+    // restaurantId appears 20 times, no explicit statement
+    const text = Array(20).fill("restaurantId is used here.").join(" ");
+    const result = extractTenantModel(text);
+    expect(result?.idField).toBe("restaurantId");
+  });
+});
+
+// ─── Fix-Briefing 11: TODO_REPLACE filter logic ───────────────────────────────
+describe("TODO_REPLACE stub filter (Fix 5)", () => {
+  it("identifies files with TODO_REPLACE_WITH_LIST_ENDPOINT", () => {
+    const content = `
+      const endpoint = "TODO_REPLACE_WITH_LIST_ENDPOINT";
+      test("IDOR test", async () => { ... });
+    `;
+    const hasTodo = content.includes("TODO_REPLACE_WITH_LIST_ENDPOINT")
+      || content.includes("TODO_REPLACE_WITH_MUTATION_ENDPOINT")
+      || content.includes("TODO_REPLACE_WITH_STATUS_ENDPOINT");
+    expect(hasTodo).toBe(true);
+  });
+
+  it("does not filter files without TODO_REPLACE stubs", () => {
+    const content = `
+      const endpoint = "reservations.list";
+      test("IDOR test", async () => { ... });
+    `;
+    const hasTodo = content.includes("TODO_REPLACE_WITH_LIST_ENDPOINT")
+      || content.includes("TODO_REPLACE_WITH_MUTATION_ENDPOINT")
+      || content.includes("TODO_REPLACE_WITH_STATUS_ENDPOINT");
+    expect(hasTodo).toBe(false);
+  });
+});
