@@ -714,3 +714,16 @@
 - [x] "What Makes TestForge Different": 8 Karten (Hybrid-Modus NEU, 5-Level-Normalisierung NEU)
 - [x] "3 Input Modes" neue Sektion: Spec-Only / Code-Scan / Hybrid-Modus
 - [x] TypeScript 0 Fehler, Vitest 567/567
+
+## Fix-Briefing 5 — Bullet-Proof LLM Pipeline v7.0 (24.03.2026)
+
+- [x] Mechanismus 2: spec-regex-extractor.ts erstellt (extractStates, extractRoles, extractEndpoints, extractErrorCodes, extractFromSpecText, mergeWithRegex, decomposeSpec)
+- [x] Mechanismus 1: spec-decomposed-parser.ts erstellt (parseSpecDecomposed mit 7 parallelen LLM-Calls für Specs >= 8KB)
+- [x] Mechanismus 3: verifyAndRepairIR() implementiert (Regex-Fallback + targeted LLM repair für fehlende States/Endpoints/Rollen)
+- [x] job-runner.ts integriert: Specs >= 8KB → Decomposed Parser, < 8KB → Standard Parser
+- [x] Vitest: 599/599 Tests grün (+32 neue Tests für spec-regex-extractor.ts)
+- [x] InsuranceClaims: 11/11 States ✅, 14 Endpoints ✅, 6/6 Rollen ✅, 21 Error-Codes ✅
+  HINWEIS: Die erwarteten States im Briefing (EVIDENCE_COLLECTION, SETTLED, etc.) kommen NICHT in der Spec vor.
+  Der LLM extrahiert korrekt die echten Spec-States (REPORTED, UNDER_REVIEW, UNDER_INVESTIGATION, etc.)
+- [x] TypeScript 0 Fehler, Vitest 599/599 grün
+- [x] Checkpoint + ZIP liefern

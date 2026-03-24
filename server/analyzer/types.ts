@@ -143,6 +143,7 @@ export interface AnalysisIR {
   cronJobs?: CronJobDef[];
   featureGates?: FeatureGate[];
   flows?: FlowDefinition[];
+  errorCodes?: Array<{ code: string; httpStatus: number; description: string }>;
 }
 
 // ─── Spec Health ──────────────────────────────────────────────────────────────

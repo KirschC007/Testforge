@@ -3,6 +3,7 @@ import { generateProofs } from "./proof-generator";
 import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
 import { parseSpec, withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { parseSpecSmart } from "./smart-parser";
+import { parseSpecDecomposed } from "./spec-decomposed-parser";
 import { runLLMChecker, assessSpecHealth, buildRiskModel } from "./risk-model";
 import { generateHelpers } from "./helpers-generator";
 import { validateProofs, runIndependentChecker, mergeProofsToFile } from "./validator";
@@ -60,9 +61,12 @@ export async function runAnalysisJob(
       const codeResult = parseCodeToIR(options!.codeFiles!);
       // Run LLM parser on spec to get roles, status machine, constraints, DSGVO
       const SMART_PARSER_THRESHOLD = 50000;
+      const DECOMPOSED_THRESHOLD = 8000;
       const specResult = specText.length >= SMART_PARSER_THRESHOLD
         ? await parseSpecSmart(specText)
-        : await parseSpec(specText);
+        : specText.length >= DECOMPOSED_THRESHOLD
+          ? await parseSpecDecomposed(specText)
+          : await parseSpec(specText);
       // Merge: Code-Endpoints have priority, Spec-Roles/Status/Constraints fill gaps
       const mergedIR = mergeIRs(codeResult.ir, specResult.ir);
       analysisResult = {
@@ -98,6 +102,7 @@ export async function runAnalysisJob(
     } else {
       // LLM path — choose parser based on spec size
       const SMART_PARSER_THRESHOLD = 50000; // 50KB+: use 3-pass smart parser
+      const DECOMPOSED_THRESHOLD = 8000;    // 8KB+: use 7-block decomposed parser
       if (specText.length >= SMART_PARSER_THRESHOLD) {
         // Smart Parser: 3-pass architecture for large specs
         console.log(`[TestForge] Large spec (${specText.length} chars) — using Smart Parser v2.0 (3-pass)`);
@@ -114,8 +119,25 @@ export async function runAnalysisJob(
         llmCheckerStats = checkerStats;
         console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
         await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
+      } else if (specText.length >= DECOMPOSED_THRESHOLD) {
+        // Decomposed Parser: 7 focused parallel LLM calls (Mechanismus 1+2+3)
+        console.log(`[TestForge] Medium spec (${specText.length} chars) — using Decomposed Parser v1.0 (7-block)`);
+        await progress(1, `Spec erkannt (${Math.round(specText.length / 1024)}KB) — Decomposed Parser v1.0 (7 parallele Blöcke)...`);
+        analysisResult = await parseSpecDecomposed(specText);
+        console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
+        // LLM Checker: verify all behaviors (parallel)
+        await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
+        const t_checker = Date.now();
+        const { checkedBehaviors, stats: checkerStats } = await runLLMChecker(
+          analysisResult.ir.behaviors,
+          specText
+        );
+        analysisResult.ir.behaviors = checkedBehaviors;
+        llmCheckerStats = checkerStats;
+        console.log(`[TestForge] LLM Checker done in ${Date.now() - t_checker}ms — ${checkedBehaviors.length} behaviors verified`);
+        await progress(2, `LLM Checker fertig: ${llmCheckerStats.approved} approved, ${llmCheckerStats.flagged} flagged, ${llmCheckerStats.rejected} rejected`);
       } else {
-        // Standard 1-pass chunked parser for small specs
+        // Standard 1-pass chunked parser for small specs (<8KB)
         analysisResult = await parseSpec(specText);
         console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
         // LLM Checker: verify all behaviors (parallel)
