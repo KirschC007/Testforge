@@ -703,3 +703,14 @@
 - [x] ClinicBooking: trpc.=0, s.*=0 ✅
 - [x] MedRental: trpc.=0, s.*=0 ✅
 - [x] Checkpoint + ZIP liefern
+
+## Landing Page Update — v5.7 (24.03.2026)
+
+- [x] Hybrid-Modus (Spec + Code) in Hero + Pipeline-Beschreibung ergänzt
+- [x] Layer-Beschreibungen korrigiert: Layer 1 = Spec/Code Parse (3 fast-paths), Layer 2 = Behavior Verification (LLM Checker), Layer 3 = Risk Model + Test Generation, Layer 4 = Independent Checker, Layer 5 = False-Green Guard
+- [x] Spec Health Score Sektion: korrekte 6 Dimensionen mit Detail-Texten
+- [x] "5-Ebenen Endpoint-Normalisierung" als v5-Feature-Karte ergänzt
+- [x] Code-Scan: Hybrid-Modus mit mergeIRs() Terminal-Demo ergänzt
+- [x] "What Makes TestForge Different": 8 Karten (Hybrid-Modus NEU, 5-Level-Normalisierung NEU)
+- [x] "3 Input Modes" neue Sektion: Spec-Only / Code-Scan / Hybrid-Modus
+- [x] TypeScript 0 Fehler, Vitest 567/567

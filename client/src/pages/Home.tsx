@@ -7,60 +7,60 @@ import {
   CheckCircle2, Terminal, Package, Star, Activity,
   AlertTriangle, Layers, Database, RefreshCw, Eye,
   Cpu, Repeat2, Users, GitMerge, Clock, Webhook, ToggleLeft,
-  Code2, Sparkles, Globe, Server,
+  Code2, Sparkles, Globe, Server, Merge,
 } from "lucide-react";
 
 // ─── Proof type definitions (16 types) ────────────────────────────────────
 const PROOF_TYPES = [
-  { id: "idor",              label: "IDOR",             icon: <Lock className="w-4 h-4" />,         color: "var(--tf-red)",    desc: "Cross-tenant isolation, ownership checks" },
-  { id: "csrf",              label: "CSRF",             icon: <Shield className="w-4 h-4" />,       color: "var(--tf-orange)", desc: "State-mutating endpoints, token validation" },
-  { id: "boundary",          label: "Boundary",         icon: <Activity className="w-4 h-4" />,     color: "var(--tf-yellow)", desc: "Min/max/null/overflow with decimal precision" },
-  { id: "business_logic",    label: "Business Logic",   icon: <Layers className="w-4 h-4" />,       color: "var(--tf-blue)",   desc: "Before/after state, DB-read-back, stock decrements" },
-  { id: "status_transition", label: "Status Machine",   icon: <RefreshCw className="w-4 h-4" />,    color: "var(--tf-purple)", desc: "Valid transitions, skip-prevention, terminal states" },
-  { id: "spec_drift",        label: "Spec Drift",       icon: <Eye className="w-4 h-4" />,          color: "var(--tf-green)",  desc: "Zod response schemas, field type validation" },
-  { id: "dsgvo",             label: "DSGVO / GDPR",     icon: <Database className="w-4 h-4" />,     color: "var(--tf-yellow)", desc: "PII anonymization, data export isolation" },
-  { id: "rate_limit",        label: "Rate Limit",       icon: <AlertTriangle className="w-4 h-4" />,color: "var(--tf-orange)", desc: "Auth brute-force, burst detection" },
-  { id: "concurrency",       label: "Concurrency",      icon: <Cpu className="w-4 h-4" />,          color: "var(--tf-red)",    desc: "Race conditions, double-booking, atomic operations" },
-  { id: "idempotency",       label: "Idempotency",      icon: <Repeat2 className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Duplicate requests, retry safety, deduplication" },
-  { id: "auth_matrix",       label: "Auth Matrix",      icon: <Users className="w-4 h-4" />,        color: "var(--tf-purple)", desc: "Role-based access: admin/user/unauthenticated/cross-tenant" },
+  { id: "idor",              label: "IDOR",             icon: <Lock className="w-4 h-4" />,         color: "var(--tf-red)",    desc: "Cross-tenant isolation, ownership checks, insurerId/clinicId/shopId" },
+  { id: "csrf",              label: "CSRF",             icon: <Shield className="w-4 h-4" />,       color: "var(--tf-orange)", desc: "State-mutating endpoints, double-submit cookie, token validation" },
+  { id: "boundary",          label: "Boundary",         icon: <Activity className="w-4 h-4" />,     color: "var(--tf-yellow)", desc: "Min/max/null/overflow — numeric fields with decimal precision" },
+  { id: "business_logic",    label: "Business Logic",   icon: <Layers className="w-4 h-4" />,       color: "var(--tf-blue)",   desc: "Before/after state, DB-read-back, deductible/coverage calculations" },
+  { id: "status_transition", label: "Status Machine",   icon: <RefreshCw className="w-4 h-4" />,    color: "var(--tf-purple)", desc: "Valid transitions, skip-prevention, terminal states, side-effects" },
+  { id: "spec_drift",        label: "Spec Drift",       icon: <Eye className="w-4 h-4" />,          color: "var(--tf-green)",  desc: "Zod response schemas, field type validation, shape regression" },
+  { id: "dsgvo",             label: "DSGVO / GDPR",     icon: <Database className="w-4 h-4" />,     color: "var(--tf-yellow)", desc: "PII anonymization (7 fields), data export isolation, audit log" },
+  { id: "rate_limit",        label: "Rate Limit",       icon: <AlertTriangle className="w-4 h-4" />,color: "var(--tf-orange)", desc: "Auth brute-force (5 attempts/15min), burst detection, 429 lockout" },
+  { id: "concurrency",       label: "Concurrency",      icon: <Cpu className="w-4 h-4" />,          color: "var(--tf-red)",    desc: "Race conditions, double-booking, atomic operations, coverage exhaustion" },
+  { id: "idempotency",       label: "Idempotency",      icon: <Repeat2 className="w-4 h-4" />,      color: "var(--tf-blue)",   desc: "Duplicate requests → 409, retry safety, ALREADY_PAID / ASSESSMENT_EXISTS" },
+  { id: "auth_matrix",       label: "Auth Matrix",      icon: <Users className="w-4 h-4" />,        color: "var(--tf-purple)", desc: "Role-based access: 6 roles, overlapping permissions, cross-tenant" },
   { id: "flow",              label: "Flow",             icon: <GitMerge className="w-4 h-4" />,     color: "var(--tf-blue)",   desc: "Multi-step workflows, saga patterns, rollback verification" },
-  { id: "cron_job",          label: "Cron Job",         icon: <Clock className="w-4 h-4" />,        color: "var(--tf-green)",  desc: "Scheduled jobs, periodic tasks, batch processing" },
-  { id: "webhook",           label: "Webhook",          icon: <Webhook className="w-4 h-4" />,      color: "var(--tf-orange)", desc: "Event delivery, HMAC signature, retry logic" },
-  { id: "feature_gate",      label: "Feature Gate",     icon: <ToggleLeft className="w-4 h-4" />,   color: "var(--tf-purple)", desc: "Plan-based gating, tier checks, A/B rollout" },
-  { id: "sqli",              label: "SQL Injection",    icon: <Code2 className="w-4 h-4" />,        color: "var(--tf-red)",    desc: "Input sanitization, parameterized queries" },
+  { id: "cron_job",          label: "Cron Job",         icon: <Clock className="w-4 h-4" />,        color: "var(--tf-green)",  desc: "Scheduled jobs, SLA timers, periodic tasks, batch processing" },
+  { id: "webhook",           label: "Webhook",          icon: <Webhook className="w-4 h-4" />,      color: "var(--tf-orange)", desc: "Event delivery, HMAC signature, retry logic, side-effect verification" },
+  { id: "feature_gate",      label: "Feature Gate",     icon: <ToggleLeft className="w-4 h-4" />,   color: "var(--tf-purple)", desc: "Plan-based gating, tier checks, A/B rollout, permission escalation" },
+  { id: "sqli",              label: "SQL Injection",    icon: <Code2 className="w-4 h-4" />,        color: "var(--tf-red)",    desc: "Input sanitization, parameterized queries, injection vectors" },
 ];
 
-// ─── 5-Layer pipeline ─────────────────────────────────────────────────────
+// ─── 5-Layer pipeline (actual order in job-runner.ts) ────────────────────
 const LAYERS = [
   {
-    n: 1, label: "Spec Parse", color: "var(--tf-blue)",
-    desc: "4 parallel LLM calls extract endpoints, status machines, auth model, and PII tables simultaneously. For large specs (>50KB) the 3-pass Smart Parser prevents context overflow.",
+    n: 1, label: "Spec / Code Parse", color: "var(--tf-blue)",
+    desc: "Three fast-paths: OpenAPI (deterministic, 0 LLM calls), Code-Scan (AST parser, 0 LLM calls), or Hybrid-Modus (Code-Parser + 4 parallel LLM calls for spec). Smart Parser prevents context overflow on large specs (>50KB).",
   },
   {
-    n: 2, label: "Risk Model", color: "var(--tf-orange)",
-    desc: "16 declarative risk rules (risk-rules.ts) map each behavior to proof types. Two-stage constraint extraction: structured fields first, regex fallback second.",
+    n: 2, label: "Behavior Verification", color: "var(--tf-orange)",
+    desc: "LLM Checker verifies all extracted behaviors in parallel against the original spec — cross-validates endpoints, roles, status transitions. Avg confidence ≥ 0.95 required. Skipped for OpenAPI/Code-Scan (structurally derived).",
   },
   {
-    n: 3, label: "Test Generation", color: "var(--tf-purple)",
-    desc: "16 proof types generated in parallel — typed payloads, Zod schemas, 5 browser flow types (A–E), CI/CD config, validate-payloads.mjs.",
+    n: 3, label: "Risk Model + Test Generation", color: "var(--tf-purple)",
+    desc: "16 declarative risk rules map each behavior to proof types. 5-level endpoint normalization strips framework prefixes (trpc., api., v1.) — 0 artifacts in output. All 16 proof types generated in parallel with typed payloads and Zod schemas.",
   },
   {
-    n: 4, label: "LLM Verification", color: "var(--tf-yellow)",
-    desc: "Independent checker validates each test against the original spec — cross-validates behaviors, improves weak ones.",
+    n: 4, label: "Independent Checker", color: "var(--tf-yellow)",
+    desc: "Separate LLM validates each generated test against the original spec — improves weak tests, reworks edge cases. Runs in parallel over all proof targets.",
   },
   {
     n: 5, label: "False-Green Guard", color: "var(--tf-green)",
-    desc: "8 mutation rules discard tests that can't catch real regressions — mutation score per test.",
+    desc: "8 mutation rules discard tests that can't catch real regressions (always-pass assertions, missing state checks, unresolved TODO_ placeholders). Mutation score per test.",
   },
 ];
 
 // ─── ZIP output items ─────────────────────────────────────────────────────
 const ZIP_ITEMS = [
   { layer: "Unit",        color: "var(--tf-blue)",   path: "tests/unit/",        desc: "Vitest: service isolation, validation, state machine" },
-  { layer: "Integration", color: "var(--tf-purple)", path: "tests/integration/", desc: "Vitest: CRUD lifecycle, auth, tenant isolation" },
+  { layer: "Integration", color: "var(--tf-purple)", path: "tests/integration/", desc: "Vitest: CRUD lifecycle, auth, tenant isolation, idempotency" },
   { layer: "E2E",         color: "var(--tf-green)",  path: "tests/e2e/",         desc: "Playwright: user flows, auth, CRUD, DSGVO, status machine" },
   { layer: "UAT",         color: "var(--tf-yellow)", path: "tests/uat/",         desc: "Cucumber/Gherkin: human-readable acceptance criteria" },
-  { layer: "Security",    color: "var(--tf-red)",    path: "tests/security/",    desc: "Playwright: IDOR, CSRF, Rate-Limit, Spec-Drift" },
+  { layer: "Security",    color: "var(--tf-red)",    path: "tests/security/",    desc: "Playwright: IDOR, CSRF, Auth-Matrix, Rate-Limit, Spec-Drift" },
   { layer: "Performance", color: "var(--tf-orange)", path: "tests/performance/", desc: "k6: load, spike, stress, rate-limit burst" },
 ];
 
@@ -140,8 +140,8 @@ export default function Home() {
             </div>
             <div className="inline-flex items-center gap-1.5 text-xs border rounded-full px-3 py-1"
               style={{ color: "var(--tf-purple)", borderColor: "var(--tf-purple)40", background: "var(--tf-purple)10" }}>
-              <Cpu className="w-3 h-3" />
-              <span>Pass 1: 4 parallel LLM calls — less hallucination, higher recall</span>
+              <Merge className="w-3 h-3" />
+              <span>Hybrid-Modus: Spec + Code gleichzeitig — höhere Erkennungsrate</span>
             </div>
           </div>
 
@@ -151,7 +151,7 @@ export default function Home() {
           </h1>
 
           <p className="text-muted-foreground text-lg max-w-xl mx-auto mb-8">
-            Upload your API spec <em>or</em> drop your codebase. TestForge extracts behaviors,
+            Upload your API spec, drop your codebase, or combine both. TestForge extracts behaviors,
             builds a risk model, and generates a ready-to-run Playwright + Vitest test suite — in under 3 minutes.
           </p>
 
@@ -166,6 +166,11 @@ export default function Home() {
                 <Link href="/analysis/new?mode=code">
                   <Button size="lg" className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
                     <Code2 className="w-4 h-4" /> From Code
+                  </Button>
+                </Link>
+                <Link href="/analysis/new?mode=hybrid">
+                  <Button size="lg" className="gap-2" style={{ background: "var(--tf-orange)", color: "#fff" }}>
+                    <Merge className="w-4 h-4" /> Hybrid
                   </Button>
                 </Link>
                 <Link href="/demo">
@@ -193,14 +198,75 @@ export default function Home() {
           {/* Quick stats */}
           <div className="flex items-center justify-center gap-8 mt-12 text-sm flex-wrap">
             {[
-              { v: "16",    l: "Proof Types" },
-              { v: "6",     l: "Test Layers" },
-              { v: "5",     l: "Browser Flow Types" },
-              { v: "0",     l: "Config Required" },
+              { v: "16",   l: "Proof Types" },
+              { v: "6",    l: "Test Layers" },
+              { v: "5",    l: "Browser Flow Types" },
+              { v: "3",    l: "Input Modes" },
             ].map(s => (
               <div key={s.l} className="text-center">
                 <div className="text-xl font-bold font-mono" style={{ color: "var(--tf-blue)" }}>{s.v}</div>
                 <div className="text-xs text-muted-foreground">{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 3 Input Modes ───────────────────────────────────────────── */}
+      <section className="border-b border-border/50 py-16">
+        <div className="container">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold mb-2">3 Input Modes</h2>
+            <p className="text-muted-foreground text-sm max-w-lg mx-auto">
+              TestForge adapts to what you have — a spec, a codebase, or both.
+              The Hybrid-Modus combines deterministic code parsing with LLM spec analysis for the highest bug detection rate.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+            {[
+              {
+                icon: <FileCode2 className="w-6 h-6" />, color: "var(--tf-blue)",
+                title: "Spec-Only",
+                badge: "LLM + Deterministic",
+                desc: "OpenAPI/Swagger (JSON/YAML) → 100% deterministic, 0 LLM calls. Markdown/PDF → 4 parallel LLM calls extract endpoints, status machines, auth model, and PII tables simultaneously.",
+                items: ["OpenAPI 3.x / Swagger 2.0", "Markdown / PDF specs", "Smart Parser for >50KB specs"],
+              },
+              {
+                icon: <Code2 className="w-6 h-6" />, color: "var(--tf-purple)",
+                title: "Code-Scan",
+                badge: "100% Deterministic",
+                desc: "AST parser scans tRPC routers, Express routes, and Next.js App Router files. Extracts endpoints, auth middleware, tenant keys, and role checks — no LLM, no hallucinations.",
+                items: ["tRPC routers (resource.action)", "Express routes (Zod/Joi fields)", "Next.js App Router route.ts"],
+              },
+              {
+                icon: <Merge className="w-6 h-6" />, color: "var(--tf-orange)",
+                title: "Hybrid-Modus",
+                badge: "Highest Recall",
+                desc: "Code-Parser runs first (deterministic endpoints), then LLM-Parser adds roles, status machines, DSGVO fields, and business rules from the spec. mergeIRs() combines both — code wins on endpoints, spec wins on semantics.",
+                items: ["Code endpoints + Spec semantics", "Domain roles (clinic_admin, adjuster)", "Cross-validated status machines"],
+              },
+            ].map(mode => (
+              <div key={mode.title} className="bg-card border border-border rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ color: mode.color, background: `${mode.color}15` }}>
+                    {mode.icon}
+                  </div>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded-full border"
+                    style={{ color: mode.color, borderColor: `${mode.color}40`, background: `${mode.color}10` }}>
+                    {mode.badge}
+                  </span>
+                </div>
+                <h3 className="font-bold text-sm mb-1.5">{mode.title}</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-3">{mode.desc}</p>
+                <ul className="space-y-1">
+                  {mode.items.map(item => (
+                    <li key={item} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" style={{ color: mode.color }} />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
@@ -213,8 +279,8 @@ export default function Home() {
           <div className="text-center mb-10">
             <h2 className="text-2xl font-bold mb-2">16 Proof Types — Automatically Detected</h2>
             <p className="text-muted-foreground text-sm max-w-lg mx-auto">
-              TestForge reads your spec and uses 16 declarative risk rules to determine which proof types apply to each endpoint.
-              No manual configuration needed.
+              16 declarative risk rules in <code className="font-mono text-xs bg-muted px-1 rounded">risk-rules.ts</code> determine
+              which proof types apply to each endpoint. No manual configuration needed.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -318,17 +384,17 @@ export default function Home() {
                 <h2 className="text-xl font-bold">Spec Health Score</h2>
               </div>
               <p className="text-muted-foreground text-sm mb-5">
-                Before generating tests, TestForge evaluates your spec's completeness across 6 dimensions.
-                Better specs produce more precise tests — no TODO_ placeholders.
+                Before generating tests, TestForge evaluates your spec across 6 quality dimensions.
+                Better specs produce more precise tests — fewer <code className="font-mono text-xs bg-muted px-1 rounded">TODO_REPLACE_WITH_UPSERT_ENDPOINT</code> placeholders.
               </p>
               <div className="space-y-3">
                 {[
-                  { label: "Typed Fields",         score: 20, max: 20, passed: true,  detail: "All inputFields have type annotations" },
-                  { label: "Enum Values",           score: 15, max: 15, passed: true,  detail: "Status enums fully enumerated" },
-                  { label: "Boundary Constraints",  score: 10, max: 20, passed: false, detail: "Some fields missing min/max" },
-                  { label: "Auth Model",            score: 15, max: 15, passed: true,  detail: "Bearer token + tenant isolation defined" },
-                  { label: "Tenant Model",          score: 15, max: 15, passed: true,  detail: "shopId as tenant key identified" },
-                  { label: "Response Shape",        score: 10, max: 15, passed: false, detail: "Some endpoints missing outputFields" },
+                  { label: "Typed Input Fields",      score: 20, max: 20, passed: true,  detail: "All inputFields have type annotations (string/number/enum/array)" },
+                  { label: "Enum Values Defined",     score: 15, max: 15, passed: true,  detail: "Status enums fully enumerated (e.g. REPORTED|UNDER_REVIEW|APPROVED)" },
+                  { label: "Boundary Constraints",    score: 10, max: 20, passed: false, detail: "Some numeric fields missing min/max (e.g. estimatedAmount, deductible)" },
+                  { label: "Authentication Model",    score: 15, max: 15, passed: true,  detail: "Login endpoint + JWT roles + tenant key identified" },
+                  { label: "Multi-Tenant Isolation",  score: 15, max: 15, passed: true,  detail: "insurerId / clinicId / shopId as tenant key — IDOR tests generated" },
+                  { label: "Response Shape",          score: 10, max: 15, passed: false, detail: "Some endpoints missing outputFields — spec_drift tests incomplete" },
                 ].map(dim => (
                   <div key={dim.label}>
                     <div className="flex items-center justify-between mb-1">
@@ -347,6 +413,7 @@ export default function Home() {
                         background: dim.passed ? "var(--tf-green)" : "var(--tf-orange)"
                       }} />
                     </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{dim.detail}</p>
                   </div>
                 ))}
               </div>
@@ -354,7 +421,7 @@ export default function Home() {
                 <div className="text-2xl font-black font-mono" style={{ color: "var(--tf-blue)" }}>85</div>
                 <div>
                   <div className="text-sm font-semibold">Score B — Good</div>
-                  <div className="text-xs text-muted-foreground">Add boundary constraints to reach Grade A</div>
+                  <div className="text-xs text-muted-foreground">Add boundary constraints to reach Grade A (≥90)</div>
                 </div>
                 <div className="ml-auto text-2xl font-black w-10 h-10 rounded-xl border-2 flex items-center justify-center"
                   style={{ color: "var(--tf-blue)", background: "var(--tf-blue)/10", borderColor: "var(--tf-blue)/30" }}>
@@ -394,6 +461,8 @@ export default function Home() {
                   <div className="border-t border-border/50 pt-1.5 mt-1.5 space-y-1.5">
                     {[
                       { path: "helpers/browser.ts",              desc: "loginViaUI + loginAsRole shared helpers", color: "var(--tf-green)" },
+                      { path: "helpers/api.ts",                  desc: "Typed API client with auth headers", color: "var(--tf-blue)" },
+                      { path: "helpers/factories.ts",            desc: "TEST_TENANT_ID, test data factories", color: "var(--tf-purple)" },
                       { path: "playwright.config.ts",            desc: "2 projects: api-security + browser-e2e", color: "var(--tf-blue)" },
                       { path: ".github/workflows/testforge.yml", desc: "CI: api-security + browser-e2e jobs", color: "var(--tf-purple)" },
                       { path: "validate-payloads.mjs",           desc: "Payload schema validation script", color: "var(--tf-yellow)" },
@@ -434,18 +503,18 @@ export default function Home() {
             {[
               {
                 n: "01", icon: <FileCode2 className="w-6 h-6" />, color: "var(--tf-blue)",
-                title: "Upload your Spec or Code",
-                desc: "OpenAPI/Swagger (JSON/YAML) for 100% deterministic results, or Markdown/PDF for LLM-based extraction. Code mode scans tRPC routers, Express routes, and Next.js App Router files.",
+                title: "Upload Spec, Code, or Both",
+                desc: "OpenAPI/Swagger (JSON/YAML) for 100% deterministic results. Markdown/PDF for LLM-based extraction. Or use Hybrid-Modus: drop your codebase + spec together for the highest bug detection rate.",
               },
               {
                 n: "02", icon: <Layers className="w-6 h-6" />, color: "var(--tf-purple)",
                 title: "5-Layer Analysis",
-                desc: "Pass 1 runs 4 parallel LLM calls (endpoints, status machine, auth model, chapters). 16 declarative risk rules map behaviors to proof types. Tests are generated and verified.",
+                desc: "Layer 1 parses spec/code. Layer 2 verifies behaviors via LLM Checker. Layer 3 builds risk model + generates 16 proof types in parallel. Layer 4 independently validates. Layer 5 discards false-greens.",
               },
               {
                 n: "03", icon: <GitBranch className="w-6 h-6" />, color: "var(--tf-green)",
                 title: "Download, Run, or Open PR",
-                desc: "Get a ZIP with Playwright + Vitest tests, helpers/browser.ts, a 2-project playwright.config.ts, GitHub Actions CI, and validate-payloads.mjs. Or push directly to a GitHub PR.",
+                desc: "Get a ZIP with Playwright + Vitest tests, helpers/browser.ts, helpers/factories.ts, a 2-project playwright.config.ts, GitHub Actions CI, and validate-payloads.mjs. Or push directly to a GitHub PR.",
               },
             ].map(step => (
               <div key={step.n} className="bg-card border border-border rounded-lg p-5">
@@ -475,6 +544,12 @@ export default function Home() {
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
+              {
+                icon: <Merge className="w-5 h-5" />, color: "var(--tf-orange)",
+                title: "Hybrid-Modus",
+                desc: "Code-Parser extracts endpoints deterministically. LLM-Parser adds domain roles (clinic_admin, fraud_analyst), status machines, and DSGVO fields from the spec. mergeIRs() combines both — code wins on structure, spec wins on semantics.",
+                badge: "v5",
+              },
               {
                 icon: <GitBranch className="w-5 h-5" />, color: "var(--tf-blue)",
                 title: "Spec Diff Engine",
@@ -511,6 +586,12 @@ export default function Home() {
                 desc: "FinTech (PSD2/KYC), HealthTech (HIPAA/FHIR), eCommerce (PCI-DSS), SaaS (multi-tenancy). Pre-configured proof type sets with compliance frameworks.",
                 badge: "v4",
               },
+              {
+                icon: <Zap className="w-5 h-5" />, color: "var(--tf-blue)",
+                title: "5-Level Endpoint Normalization",
+                desc: "Strips framework prefixes (trpc., api., v1., v2., graphql.) from all generated test files. 0 artifacts guaranteed — tests reference clean endpoint names like appointments.create, not trpc.appointments.create.",
+                badge: "v5",
+              },
             ].map(f => (
               <div key={f.title} className="bg-card border border-border rounded-lg p-5 relative">
                 <div className="absolute top-3 right-3">
@@ -539,7 +620,7 @@ export default function Home() {
               <div>
                 <div className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full border mb-4"
                   style={{ color: "var(--tf-purple)", borderColor: "var(--tf-purple)40", background: "var(--tf-purple)10" }}>
-                  <Sparkles className="w-3.5 h-3.5" /> Code-Scan Mode
+                  <Sparkles className="w-3.5 h-3.5" /> Code-Scan + Hybrid-Modus
                 </div>
                 <h2 className="text-3xl font-black mb-4">
                   Built with AI?<br />
@@ -547,16 +628,18 @@ export default function Home() {
                 </h2>
                 <p className="text-muted-foreground mb-6">
                   Vibecoded your backend in an afternoon? TestForge scans tRPC routers,
-                  Express routes, Next.js App Router files, and Drizzle schemas —
-                  and generates security tests in under 10 seconds. No spec required.
+                  Express routes, Next.js App Router files, and Drizzle schemas.
+                  Add your spec for Hybrid-Modus — domain roles, status machines, and business rules
+                  are extracted from the spec and merged with the code analysis.
                 </p>
                 <ul className="space-y-2 mb-6">
                   {[
                     "Detects IDOR vectors in tRPC procedures and Express routes",
                     "Finds missing auth middleware automatically",
                     "Generates auth matrix tests from role patterns",
-                    "Parses Next.js App Router route.ts files",
-                    "100% deterministic — no LLM, no hallucinations",
+                    "Hybrid-Modus: domain roles from spec (clinic_admin, fraud_analyst)",
+                    "Hybrid-Modus: status machines merged from spec + code",
+                    "100% deterministic code parsing — no LLM, no hallucinations",
                   ].map(item => (
                     <li key={item} className="flex items-center gap-2 text-sm">
                       <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: "var(--tf-purple)" }} />
@@ -565,11 +648,18 @@ export default function Home() {
                   ))}
                 </ul>
                 {isAuthenticated ? (
-                  <Link href="/analysis/new?mode=code">
-                    <Button className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
-                      <Code2 className="w-4 h-4" /> Scan My Code
-                    </Button>
-                  </Link>
+                  <div className="flex gap-2 flex-wrap">
+                    <Link href="/analysis/new?mode=code">
+                      <Button className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
+                        <Code2 className="w-4 h-4" /> Scan My Code
+                      </Button>
+                    </Link>
+                    <Link href="/analysis/new?mode=hybrid">
+                      <Button className="gap-2" style={{ background: "var(--tf-orange)", color: "#fff" }}>
+                        <Merge className="w-4 h-4" /> Hybrid-Modus
+                      </Button>
+                    </Link>
+                  </div>
                 ) : (
                   <a href={getLoginUrl()}>
                     <Button className="gap-2" style={{ background: "var(--tf-purple)", color: "#fff" }}>
@@ -584,18 +674,18 @@ export default function Home() {
                   <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
                   <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
-                  <span className="text-xs font-mono text-muted-foreground ml-2">testforge code-scan</span>
+                  <span className="text-xs font-mono text-muted-foreground ml-2">testforge hybrid-scan</span>
                 </div>
                 <div className="p-4 font-mono text-xs space-y-1.5">
                   {[
-                    { t: "$", v: "testforge scan ./my-app", c: "text-muted-foreground" },
-                    { t: "✓", v: "Detected: tRPC + Drizzle ORM", c: "text-[var(--tf-green)]" },
-                    { t: "✓", v: "Detected: Express routes (12 endpoints)", c: "text-[var(--tf-green)]" },
-                    { t: "✓", v: "Detected: Next.js App Router (8 route.ts)", c: "text-[var(--tf-green)]" },
-                    { t: "⚠", v: "IDOR risk: getOrder — no tenantId check", c: "text-[var(--tf-orange)]" },
-                    { t: "⚠", v: "Missing auth: updateProfile (publicProcedure)", c: "text-[var(--tf-orange)]" },
-                    { t: "✓", v: "Generating 52 security tests...", c: "text-[var(--tf-blue)]" },
-                    { t: "✓", v: "ZIP ready: testforge-output.zip (52 tests)", c: "text-[var(--tf-green)]" },
+                    { t: "$", v: "testforge scan ./my-app --spec openapi.yaml", c: "text-muted-foreground" },
+                    { t: "✓", v: "Code-Parser: tRPC + Express (18 endpoints)", c: "text-[var(--tf-green)]" },
+                    { t: "✓", v: "Spec-Parser: 4 parallel LLM calls", c: "text-[var(--tf-green)]" },
+                    { t: "✓", v: "mergeIRs(): code endpoints + spec semantics", c: "text-[var(--tf-blue)]" },
+                    { t: "✓", v: "Roles: clinic_admin, doctor, receptionist", c: "text-[var(--tf-blue)]" },
+                    { t: "✓", v: "StatusMachine: 9 states, 14 transitions", c: "text-[var(--tf-blue)]" },
+                    { t: "⚠", v: "IDOR risk: getAppointment — no clinicId check", c: "text-[var(--tf-orange)]" },
+                    { t: "✓", v: "ZIP ready: 331 proofs, 43 files", c: "text-[var(--tf-green)]" },
                   ].map((line, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <span className={`shrink-0 ${line.c}`}>{line.t}</span>
@@ -617,7 +707,7 @@ export default function Home() {
             Upload your first spec and get a proof-grade test suite in minutes.
             Free plan includes 3 analyses per day.
           </p>
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex items-center justify-center gap-3 flex-wrap">
             {isAuthenticated ? (
               <Link href="/analysis/new">
                 <Button size="lg" className="gap-2">
