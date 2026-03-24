@@ -13,6 +13,7 @@ import { parseCodeToIR, type CodeFile } from "./code-parser";
 import { discoverAPI } from "./api-discovery";
 import { normalizeEndpointName } from "./normalize";
 import { sanitizeIR } from "./llm-sanitizer";
+import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -257,13 +258,20 @@ export async function runAnalysisJob(
     if (!fileMap.has(proof.filename)) fileMap.set(proof.filename, []);
     fileMap.get(proof.filename)!.push(proof);
   }
-  const testFiles = Array.from(fileMap.entries()).map(([filename, proofs]) => ({
+  const testFilesRaw = Array.from(fileMap.entries()).map(([filename, proofs]) => ({
     filename,
     content: mergeProofsToFile(proofs),
   }));
+  // Ebene 5: Post-processing pass — strip residual trpc./s. prefixes from all generated content
+  const testFiles = normalizeOutputFiles(testFilesRaw);
 
   // Extended Test Suite (6 layers)
-  const extendedSuite = generateExtendedTestSuite(analysisResult, testFiles);
+  const extendedSuiteRaw = generateExtendedTestSuite(analysisResult, testFiles);
+  const extendedSuite = {
+    ...extendedSuiteRaw,
+    files: normalizeOutputFiles(extendedSuiteRaw.files),
+    configs: normalizeOutputConfigs(extendedSuiteRaw.configs),
+  };
   console.log(`[TestForge] Extended Suite: ${extendedSuite.files.length} files across 6 layers`);
 
   console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);

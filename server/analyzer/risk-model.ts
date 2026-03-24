@@ -3,6 +3,7 @@ import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { getValidDefault } from "./proof-generator";
 import type { Behavior, EndpointField, AnalysisIR, APIEndpoint, SpecHealthDimension, SpecHealth, AnalysisResult, CheckResult, RiskLevel, ProofType, ScoredBehavior, FieldConstraint, ProofTarget, RiskModel } from "./types";
 import { evaluateRiskRules } from "./risk-rules";
+import { normalizeEndpointName } from "./normalize";
 
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
 
@@ -449,7 +450,7 @@ function buildRationale(b: Behavior, level: RiskLevel): string {
 function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: AnalysisResult): string | undefined {
   // Find endpoint that mentions this behavior
   const direct = analysis.ir.apiEndpoints.find(e => e.relatedBehaviors.includes(behaviorId));
-  if (direct) return direct.name;
+  if (direct) return normalizeEndpointName(direct.name, direct.method);
 
   // Fallback: find by proof type keywords
   const keywords: Record<ProofType, string[]> = {
@@ -476,7 +477,7 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
   const match = analysis.ir.apiEndpoints.find(e =>
     kws.some(kw => e.name.toLowerCase().includes(kw))
   );
-  return match?.name;
+  return match ? normalizeEndpointName(match.name, match.method) : undefined;
 }
 
 /**

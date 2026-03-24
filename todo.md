@@ -690,3 +690,16 @@
 - [x] ClinicBooking Pipeline: 7/7 Bugs gefunden ✅ (vorher 3/7 = 43%)
 - [x] MedRental: 48/48 Checks bestanden ✅
 - [x] Checkpoint + ZIP liefern
+
+## Fix-Briefing 4 — Endpoint-Normalisierung 5-Ebenen (24.03.2026)
+
+- [x] Ebene 1: normalizeEndpointName() in normalize.ts — FRAMEWORK_PREFIXES Set (trpc, api, v1-v4, rest, graphql, rpc, grpc)
+- [x] Ebene 2: resolveEndpoint() in risk-model.ts — normalizeEndpointName() auf direct.name + fallback.name
+- [x] Ebene 3: 8 Stellen in proof-generator.ts — alle endpoint-Zuweisungen durch normalizeEndpointName() geschickt
+- [x] Ebene 4: extended-suite.ts — ep.name normalisiert beim Gruppieren in modules Map
+- [x] Ebene 5: output-normalizer.ts erstellt + in job-runner.ts integriert (Regex-Funktion statt String-Literal)
+- [x] Vitest 567/567 + TypeScript 0 Fehler (21 neue Tests für output-normalizer)
+- [x] LoanApproval: trpc.=0, s.*=0 ✅
+- [x] ClinicBooking: trpc.=0, s.*=0 ✅
+- [x] MedRental: trpc.=0, s.*=0 ✅
+- [x] Checkpoint + ZIP liefern

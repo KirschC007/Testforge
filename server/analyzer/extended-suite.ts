@@ -1,4 +1,5 @@
 import type { Behavior, EndpointField, APIEndpoint, AuthRole, AnalysisIR, AnalysisResult } from "./types";
+import { normalizeEndpointName } from "./normalize";
 
 // ─── Extended Test Suite Generator (6 Ebenen) ─────────────────────────────────
 
@@ -116,12 +117,14 @@ function generateUnitTests(
   const dataModels = ir.dataModels || [];
   const endpoints = ir.apiEndpoints;
 
-  // Group endpoints by resource/module
+  // Group endpoints by resource/module (normalize names first to strip trpc. prefixes)
   const modules = new Map<string, typeof endpoints>();
   for (const ep of endpoints) {
-    const module = ep.name.split(".")[0] || "api";
+    const normalizedName = normalizeEndpointName(ep.name, ep.method);
+    const module = normalizedName.split(".")[0] || "api";
     if (!modules.has(module)) modules.set(module, []);
-    modules.get(module)!.push(ep);
+    // Use normalized name for the endpoint in the module map
+    modules.get(module)!.push({ ...ep, name: normalizedName });
   }
 
    for (const [moduleName, moduleEndpoints] of Array.from(modules)) {
@@ -447,12 +450,14 @@ function generateIntegrationTests(
   if (roles.length === 0) roles.push({ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" });
   const primaryRole = roles[0];
 
-  // Group endpoints by module
+  // Group endpoints by module (normalize names first to strip trpc. prefixes)
   const modules = new Map<string, typeof ir.apiEndpoints>();
   for (const ep of ir.apiEndpoints) {
-    const module = ep.name.split(".")[0] || "api";
+    const normalizedName = normalizeEndpointName(ep.name, ep.method);
+    const module = normalizedName.split(".")[0] || "api";
     if (!modules.has(module)) modules.set(module, []);
-    modules.get(module)!.push(ep);
+    // Use normalized name for the endpoint in the module map
+    modules.get(module)!.push({ ...ep, name: normalizedName });
   }
 
   for (const [moduleName, moduleEndpoints] of Array.from(modules)) {

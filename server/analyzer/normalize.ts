@@ -10,7 +10,18 @@
  *   "ownerDatas.export"        → "owners.export"
  */
 export function normalizeEndpointName(raw: string, method?: string): string {
-  // Strip trpc. prefix if present (e.g. "trpc.appointments.create" → "appointments.create")
+  // ─── EBENE 1: FRAMEWORK PREFIX STRIP ──────────────────────────────────────
+  // Remove framework namespace prefixes that are NOT resource names.
+  // "trpc.applications" → "applications" (trpc is a framework, not a resource)
+  // "api.users" → "users" (api is a namespace, not a resource)
+  const FRAMEWORK_PREFIXES = new Set(["trpc", "api", "v1", "v2", "v3", "v4", "rest", "graphql", "rpc", "grpc"]);
+  if (raw.includes(".")) {
+    const parts = raw.split(".");
+    if (FRAMEWORK_PREFIXES.has(parts[0].toLowerCase()) && parts.length > 1) {
+      raw = parts.slice(1).join(".");
+    }
+  }
+  // Legacy: explicit trpc. strip (belt-and-suspenders)
   if (raw.startsWith("trpc.")) raw = raw.slice(5);
   // FIRST: If raw IS a REST path (starts with /), convert to dot-notation
   if (raw.startsWith("/")) {

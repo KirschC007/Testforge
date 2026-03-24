@@ -1,6 +1,7 @@
 import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import type { Behavior, EndpointField, APIEndpoint, AnalysisResult, ProofType, ProofTarget, RiskModel, RawProof, FlowStep } from "./types";
+import { normalizeEndpointName } from "./normalize";
 
 // ─── Schicht 3: Proof Generator ───────────────────────────────────────────────
 
@@ -494,18 +495,22 @@ function generateCSRFTest(target: ProofTarget, analysis: AnalysisResult): string
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
 
   // Use resolved endpoint from IR, or TODO placeholder
-  const endpoint = target.endpoint
+  const endpoint = normalizeEndpointName(
+    target.endpoint
     || analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add") ||
       e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("delete") ||
       e.name.toLowerCase().includes("submit") || e.name.toLowerCase().includes("post"))?.name
     || analysis.ir.apiEndpoints[0]?.name
-    || "TODO_REPLACE_WITH_MUTATION_ENDPOINT";
+    || "TODO_REPLACE_WITH_MUTATION_ENDPOINT"
+  );
   const hasEndpoint = !!target.endpoint || analysis.ir.apiEndpoints.length > 0;
-  const listEndpoint = analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name
+  const listEndpoint = normalizeEndpointName(
+    analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get"))?.name
     || analysis.ir.apiEndpoints[0]?.name
-    || "list_endpoint_not_found";
+    || "list_endpoint_not_found"
+  );
   const csrfEndpoint = analysis.ir.authModel?.csrfEndpoint;
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
@@ -1358,7 +1363,7 @@ function generateBoundaryTestLegacy(target: ProofTarget, analysis: AnalysisResul
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
-  const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
+  const endpoint = normalizeEndpointName(target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT");
   const hasEndpoint = !!target.endpoint;
 
   const RATE_LIMIT_NOISE_FIELDS = new Set(["workspace", "request", "minute", "second", "hour", "day", "requests"]);
@@ -1482,7 +1487,7 @@ ${testCasesStr}\n`;
 function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): string {
   const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const endpoint = target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT";
+  const endpoint = normalizeEndpointName(target.endpoint || "TODO_REPLACE_WITH_YOUR_ENDPOINT");
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId)!;
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
@@ -1665,16 +1670,18 @@ export function generateBusinessLogicTest(target: ProofTarget, analysis: Analysi
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
 
   // Use resolved endpoint from IR, or TODO placeholder
-  const ep = target.endpoint || analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"))?.name || "TODO_REPLACE_WITH_MUTATION_ENDPOINT";
+  const ep = normalizeEndpointName(
+    target.endpoint || analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"))?.name || "TODO_REPLACE_WITH_MUTATION_ENDPOINT"
+  );
   const hasEndpoint = !!target.endpoint || analysis.ir.apiEndpoints.length > 0;
-  const getEp = (
+  const getEp = normalizeEndpointName((
     analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("get")) ??
     analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes("find") || e.name.toLowerCase().includes("fetch") || e.name.toLowerCase().includes("read")) ??
     analysis.ir.apiEndpoints[0]
-  )?.name || "TODO_REPLACE_WITH_QUERY_ENDPOINT";
+  )?.name || "TODO_REPLACE_WITH_QUERY_ENDPOINT");
 
    const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
   // Build payload from known input fields using getValidDefault (no TODO_ placeholders)
@@ -2467,7 +2474,7 @@ function generateSpecDriftTest(target: ProofTarget, analysis: AnalysisResult): s
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
-  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const endpoint = normalizeEndpointName(target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT");
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const outputFields = epDef?.outputFields || [];
   const inputFields = epDef?.inputFields || [];
@@ -2724,7 +2731,7 @@ export function generateConcurrencyTest(target: ProofTarget, analysis: AnalysisR
   const tenantConst = "TEST_" + tenantEntity.toUpperCase() + "_ID";
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
-  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const endpoint = normalizeEndpointName(target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT");
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const inputFields = epDef?.inputFields || [];
   const behaviorTitle = behavior?.title || target.description;
@@ -2955,7 +2962,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const adminFnName = adminRole
     ? "get" + adminRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
     : "getAdminCookie";
-  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT";
+  const endpoint = normalizeEndpointName(target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT");
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const inputFields = epDef?.inputFields || [];
   const behaviorTitle = behavior?.title || target.description;
