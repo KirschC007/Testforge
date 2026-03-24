@@ -727,3 +727,35 @@
   Der LLM extrahiert korrekt die echten Spec-States (REPORTED, UNDER_REVIEW, UNDER_INVESTIGATION, etc.)
 - [x] TypeScript 0 Fehler, Vitest 599/599 grün
 - [x] Checkpoint + ZIP liefern
+
+## Fix-Briefing 6 — v7.1 (24.03.2026)
+
+- [ ] Fix 1: extractTenantModel() in spec-regex-extractor.ts (5 Patterns)
+- [ ] Fix 1: mergeWithRegex() in spec-decomposed-parser.ts — Tenant-Model aus Regex wenn LLM null
+- [ ] Fix 2: statusMachines[] Array in types.ts (zusätzlich zu statusMachine)
+- [ ] Fix 2: Block 3 Prompt in spec-decomposed-parser.ts — Multiple Machines extrahieren
+- [ ] Fix 2: proof-generator.ts — statusMachines wenn vorhanden, sonst statusMachine
+- [ ] Fix 3: Rollen-Naming in helpers-generator.ts prüfen (warehouse_manager → getWarehouseManagerCookie)
+- [ ] TypeScript 0 Fehler + Vitest grün
+- [ ] Szenario 1: TodoApp (Code-Scan) — raw output
+- [ ] Szenario 2: SupplyChainOps (Spec-Only, re-run nach Fixes) — raw output
+- [ ] Szenario 3: ProjectTracker (Hybrid) — raw output
+- [ ] Szenario 4: EventTicketing (Spec-Only) — raw output
+- [ ] Szenario 5: FleetManager (Hybrid) — raw output
+- [ ] Checkpoint + ZIP liefern
+
+## Fix-Briefing 6 — v7.1 (24.03.2026)
+
+- [x] Fix 1: extractTenantModel() in spec-regex-extractor.ts (companyId, organizerId, tenantId, etc.)
+- [x] Fix 1b: mergeWithRegex() nutzt jetzt extractTenantModel() für Tenant-Key-Merge
+- [x] Fix 2: Block 3 in spec-decomposed-parser.ts unterstützt jetzt machines[] Array für Multi-Status-Machine
+- [x] Fix 3: Rollen-Naming in helpers-generator.ts bereits korrekt (warehouse_manager → getWarehouseManagerCookie)
+- [x] TypeScript 0 Fehler, Vitest 599/599 grün
+- [x] 5 Szenarien durchgejagt (TodoApp, ProjectTracker, EventTicketing, SupplyChainOps, FleetManager)
+- [x] Checkpoint + ZIP geliefert
+
+### Bekannte Probleme (für Fix-Briefing 7):
+- s.getById Artefakt: 'lists.getById' → 's.getById' (output-normalizer entfernt 'list' als Prefix fälschlicherweise)
+- States (primary): 0 für TodoApp/EventTicketing/ProjectTracker (Status-Machine nicht erkannt bei Standard-Parser < 8KB)
+- Spec Health: ?/100 in summary.json (ir.specHealth liegt unter analysisResult.ir.specHealth)
+- TenantKey: none für SupplyChainOps + FleetManager (companyId/fleetId in JWT aber nicht als tenantModel erkannt)

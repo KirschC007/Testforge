@@ -192,30 +192,36 @@ ${section.slice(0, 6000)}`;
 async function extractStatusMachineBlock(section: string): Promise<Partial<AnalysisIR>> {
   if (!section || section.length < 50) return { statusMachine: null };
 
-  const prompt = `Analysiere diesen Status-Machine-Abschnitt einer API-Spezifikation.
-
+  // Detect if spec has multiple status machines
+  const hasMachineHeaders = /#{1,4}\s+\w+\s+Status|#{1,4}\s+\w+\s+States|Status-Machine\s+\w+|\w+\s+Status-Machine/i.test(section);
+  const prompt = hasMachineHeaders
+    ? `Analysiere diesen Status-Machine-Abschnitt einer API-Spezifikation.
+Es gibt MEHRERE Status-Machines (z.B. für Orders, Shipments, Invoices, Inspections).
+EXTRAHIERE für JEDE Machine:
+- resource: Name der Resource (z.B. "orders", "shipments")
+- states: ALLE States dieser Machine
+- transitions: ALLE erlaubten Übergänge als [from, to]
+- forbidden: ALLE verbotenen Übergänge als [from, to]
+- terminalStates: States ohne ausgehende Transitions
+- initialState: Anfangs-State
+REGELN:
+- Jeder State in einem Pfeil (→ oder ->) MUSS im states-Array sein.
+- Terminal-States generieren forbidden-Einträge zu allen anderen States.
+Antworte NUR als JSON: { "machines": [ { "resource": "orders", "states": [...], "transitions": [[...]], "forbidden": [[...]], "terminalStates": [...], "initialState": "..." }, ... ] }
+Spec-Abschnitt:
+${section.slice(0, 8000)}`
+    : `Analysiere diesen Status-Machine-Abschnitt einer API-Spezifikation.
 EXTRAHIERE EXAKT:
-
-1. states: ALLE Status-States als Array (z.B. ["DRAFT", "SUBMITTED", "APPROVED", ...])
-   WICHTIG: Jeder State der in einer Transition, einem Pfeil (→), oder als "Terminal" erwähnt wird, MUSS im Array sein.
-
+1. states: ALLE Status-States als Array
+   WICHTIG: Jeder State der in einer Transition, einem Pfeil (→ oder ->), oder als "Terminal" erwähnt wird, MUSS im Array sein.
 2. transitions: ALLE erlaubten Übergänge als [from, to] Arrays
-   WICHTIG: Wenn "Jeder Status → X" steht, generiere für JEDEN State eine Transition zu X.
-   Wildcard-Transitions müssen aufgelöst werden.
-
+   Wildcard-Transitions ("Jeder Status → X") müssen aufgelöst werden.
 3. forbidden: ALLE verbotenen Übergänge als [from, to] Arrays
-   WICHTIG: Terminal-States generieren automatisch forbidden-Einträge zu allen anderen States.
-
-4. terminalStates: States aus denen KEINE Transition möglich ist
-
+4. terminalStates: States ohne ausgehende Transitions
 5. initialState: Der Anfangs-State
-
 REGELN:
 - Zähle am Ende: Wenn die Spec N States erwähnt und du weniger als N hast, hast du welche vergessen.
-- "CLOSED → jeder Status (Terminal)" bedeutet: CLOSED ist terminal UND forbidden zu allen anderen States.
-
-Antworte NUR als JSON: { "states": [...], "transitions": [[...],[...]], "forbidden": [[...],[...]], "terminalStates": [...], "initialState": "..." }
-
+Antworte NUR als JSON: { "states": [...], "transitions": [[...]], "forbidden": [[...]], "terminalStates": [...], "initialState": "..." }
 Spec-Abschnitt:
 ${section.slice(0, 8000)}`;
 
@@ -227,6 +233,46 @@ ${section.slice(0, 8000)}`;
     );
     if (!res) return { statusMachine: null };
     const parsed = parseJSON(res.choices[0].message.content as string, "Block 3 (StatusMachine)");
+
+    // Handle multiple machines response
+    if (Array.isArray(parsed.machines) && (parsed.machines as unknown[]).length > 0) {
+      const machines = (parsed.machines as Record<string, unknown>[]).map(m => {
+        const mStates: string[] = Array.isArray(m.states) ? m.states as string[] : [];
+        const mTransitions: [string, string][] = Array.isArray(m.transitions)
+          ? (m.transitions as unknown[]).filter(t => Array.isArray(t) && (t as unknown[]).length >= 2)
+              .map(t => [String((t as unknown[])[0]), String((t as unknown[])[1])] as [string, string])
+          : [];
+        const mForbidden: [string, string][] = Array.isArray(m.forbidden)
+          ? (m.forbidden as unknown[]).filter(t => Array.isArray(t) && (t as unknown[]).length >= 2)
+              .map(t => [String((t as unknown[])[0]), String((t as unknown[])[1])] as [string, string])
+          : [];
+        return {
+          resource: typeof m.resource === "string" ? m.resource : "unknown",
+          states: mStates,
+          transitions: mTransitions,
+          forbidden: mForbidden,
+          terminalStates: Array.isArray(m.terminalStates) ? m.terminalStates as string[] : [],
+          initialState: typeof m.initialState === "string" ? m.initialState : (mStates[0] || ""),
+        };
+      });
+      // Primary machine = first one (most states), also flatten all states into statusMachine
+      const allStates = Array.from(new Set(machines.flatMap(m => m.states)));
+      const allTransitions: [string, string][] = machines.flatMap(m => m.transitions);
+      const allForbidden: [string, string][] = machines.flatMap(m => m.forbidden);
+      console.log(`[Decomposed] Block 3 (Multi-Machine): ${machines.length} machines, ${allStates.length} total states`);
+      return {
+        statusMachines: machines,
+        statusMachine: {
+          states: allStates,
+          transitions: allTransitions,
+          forbidden: allForbidden,
+          terminalStates: machines.flatMap(m => m.terminalStates),
+          initialState: machines[0]?.initialState || allStates[0] || "",
+        },
+      };
+    }
+
+    // Single machine response
     const states: string[] = Array.isArray(parsed.states) ? parsed.states as string[] : [];
     const transitions: [string, string][] = Array.isArray(parsed.transitions)
       ? (parsed.transitions as unknown[])

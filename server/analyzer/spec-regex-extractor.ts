@@ -425,7 +425,7 @@ export function decomposeSpec(specText: string): SpecSections {
 import type { AnalysisIR } from "./types";
 import { normalizeEndpointName } from "./normalize";
 
-export function mergeWithRegex(llmIR: AnalysisIR, regexResult: RegexExtractionResult): AnalysisIR {
+export function mergeWithRegex(llmIR: AnalysisIR, regexResult: RegexExtractionResult, specText = ""): AnalysisIR {
   // 1. Merge states
   if (llmIR.statusMachine && regexResult.states.length > 0) {
     const existingStates = new Set(llmIR.statusMachine.states);
@@ -510,7 +510,19 @@ export function mergeWithRegex(llmIR: AnalysisIR, regexResult: RegexExtractionRe
     }
   }
 
-  // 5. Merge endpoints
+  // 5. Merge tenant model from regex if LLM returned null
+  if (!llmIR.tenantModel) {
+    const regexTenant = extractTenantModel(specText);
+    if (regexTenant) {
+      llmIR.tenantModel = {
+        tenantEntity: regexTenant.entity,
+        tenantIdField: regexTenant.idField,
+      };
+      console.log(`[RegexFallback] Set tenant: ${regexTenant.entity} (${regexTenant.idField})`);
+    }
+  }
+
+  // 6. Merge endpoints
   if (regexResult.endpoints.length > 0) {
     const existingEndpoints = new Set(llmIR.apiEndpoints.map(ep => ep.name));
     let added = 0;
@@ -572,8 +584,59 @@ const PII_INDICATORS = [
   "license", "card", "account", "iban", "tax", "ip", "location", "geo",
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
+// ─── Tenant Model ────────────────────────────────────────────────────────
 
+export function extractTenantModel(text: string): { entity: string; idField: string } | null {
+  // Pattern 1: "isolated by `companyId`" / "isoliert durch `insurerId`"
+  const isolatedPattern = /(?:isolated|isoliert|discriminat|tenant)\s+(?:by|durch|per)\s+[`'"']?(\w+Id)[`'"']?/i;
+  const isolatedMatch = text.match(isolatedPattern);
+  if (isolatedMatch) {
+    const idField = isolatedMatch[1];
+    const entity = idField.replace(/Id$/, "");
+    return { entity, idField };
+  }
+
+  // Pattern 2: "Each company (`companyId`) is an isolated tenant"
+  const eachPattern = /[Ee]ach\s+(\w+)\s+\(?[`'"']?(\w+Id)[`'"']?\)?\s+(?:is|operates|has)/;
+  const eachMatch = text.match(eachPattern);
+  if (eachMatch) {
+    return { entity: eachMatch[1].toLowerCase(), idField: eachMatch[2] };
+  }
+
+  // Pattern 3: "Jeder Versicherer (Tenant) ist durch `insurerId` isoliert"
+  const jederPattern = /[Jj]ede[rs]?\s+(\w+)\s+.*?(?:durch|per|mit)\s+[`'"']?(\w+Id)[`'"']?\s+(?:isoliert|getrennt)/;
+  const jederMatch = text.match(jederPattern);
+  if (jederMatch) {
+    return { entity: jederMatch[1].toLowerCase(), idField: jederMatch[2] };
+  }
+
+  // Pattern 4: "tenant discriminator" / "Tenant-Key: clinicId"
+  const tenantKeyPattern = /[Tt]enant[- ]?(?:[Kk]ey|discriminator|field)[:\s]+[`'"']?(\w+Id)[`'"']?/;
+  const tenantKeyMatch = text.match(tenantKeyPattern);
+  if (tenantKeyMatch) {
+    const idField = tenantKeyMatch[1];
+    return { entity: idField.replace(/Id$/, ""), idField };
+  }
+
+  // Pattern 5: "`companyId` must match JWT" / "insurerId muss mit JWT übereinstimmen"
+  const jwtPattern = /[`'"']?(\w+Id)[`'"']?\s+(?:must match|muss.*?übereinstimmen|must equal|must correspond)/i;
+  const jwtMatch = text.match(jwtPattern);
+  if (jwtMatch) {
+    const idField = jwtMatch[1];
+    return { entity: idField.replace(/Id$/, ""), idField };
+  }
+
+  // Pattern 6: "Each X (`xId`) is isolated" — variant without 'is/operates/has'
+  const eachPattern2 = /[Ee]ach\s+(\w+)\s+\([`'"']?(\w+Id)[`'"']?\)/;
+  const eachMatch2 = text.match(eachPattern2);
+  if (eachMatch2) {
+    return { entity: eachMatch2[1].toLowerCase(), idField: eachMatch2[2] };
+  }
+
+  return null;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
 function inferMethodFromAction(action: string): string {
   if (!action) return "GET";
   const lower = action.toLowerCase();
