@@ -31,7 +31,19 @@ export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const csrfEndpoint = ir.authModel?.csrfEndpoint || "";
   const roles = (ir.authModel?.roles || [
     { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" },
-  ]).filter((r): r is typeof r & { name: string } => Boolean(r?.name && typeof r.name === "string" && r.name.trim().length > 0));
+  ]).filter((r): r is typeof r & { name: string } => Boolean(r?.name && typeof r.name === "string" && r.name.trim().length > 0))
+  .map(r => ({
+    ...r,
+    name: r.name.trim(),
+    envUserVar: r.envUserVar || `E2E_${r.name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_USER`,
+    envPassVar: r.envPassVar || `E2E_${r.name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_PASS`,
+    defaultUser: (r.defaultUser && r.defaultUser !== "undefined" && r.defaultUser !== "")
+      ? r.defaultUser
+      : `test-${r.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+    defaultPass: (r.defaultPass && r.defaultPass !== "undefined" && r.defaultPass !== "")
+      ? r.defaultPass
+      : "TestPass2026x",
+  }));
 
   // Find resources with PII for factories
   const mainResource = ir.resources.find(r => r.operations.includes("create")) || ir.resources[0];
@@ -152,7 +164,7 @@ import { loginAndGetCookie, BASE_URL } from "./api";
 ${roles.map((role, i) => `
 let _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie: string | null = null;
 
-export async function get${role.name.split(/[_\s]+/).map(w => w[0].toUpperCase() + w.slice(1)).join("")}Cookie(request: any): Promise<string> {
+export async function get${role.name.split(/[-_\s]+/).map(w => w[0].toUpperCase() + w.slice(1)).join("")}Cookie(request: any): Promise<string> {
   if (_${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie) return _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie;
   _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie = await loginAndGetCookie(
     request,

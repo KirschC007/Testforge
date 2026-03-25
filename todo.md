@@ -825,3 +825,11 @@
 - [x] Frontend: Docs-Seite (/docs) mit Anleitungen und Feature-Erklärungen
 - [x] Frontend: Settings-Seite (/settings) mit Prompt-Editor (nur admin)
 - [x] Navigation: Docs + Settings Links hinzufügen
+
+## Phase 28: Manus OAuth → Eigenes Passwort-Login
+- [x] DB-Schema: users.passwordHash Feld hinzufügen + Migration
+- [x] Backend: auth.login (email+password → JWT), auth.register, auth.me, auth.logout
+- [x] Backend: bcrypt für Passwort-Hashing, kein Account-Lockout
+- [x] Frontend: Login/Register-Seite (/login)
+- [x] Frontend: Auth-Flow ohne OAuth (getLoginUrl → /login)
+- [x] OAuth-Callback-Route bleibt als Fallback erhalten

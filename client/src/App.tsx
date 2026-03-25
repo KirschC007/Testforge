@@ -14,6 +14,7 @@ import SpecDiff from "./pages/SpecDiff";
 import TestRunner from "./pages/TestRunner";
 import Docs from "./pages/Docs";
 import Settings from "./pages/Settings";
+import Login from "./pages/Login";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/analysis/:id" component={AnalysisDetail} />
       <Route path="/docs" component={Docs} />
       <Route path="/settings" component={Settings} />
+      <Route path="/login" component={Login} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

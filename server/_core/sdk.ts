@@ -270,7 +270,12 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
+    // Local password users (openId starts with "local:") — no OAuth sync needed
+    if (!user && sessionUserId.startsWith("local:")) {
+      throw ForbiddenError("User not found");
+    }
+
+    // If user not in DB (OAuth user), sync from OAuth server automatically
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");

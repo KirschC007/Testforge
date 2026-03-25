@@ -10,7 +10,12 @@ import {
   getAnalysesByUserId,
   updateAnalysis,
   countAnalysesToday,
+  getUserByEmail,
+  getUserById,
+  createUserWithPassword,
 } from "./db";
+import bcrypt from "bcryptjs";
+
 import { runAnalysisJob, assessSpecHealth, parseCodeToIR, fetchRepoCodeFiles, type AnalysisIR, type CodeFile } from "./analyzer";
 import { diffAnalysisIR } from "./analyzer/spec-diff";
 import { buildPRComment, postGitHubPRComment, createPR } from "./github-pr";
@@ -20,8 +25,10 @@ import { generatePlaywrightConfig, generateCIWorkflow } from "./analyzer/playwri
 import { DEMO_ANALYSIS } from "./demo-data";
 import { runTests } from "./test-runner";
 import { emitTestResult, emitRunComplete, emitRunError } from "./test-run-sse";
-import { testRuns } from "../drizzle/schema";
+import { testRuns, users } from "../drizzle/schema";
+import { sql } from "drizzle-orm";
 import { getDb } from "./db";
+import { sdk } from "./_core/sdk";
 import { eq } from "drizzle-orm";
 import { storagePut, storageGet } from "./storage";
 import { getAllSettings, upsertSetting, resetSetting } from "./settings-db";
@@ -237,6 +244,42 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    register: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string().min(8, "Password must be at least 8 characters"),
+        name: z.string().min(1).max(100),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const existing = await getUserByEmail(input.email);
+        if (existing) throw new TRPCError({ code: "CONFLICT", message: "Email already registered" });
+        const passwordHash = await bcrypt.hash(input.password, 12);
+        // First registered user becomes admin
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        const userCount = db ? (await db.select({ count: sql`COUNT(*)` }).from(users))[0]?.count ?? 0 : 1;
+        const role = Number(userCount) === 0 ? "admin" : "user";
+        await createUserWithPassword(input.email, input.name, passwordHash, role as "user" | "admin");
+        const sessionToken = await sdk.createSessionToken(`local:${input.email}`, { name: input.name });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
+        return { success: true };
+      }),
+    login: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await getUserByEmail(input.email);
+        if (!user || !user.passwordHash) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+        const valid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+        const sessionToken = await sdk.createSessionToken(`local:${input.email}`, { name: user.name ?? input.email });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
+        return { success: true };
+      }),
   }),
 
   analyses: router({

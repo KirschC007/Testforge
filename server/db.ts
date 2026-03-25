@@ -50,6 +50,42 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createUserWithPassword(email: string, name: string, passwordHash: string, role: 'user' | 'admin' = 'user') {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  const openId = `local:${email}`;
+  const result = await db.insert(users).values({
+    openId,
+    email,
+    name,
+    passwordHash,
+    role,
+    loginMethod: 'password',
+    lastSignedIn: new Date(),
+  });
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateUserPassword(id: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(users).set({ passwordHash }).where(eq(users.id, id));
+}
+
 // ─── Analyses ─────────────────────────────────────────────────────────────────
 
 export async function createAnalysis(data: InsertAnalysis): Promise<number> {
