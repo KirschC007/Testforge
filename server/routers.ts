@@ -24,6 +24,7 @@ import { testRuns } from "../drizzle/schema";
 import { getDb } from "./db";
 import { eq } from "drizzle-orm";
 import { storagePut, storageGet } from "./storage";
+import { getAllSettings, upsertSetting, resetSetting } from "./settings-db";
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
 const runningJobs = new Set<number>();
@@ -977,6 +978,28 @@ export const appRouter = router({
           .orderBy(testRuns.startedAt);
       }),
   }),
+  // ─── Settings / Prompt Management ──────────────────────────────────────────
+  settings: router({
+    getAll: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return getAllSettings();
+    }),
+    update: protectedProcedure
+      .input(z.object({ key: z.string(), value: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+        await upsertSetting(input.key, input.value, ctx.user.id);
+        return { success: true };
+      }),
+    reset: protectedProcedure
+      .input(z.object({ key: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+        await resetSetting(input.key);
+        return { success: true };
+      }),
+  }),
+
   // ─── Analytics / Usage Stats ──────────────────────────────────────────────
   analytics: router({
     getUsage: protectedProcedure.query(async ({ ctx }) => {

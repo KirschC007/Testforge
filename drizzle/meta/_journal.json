@@ -43,6 +43,13 @@
       "when": 1774251255726,
       "tag": "0005_modern_major_mapleleaf",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1774445096492,
+      "tag": "0006_misty_riptide",
+      "breakpoints": true
     }
   ]
 }

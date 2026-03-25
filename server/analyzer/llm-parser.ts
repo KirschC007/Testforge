@@ -2,6 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import type { EndpointField, AnalysisIR, AnalysisResult } from "./types";
 import { jsonrepair } from "jsonrepair";
 import { normalizeEndpointName, sanitizeLLMOutput, sanitizeBehavior, sanitizeEndpoint, sanitizeUserFlow } from "./normalize";
+import { getPrompt } from "../settings-db";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,8 +24,11 @@ async function parseSpecChunk(
   chunkIndex: number,
   totalChunks: number
 ): Promise<Partial<AnalysisIR> & { qualityScore?: number; specType?: string }> {
-  const systemPrompt = `You are TestForge Schicht 1 — a precision spec analyzer for SaaS systems.
-Extract EVERY testable behavior from this specification chunk (chunk ${chunkIndex + 1} of ${totalChunks}).
+  // Load editable prompt prefix from DB (falls back to hardcoded default)
+  const customPrefix = await getPrompt("prompt.layer1.system");
+  const systemPrompt = `${customPrefix}
+
+[Chunk ${chunkIndex + 1} of ${totalChunks}]
 
 Rules:
 1. Extract behaviors as Subject-Verb-Object triples

@@ -4,6 +4,7 @@ import { getValidDefault } from "./proof-generator";
 import type { Behavior, EndpointField, AnalysisIR, APIEndpoint, SpecHealthDimension, SpecHealth, AnalysisResult, CheckResult, RiskLevel, ProofType, ScoredBehavior, FieldConstraint, ProofTarget, RiskModel } from "./types";
 import { evaluateRiskRules } from "./risk-rules";
 import { normalizeEndpointName } from "./normalize";
+import { getPrompt } from "../settings-db";
 
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
 
@@ -56,23 +57,14 @@ async function crossValidateBehavior(
   const end = Math.min(specText.length, anchorIdx + chunkSize);
   const relevantSection = anchorIdx >= 0 ? specText.slice(start, end) : specText.slice(0, chunkSize);
 
-  const prompt = `You are a spec verification expert. A behavior was extracted from a specification.
-Verify if this behavior is correct, complete, and directly derivable from the spec text.
+  const checkerBase = await getPrompt("prompt.llmchecker.system");
+  const prompt = `${checkerBase}
 
 BEHAVIOR:
 ${JSON.stringify(behavior, null, 2)}
 
 RELEVANT SPEC TEXT:
-${relevantSection}
-
-Answer in this exact JSON format:
-{
-  "verdict": "CORRECT" | "INCORRECT" | "PARTIAL",
-  "confidence": 0.0-1.0,
-  "issues": ["issue 1", "issue 2"] // empty if CORRECT
-}
-
-Output ONLY valid JSON.`;
+${relevantSection}`;
 
   try {
     const response = await invokeLLM({

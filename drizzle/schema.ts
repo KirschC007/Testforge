@@ -98,3 +98,19 @@ export const testRuns = mysqlTable("testRuns", {
 export type TestRun = typeof testRuns.$inferSelect;
 export type InsertTestRun = typeof testRuns.$inferInsert;
 export type InsertAnalysis = typeof analyses.$inferInsert;
+
+// ─── Settings / Prompt Configuration ─────────────────────────────────────────
+export const settings = mysqlTable("settings", {
+  id: int("id").autoincrement().primaryKey(),
+  key: varchar("key", { length: 128 }).notNull().unique(),
+  value: text("value").notNull(),
+  defaultValue: text("defaultValue").notNull(),
+  label: varchar("label", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 64 }).notNull().default("general"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedBy: int("updatedBy"),
+});
+
+export type Setting = typeof settings.$inferSelect;
+export type InsertSetting = typeof settings.$inferInsert;

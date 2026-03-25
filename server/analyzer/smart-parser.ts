@@ -31,6 +31,7 @@ import { invokeLLM } from "../_core/llm";
 import type { EndpointField, AnalysisIR, AnalysisResult, Behavior, APIEndpoint, AuthModel } from "./types";
 import { sanitizeLLMOutput, sanitizeBehavior, sanitizeEndpoint, sanitizeUserFlow } from "./normalize";
 import { extractTenantModel } from "./spec-regex-extractor";
+import { getPrompt } from "../settings-db";
 
 export const LLM_TIMEOUT_MS = 90000;
 const SMART_PARSER_THRESHOLD = 50000; // Use smart parser for specs > 50KB
@@ -298,7 +299,7 @@ async function buildStructuralMap(compressedSpec: string): Promise<StructuralMap
   const t0 = Date.now();
   console.log(`[TestForge] Pass 1 (4-parallel): Building structural map from ${compressedSpec.length} chars...`);
 
-  const baseSystem = `You are a spec analyzer. Read this system specification and extract ONLY what is asked.
+  const baseSystem = (await getPrompt("prompt.layer1.smart.base")) || `You are a spec analyzer. Read this system specification and extract ONLY what is asked.
 The spec may be in German — extract values in their original language/format.
 Output ONLY valid JSON. No markdown, no explanation.`;
 
@@ -547,7 +548,8 @@ async function extractFromChunkGroup(
 
   const topic = group.topics[0] || "other";
 
-  const systemPrompt = `You are TestForge Pass 2 — extracting testable behaviors from a SPECIFIC section of a system spec.
+  const pass2Base = (await getPrompt("prompt.layer1.smart.pass2")) || `You are TestForge Pass 2 — extracting testable behaviors from a SPECIFIC section of a system spec.`;
+  const systemPrompt = `${pass2Base}
 Section topic: ${topic.toUpperCase()} | Group ${groupIndex + 1} of ${totalGroups}: "${group.title}"
 
 SYSTEM CONTEXT (already extracted from full spec — use this as reference, don't re-extract):

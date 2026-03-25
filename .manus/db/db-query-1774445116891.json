@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `settings` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`key` varchar(128) NOT NULL,\n\t`value` text NOT NULL,\n\t`defaultValue` text NOT NULL,\n\t`label` varchar(255) NOT NULL,\n\t`description` text,\n\t`category` varchar(64) NOT NULL DEFAULT 'general',\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\t`updatedBy` int,\n\tCONSTRAINT `settings_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `settings_key_unique` UNIQUE(`key`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3RbELmh1BBBenWw.557c73390f23 --database UFergRv2GrnhdSxgSgsvDU --execute CREATE TABLE `settings` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`key` varchar(128) NOT NULL,\n\t`value` text NOT NULL,\n\t`defaultValue` text NOT NULL,\n\t`label` varchar(255) NOT NULL,\n\t`description` text,\n\t`category` varchar(64) NOT NULL DEFAULT 'general',\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\t`updatedBy` int,\n\tCONSTRAINT `settings_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `settings_key_unique` UNIQUE(`key`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 497
+}

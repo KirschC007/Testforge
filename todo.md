@@ -817,3 +817,11 @@
 - [ ] Szenario 1: PetClinic durch Pipeline (Standard Parser)
 - [ ] Szenario 2: LogisticsHub durch Pipeline (Smart Parser)
 - [ ] RAW Output liefern
+
+## Phase 26: Docs + Settings + Prompt-Management
+- [x] DB-Schema: settings-Tabelle für editierbare System-Prompts
+- [x] Backend: settings-Router (getAll, update, reset)
+- [x] Analyzer: System-Prompts aus DB laden (llm-parser, smart-parser, proof-generator, risk-model)
+- [x] Frontend: Docs-Seite (/docs) mit Anleitungen und Feature-Erklärungen
+- [x] Frontend: Settings-Seite (/settings) mit Prompt-Editor (nur admin)
+- [x] Navigation: Docs + Settings Links hinzufügen

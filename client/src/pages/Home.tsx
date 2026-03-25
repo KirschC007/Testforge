@@ -7,7 +7,7 @@ import {
   CheckCircle2, Terminal, Package, Star, Activity,
   AlertTriangle, Layers, Database, RefreshCw, Eye,
   Cpu, Repeat2, Users, GitMerge, Clock, Webhook, ToggleLeft,
-  Code2, Sparkles, Globe, Server, Merge,
+  Code2, Sparkles, Globe, Server, Merge, BookOpen,
 } from "lucide-react";
 
 // ─── Proof type definitions (16 types) ────────────────────────────────────
@@ -87,6 +87,9 @@ export default function Home() {
             <span className="text-xs text-muted-foreground ml-1 hidden sm:inline">by Manus</span>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/docs">
+              <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline flex items-center gap-1"><BookOpen className="w-3.5 h-3.5 inline" /> Docs</span>
+            </Link>
             <Link href="/demo">
               <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Demo</span>
             </Link>

@@ -7,7 +7,7 @@ import { getLoginUrl } from "@/const";
 import {
   Shield, Plus, Loader2, AlertCircle, Clock, CheckCircle2,
   XCircle, Ban, FileCode2, Download, ChevronRight, Activity,
-  Star, Package, Zap, RefreshCw,
+  Star, Package, Zap, RefreshCw, BookOpen, Settings,
 } from "lucide-react";
 
 // ─── Proof type color map ─────────────────────────────────────────────────
@@ -276,9 +276,21 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/docs">
+              <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline flex items-center gap-1">
+                <BookOpen className="w-3.5 h-3.5 inline" /> Docs
+              </span>
+            </Link>
             <Link href="/demo">
               <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Demo</span>
             </Link>
+            {user?.role === "admin" && (
+              <Link href="/settings">
+                <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline flex items-center gap-1">
+                  <Settings className="w-3.5 h-3.5 inline" /> Einstellungen
+                </span>
+              </Link>
+            )}
             {user && (
               <span className="text-xs text-muted-foreground hidden sm:inline">{user.name}</span>
             )}
