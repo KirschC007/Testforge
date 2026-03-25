@@ -339,16 +339,17 @@ export async function runAnalysisJob(
   }));
   // Ebene 5: Post-processing pass — strip residual trpc./s. prefixes from all generated content
   const testFilesNormalized = normalizeOutputFiles(testFilesRaw);
-  // Fix 5: Filter out TODO_REPLACE stubs — proofs with unresolved endpoint placeholders
+  // Fix 5 + H1: Filter out TODO_REPLACE stubs — proofs with unresolved endpoint placeholders
   const testFiles = testFilesNormalized.filter(f => {
     const hasTodoEndpoint = f.content.includes('TODO_REPLACE_WITH_LIST_ENDPOINT')
       || f.content.includes('TODO_REPLACE_WITH_MUTATION_ENDPOINT')
       || f.content.includes('TODO_REPLACE_WITH_STATUS_ENDPOINT')
       || f.content.includes('TODO_REPLACE_WITH_GET_ENDPOINT')
       || f.content.includes('TODO_REPLACE_WITH_EXPORT_ENDPOINT')
-      || f.content.includes('TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT');
+      || f.content.includes('TODO_REPLACE_WITH_GDPR_DELETE_ENDPOINT')
+      || f.content.includes('TODO_REPLACE_WITH_YOUR_ENDPOINT'); // H1: generic fallback stub
     if (hasTodoEndpoint) {
-      console.log(`[TestForge] Fix5: Filtered stub file ${f.filename} (unresolved TODO_REPLACE endpoint)`);
+      console.log(`[TestForge] Fix5/H1: Filtered stub file ${f.filename} (unresolved TODO_REPLACE endpoint)`);
     }
     return !hasTodoEndpoint;
   });

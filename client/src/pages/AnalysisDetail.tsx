@@ -405,6 +405,12 @@ export default function AnalysisDetail() {
                   Code-Scan
                 </span>
               )}
+              {result?.industryPack && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border"
+                  style={{ color: "var(--tf-yellow)", borderColor: "var(--tf-yellow)40", background: "var(--tf-yellow)10" }}>
+                  📦 {(result.industryPack as string).charAt(0).toUpperCase() + (result.industryPack as string).slice(1)} Pack
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
               {new Date(analysis.createdAt).toLocaleDateString("de-DE", {

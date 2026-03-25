@@ -156,6 +156,8 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
           specHealth: result.analysisResult.specHealth,
           // Fix 3: Store llmCheckerStats for UI display
           llmCheckerStats: result.llmCheckerStats,
+          // H4: Store industryPack for UI badge display
+          industryPack: industryPack ?? null,
         } as any,
         outputZipUrl: zipUrl,
         outputZipKey: zipKey,

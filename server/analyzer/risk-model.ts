@@ -140,83 +140,85 @@ export async function runLLMChecker(
   specText: string
 ): Promise<{ checkedBehaviors: Behavior[]; stats: { approved: number; flagged: number; rejected: number; avgConfidence: number } }> {
   const t0 = Date.now();
-  console.log(`[TestForge] LLM Checker: verifying ${behaviors.length} behaviors in parallel`);
+  console.log(`[TestForge] LLM Checker: verifying ${behaviors.length} behaviors in batches of 20`);
 
-  // Run all checks in parallel
-  const checkResults = await Promise.all(
-    behaviors.map(async (behavior): Promise<{ behavior: Behavior; result: CheckResult }> => {
-      // Step 1: Anchor verification (fast, no LLM)
-      const anchor = verifyAnchor(behavior, specText);
+  // K2: Run checks in batches of 20 to prevent rate-limit errors with large specs (100+ behaviors)
+  const BATCH_SIZE = 20;
+  const allCheckResults: { behavior: Behavior; result: CheckResult }[] = [];
 
-      // Step 2: Cross-validation (LLM call)
-      const validation = await withTimeout(
-        crossValidateBehavior(behavior, specText),
+  async function checkOneBehavior(behavior: Behavior): Promise<{ behavior: Behavior; result: CheckResult }> {
+    // Step 1: Anchor verification (fast, no LLM)
+    const anchor = verifyAnchor(behavior, specText);
+
+    // Step 2: Cross-validation (LLM call)
+    const validation = await withTimeout(
+      crossValidateBehavior(behavior, specText),
+      30000,
+      { verdict: "PARTIAL" as const, confidence: 0.5, issues: ["Timeout"] }
+    );
+
+    // Step 3: Confidence score
+    const anchorScore = anchor.score;
+    const validationScore = validation.verdict === "CORRECT" ? 1.0 : validation.verdict === "PARTIAL" ? 0.65 : 0.25;
+    const confidence = (anchorScore * 0.45) + (validationScore * 0.30) + (validation.confidence * 0.25);
+
+    if (confidence >= 0.75) {
+      return {
+        behavior,
+        result: { behaviorId: behavior.id, verdict: "approved", confidence, issues: [], attempts: 0, anchorFound: anchor.found },
+      };
+    }
+
+    if (confidence < 0.5 && !anchor.found && validation.issues.length > 0) {
+      let current = behavior;
+      let currentConfidence = confidence;
+      let attempts = 0;
+
+      const improved = await withTimeout(
+        improveBehavior(current, validation.issues, specText, 0),
         30000,
-        { verdict: "PARTIAL" as const, confidence: 0.5, issues: ["Timeout"] }
+        null
       );
-
-      // Step 3: Confidence score
-      // Fix 2: Increased anchor weight (0.4→0.45) and validation confidence weight (0.2→0.25)
-      // to reduce false-positive rejections when anchor is strong but LLM verdict is PARTIAL.
-      const anchorScore = anchor.score;
-      const validationScore = validation.verdict === "CORRECT" ? 1.0 : validation.verdict === "PARTIAL" ? 0.65 : 0.25;
-      const confidence = (anchorScore * 0.45) + (validationScore * 0.30) + (validation.confidence * 0.25);
-
-      if (confidence >= 0.75) {
-        // Fix 2: Lowered approval threshold 0.8→0.75 to avoid false-positive rejections
-        return {
-          behavior,
-          result: { behaviorId: behavior.id, verdict: "approved", confidence, issues: [], attempts: 0, anchorFound: anchor.found },
-        };
+      if (improved) {
+        attempts++;
+        const newAnchor = verifyAnchor(improved, specText);
+        const newValidation = await withTimeout(
+          crossValidateBehavior(improved, specText),
+          30000,
+          { verdict: "PARTIAL" as const, confidence: 0.5, issues: [] }
+        );
+        const newValidationScore = newValidation.verdict === "CORRECT" ? 1.0 : newValidation.verdict === "PARTIAL" ? 0.65 : 0.25;
+        currentConfidence = (newAnchor.score * 0.45) + (newValidationScore * 0.30) + (newValidation.confidence * 0.25);
+        current = improved;
       }
 
-      // Fix 2: Only enter improvement loop if confidence is very low AND anchor was NOT found
-      // Previously: confidence < 0.6 (too aggressive, triggered even for valid behaviors)
-      if (confidence < 0.5 && !anchor.found && validation.issues.length > 0) {
-        // Step 4: Improvement loop (max 1 attempt to save time)
-        let current = behavior;
-        let currentConfidence = confidence;
-        let attempts = 0;
-
-        const improved = await withTimeout(
-          improveBehavior(current, validation.issues, specText, 0),
-          30000,
-          null
-        );
-        if (improved) {
-          attempts++;
-          const newAnchor = verifyAnchor(improved, specText);
-          const newValidation = await withTimeout(
-            crossValidateBehavior(improved, specText),
-            30000,
-            { verdict: "PARTIAL" as const, confidence: 0.5, issues: [] }
-          );
-          const newValidationScore = newValidation.verdict === "CORRECT" ? 1.0 : newValidation.verdict === "PARTIAL" ? 0.65 : 0.25;
-          currentConfidence = (newAnchor.score * 0.45) + (newValidationScore * 0.30) + (newValidation.confidence * 0.25);
-          current = improved;
-        }
-
-        // Fix 2: Only reject if confidence is extremely low (< 0.35, was < 0.5)
-        if (currentConfidence < 0.35) {
-          return {
-            behavior: current,
-            result: { behaviorId: behavior.id, verdict: "rejected", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
-          };
-        }
-
+      if (currentConfidence < 0.35) {
         return {
           behavior: current,
-          result: { behaviorId: behavior.id, verdict: currentConfidence >= 0.75 ? "approved" : "flagged", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
+          result: { behaviorId: behavior.id, verdict: "rejected", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
         };
       }
 
       return {
-        behavior,
-        result: { behaviorId: behavior.id, verdict: "flagged", confidence, issues: validation.issues, attempts: 0, anchorFound: anchor.found },
+        behavior: current,
+        result: { behaviorId: behavior.id, verdict: currentConfidence >= 0.75 ? "approved" : "flagged", confidence: currentConfidence, issues: validation.issues, attempts, anchorFound: anchor.found },
       };
-    })
-  );
+    }
 
+    return {
+      behavior,
+      result: { behaviorId: behavior.id, verdict: "flagged", confidence, issues: validation.issues, attempts: 0, anchorFound: anchor.found },
+    };
+  }
+
+  for (let i = 0; i < behaviors.length; i += BATCH_SIZE) {
+    const batch = behaviors.slice(i, i + BATCH_SIZE);
+    console.log(`[TestForge] LLM Checker batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(behaviors.length / BATCH_SIZE)} (${batch.length} behaviors)`);
+    const batchResults = await Promise.all(batch.map(checkOneBehavior));
+    allCheckResults.push(...batchResults);
+  }
+
+  const checkResults = allCheckResults;
   console.log(`[TestForge] LLM Checker done in ${Date.now() - t0}ms`);
 
   const approved = checkResults.filter(r => r.result.verdict === "approved").length;

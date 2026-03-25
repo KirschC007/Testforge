@@ -800,3 +800,14 @@
 - [x] Fix 1: IR-Summary-Panel in AnalysisDetail (Rollen, Tenant, States, AuthModel, Endpoints)
 - [x] Vitest 621/621 + TypeScript 0 Fehler (4 neue Tests)
 - [x] Checkpoint liefern
+
+## Fix-Briefing 12 — Deep-Search Optimierungen v7.6 (25.03.2026)
+
+- [x] Fix Watcher: tsconfig.json incremental:false (Watcher-Cache-Fehler dauerhaft behoben)
+- [x] Spec-Diff: bereits vollständig implementiert (Route + tRPC + Button vorhanden)
+- [x] K1: R7b-Regel generisch (restaurantId|tenantId|workspaceId|companyId|fleetId|orgId|...)
+- [x] H1: TODO_REPLACE_WITH_YOUR_ENDPOINT zum Fix-5-Filter hinzugefügt
+- [x] H4: industryPack in resultJson gespeichert + Badge in AnalysisDetail
+- [x] K2: LLM-Checker Batching in Gruppen von 20 (BATCH_SIZE=20, sequentielle Batches)
+- [x] Vitest 626/626 + TypeScript 0 Fehler (5 neue K1-Tests)
+- [x] Checkpoint liefern

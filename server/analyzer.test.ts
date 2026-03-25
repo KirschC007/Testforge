@@ -1183,3 +1183,96 @@ describe("Fix 3: getResourceByIdentifier — no TODO placeholder", () => {
     expect(factories).not.toContain("TODO_REPLACE_WITH_GET_BY_IDENTIFIER_ENDPOINT");
   });
 });
+
+// ─── Fix-Briefing 12: K1 — R7b Generic Tenant ID Rule ────────────────────────────────────────────
+describe("validateProofs — K1: R7b generic tenant ID detection", () => {
+  function makeIDORProof(code: string): RawProof {
+    return {
+      id: "PROOF-K1",
+      behaviorId: "B001",
+      proofType: "idor",
+      riskLevel: "critical",
+      filename: "tests/security/idor.spec.ts",
+      code,
+      mutationTargets: [{ description: "Remove tenant filter", expectedKill: true }],
+    };
+  }
+
+  it("K1: rejects fake IDOR with hardcoded restaurantId: 2", () => {
+    const proof = makeIDORProof(`
+test("IDOR test", async ({ request }) => {
+  const response = await request.get("/api/resource");
+  expect([401, 403]).toContain(response.status()); // Kills: Remove restaurantId filter
+  const body = await response.text();
+  expect(body).not.toMatch(/secret/); // side-effect
+  const ok = await request.get("/api/resource", { headers: { Cookie: cookieA } });
+  expect(ok.status()).toBe(200);
+  const data = { restaurantId: 2, name: "test" };
+});`);
+    const result = validateProofs([proof], ["B001"]);
+    expect(result.verdict.failed).toBe(1);
+    expect(result.discardedProofs[0].reason).toBe("fake_idor");
+  });
+
+  it("K1: rejects fake IDOR with hardcoded workspaceId: 1", () => {
+    const proof = makeIDORProof(`
+test("IDOR test", async ({ request }) => {
+  const response = await request.get("/api/resource");
+  expect([401, 403]).toContain(response.status()); // Kills: Remove workspaceId filter
+  const body = await response.text();
+  expect(body).not.toMatch(/secret/);
+  const ok = await request.get("/api/resource");
+  expect(ok.status()).toBe(200);
+  const data = { workspaceId: 1, name: "test" };
+});`);
+    const result = validateProofs([proof], ["B001"]);
+    expect(result.verdict.failed).toBe(1);
+    expect(result.discardedProofs[0].reason).toBe("fake_idor");
+  });
+
+  it("K1: rejects fake IDOR with hardcoded orgId: 3", () => {
+    const proof = makeIDORProof(`
+test("IDOR test", async ({ request }) => {
+  const response = await request.get("/api/resource");
+  expect([401, 403]).toContain(response.status()); // Kills: Remove orgId filter
+  const body = await response.text();
+  expect(body).not.toMatch(/secret/);
+  const ok = await request.get("/api/resource");
+  expect(ok.status()).toBe(200);
+  const data = { orgId: 3 };
+});`);
+    const result = validateProofs([proof], ["B001"]);
+    expect(result.verdict.failed).toBe(1);
+    expect(result.discardedProofs[0].reason).toBe("fake_idor");
+  });
+
+  it("K1: allows IDOR test using TEST_ constant", () => {
+    const proof = makeIDORProof(`
+test("IDOR test", async ({ request }) => {
+  const response = await request.get("/api/resource");
+  expect([401, 403]).toContain(response.status()); // Kills: Remove restaurantId filter
+  const body = await response.text();
+  expect(body).not.toMatch(/secret/);
+  const ok = await request.get("/api/resource");
+  expect(ok.status()).toBe(200);
+  const data = { restaurantId: TEST_RESTAURANT_B_ID };
+});`);
+    const result = validateProofs([proof], ["B001"]);
+    expect(result.verdict.passed).toBe(1);
+  });
+
+  it("K1: allows IDOR test using TENANT_B constant", () => {
+    const proof = makeIDORProof(`
+test("IDOR test", async ({ request }) => {
+  const response = await request.get("/api/resource");
+  expect([401, 403]).toContain(response.status()); // Kills: Remove workspaceId filter
+  const body = await response.text();
+  expect(body).not.toMatch(/secret/);
+  const ok = await request.get("/api/resource");
+  expect(ok.status()).toBe(200);
+  const data = { workspaceId: TENANT_B_WORKSPACE_ID };
+});`);
+    const result = validateProofs([proof], ["B001"]);
+    expect(result.verdict.passed).toBe(1);
+  });
+});

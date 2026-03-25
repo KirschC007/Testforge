@@ -108,9 +108,10 @@ function runValidationRules(proof: RawProof): ValidationResult {
   }
   notes.push("✓ R7: Has mutation-kill comments");
 
-  // R7b: No fake IDOR
-  if (proof.proofType === "idor" && /restaurantId:\s*[1-9]\b/.test(code) && !code.includes("TEST_") && !code.includes("TENANT_B")) {
-    return { passed: false, notes: [], reason: "fake_idor", details: "R7b violation: IDOR test uses hardcoded small ID. Use TEST_RESTAURANT_B_ID." };
+  // R7b: No fake IDOR — generic for all common tenant/resource IDs (not just restaurantId)
+  const FAKE_IDOR_PATTERN = /\b(?:restaurantId|tenantId|workspaceId|companyId|fleetId|orgId|organizationId|accountId|teamId|projectId|shopId|storeId|merchantId):\s*[1-9]\b/;
+  if (proof.proofType === "idor" && FAKE_IDOR_PATTERN.test(code) && !code.includes("TEST_") && !code.includes("TENANT_B") && !code.includes("OTHER_")) {
+    return { passed: false, notes: [], reason: "fake_idor", details: "R7b violation: IDOR test uses hardcoded small tenant/resource ID. Use TEST_<ENTITY>_B_ID constant instead." };
   }
   notes.push("✓ R7b: No fake IDOR IDs");
 
