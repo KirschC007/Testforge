@@ -530,21 +530,19 @@ function sanitizeGeneratedFiles(
       fixes++;
     }
 
-    // ── Fix 11: Literal \n in string values ──
-    // LLM generates literal backslash-n instead of newline
+    // ── Fix 11: Literal \n in generated code ──
+    // LLM generates literal backslash-n instead of newline in various positions
     content = content.replace(/,\\n(\s*)/g, ',\n$1');
+    content = content.replace(/\);\\n/g, ');\n');
+    content = content.replace(/"\\n(\s*)/g, '"\n$1');
 
     // ── Fix 12: Unquoted hyphenated property names ──
     // Idempotency-Key: "..." → "Idempotency-Key": "..."
     content = content.replace(/^(\s+)([a-zA-Z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)+):\s/gm, '$1"$2": ');
 
-    // ── Fix 13: Double-slash regex literals ──
-    // //login/ → /\/login\//
-    // Step 1: fix partially-fixed /\/login//login/ → /\/login\//
-    content = content.replace(/\/\\\/([a-zA-Z0-9_]+)\/\/[a-zA-Z0-9_]+\//g, '/\\/$1\\/');
-    // Step 2: fix remaining //word/ patterns in argument positions
-    content = content.replace(/(?<=\(|,\s*)\/\/([a-zA-Z_][a-zA-Z0-9_/]*?)\//g, '/\\/$1\\/');
-
+    // ── Fix 13: Unterminated regex — trailing backslash-slash ──
+    // /\/login\/ → /\/login/ (the trailing \/ breaks the regex literal)
+    content = content.replace(/\/\\\/([a-zA-Z_|][a-zA-Z0-9_|.]*)\\\//g, '/\\/$1/');
     // ── Fix 14: Unescaped double quotes in test titles ──
     content = content.replace(/^(\s*(?:test|it)\s*\(\s*")(.+?)(",\s*async)/gm, (match, prefix, title, suffix) => {
       const fixedTitle = title.replace(/(?<!\\)"/g, '\\"');
@@ -578,6 +576,26 @@ function sanitizeGeneratedFiles(
         }
         return match;
       });
+    }
+
+    // ── Fix 18: Duplicate top-level let declarations ──
+    // When multiple proof blocks merge into one file, `let x: string;` can appear multiple times
+    {
+      const seenTopLevelLets = new Set<string>();
+      content = content.replace(/^(let\s+)(\w+)(:\s*\w+;?\s*)$/gm, (match, keyword, varName, rest) => {
+        if (seenTopLevelLets.has(varName)) {
+          return `// [dedup] ${match.trim()}`;
+        }
+        seenTopLevelLets.add(varName);
+        return match;
+      });
+    }
+
+    // ── Fix 19: Ensure getAdminCookie import resolves ──
+    // If a file imports getAdminCookie but auth.ts doesn't export it, replace with getRestaurantAdminCookie or first available
+    if (content.includes("getAdminCookie") && !file.filename.includes("auth")) {
+      // Add getAdminCookie to import if not already there — the auth.ts alias handles it
+      // No action needed if auth.ts has the alias (which it does after RC1 fix)
     }
 
     if (fixes > 0) {

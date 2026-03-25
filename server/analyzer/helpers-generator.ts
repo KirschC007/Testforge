@@ -179,6 +179,10 @@ export function resetCookieCache(): void {
 ${roles.map(role => `  _${role.name.replace(/[^a-zA-Z0-9]/g, "_")}Cookie = null;`).join("\n")}
 }
 
+// Aliases: getAdminCookie always resolves to the first (highest-privilege) role
+export const getAdminCookie = get${roles[0].name.split(/[-_\s]+/).map(w => w[0].toUpperCase() + w.slice(1)).join("")}Cookie;
+${roles.length > 1 ? `export const getUserCookie = get${roles[roles.length - 1].name.split(/[-_\s]+/).map(w => w[0].toUpperCase() + w.slice(1)).join("")}Cookie;` : ""}
+
 ${csrfEndpoint ? `
 export async function getCsrfToken(request: any, cookie: string): Promise<string> {
   const resp = await request.get(\`\${BASE_URL}${csrfEndpoint}\`, {

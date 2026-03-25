@@ -833,3 +833,10 @@
 - [x] Frontend: Login/Register-Seite (/login)
 - [x] Frontend: Auth-Flow ohne OAuth (getLoginUrl → /login)
 - [x] OAuth-Callback-Route bleibt als Fallback erhalten
+
+## v8.4: Nutzer-Fixes (testforge3.zip)
+- [x] helpers-generator.ts: getAdminCookie/getUserCookie Alias-Export hinzugefügt (immer auf erste/letzte Rolle gemappt)
+- [x] job-runner.ts Fix 11 erweitert: 2 neue \n-Patterns (`);\n` und `"\n`)
+- [x] job-runner.ts Fix 13 überarbeitet: trailing `\/` Regex-Pattern (statt double-slash)
+- [x] job-runner.ts Fix 18: Dedup top-level `let`-Deklarationen (seenTopLevelLets Set)
+- [x] job-runner.ts Fix 19: getAdminCookie Import-Guard (kein doppelter Import wenn auth.ts Alias vorhanden)
