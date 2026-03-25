@@ -41,19 +41,19 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
 
-  // Goldstandard: 8-minute job timeout — prevents permanently stuck jobs after server restarts
-  const JOB_TIMEOUT_MS = 8 * 60 * 1000;
+  // Goldstandard: 15-minute job timeout — prevents permanently stuck jobs after server restarts
+  const JOB_TIMEOUT_MS = 15 * 60 * 1000;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
   setImmediate(async () => {
-    // Set timeout: if job doesn't complete in 8 minutes, mark as failed
+    // Set timeout: if job doesn't complete in 15 minutes, mark as failed
     timeoutHandle = setTimeout(async () => {
       if (runningJobs.has(analysisId)) {
-        console.error(`[Job ${analysisId}] Timeout after 8 minutes — marking as failed`);
+        console.error(`[Job ${analysisId}] Timeout after 15 minutes — marking as failed`);
         cancelledJobs.add(analysisId); // Signal the job to stop at next checkpoint
         await updateAnalysis(analysisId, {
           status: "failed",
-          errorMessage: "Job timed out after 8 minutes. Please try again.",
+          errorMessage: "Job timed out after 15 minutes. Please try again.",
         }).catch(() => {});
         runningJobs.delete(analysisId);
       }
