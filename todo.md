@@ -811,3 +811,9 @@
 - [x] K2: LLM-Checker Batching in Gruppen von 20 (BATCH_SIZE=20, sequentielle Batches)
 - [x] Vitest 626/626 + TypeScript 0 Fehler (5 neue K1-Tests)
 - [x] Checkpoint liefern
+
+## Validierung v7.6 (25.03.2026)
+
+- [ ] Szenario 1: PetClinic durch Pipeline (Standard Parser)
+- [ ] Szenario 2: LogisticsHub durch Pipeline (Smart Parser)
+- [ ] RAW Output liefern

@@ -7,7 +7,7 @@ import { parseSpecDecomposed } from "./spec-decomposed-parser";
 import { runLLMChecker, assessSpecHealth, buildRiskModel } from "./risk-model";
 import { generateHelpers } from "./helpers-generator";
 import { validateProofs, runIndependentChecker, mergeProofsToFile } from "./validator";
-import { generateReport } from "./report";
+import { generateReport, generateHTMLReport } from "./report";
 import { generateExtendedTestSuite } from "./extended-suite";
 import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 import { parseCodeToIR, type CodeFile } from "./code-parser";
@@ -325,6 +325,8 @@ export async function runAnalysisJob(
 
   // Report
   const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);
+  // HTML Dashboard
+  const htmlReport = generateHTMLReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats, analysisResult.specHealth);
 
   // Test files (deduplicated by filename, properly structured)
   // Bug 5 Fix: deduplicate imports and shared let-declarations per file
@@ -365,7 +367,7 @@ export async function runAnalysisJob(
 
   console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
 
-  return { analysisResult, riskModel, validatedSuite, report, testFiles, helpers, llmCheckerStats, extendedSuite };
+  return { analysisResult, riskModel, validatedSuite, report, htmlReport, testFiles, helpers, llmCheckerStats, extendedSuite };
 }
 
 // ─── Hybrid-Modus: Merge Code-IR + Spec-IR ─────────────────────────────────────

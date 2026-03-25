@@ -134,7 +134,7 @@ export function extractStates(text: string): string[] {
   // Captures lowercase state names from arrow lines and uppercases them
   for (const line of lines) {
     if (/→|->/.test(line)) {
-      const lcWordPattern = /\b([a-z][a-z_]{2,})\b/g;
+      const lcWordPattern = /(?:^|[\s,|→>])([a-zäöüß][a-zäöüß_]{2,})(?=[\s,|→<\-]|$)/g;
       while ((match = lcWordPattern.exec(line)) !== null) {
         const word = match[1];
         if (!LOWERCASE_NOISE.has(word) && word.length >= 3) {
@@ -179,7 +179,7 @@ export function extractTransitions(text: string): [string, string][] {
   }
 
   // Pattern 3: lowercase transitions — "confirmed → seated" (Hey-Listen style)
-  const lcArrowPattern = /\b([a-z][a-z_]{2,})\s*(?:→|->)\s*([a-z][a-z_]{2,})\b/g;
+  const lcArrowPattern = /(?:^|[\s,|])([a-zäöüß][a-zäöüß_]{2,})\s*(?:→|->)\s*([a-zäöüß][a-zäöüß_]{2,})(?=[\s,|]|$)/g;
   while ((match = lcArrowPattern.exec(text)) !== null) {
     const from = match[1].toUpperCase();
     const to = match[2].toUpperCase();
@@ -276,7 +276,7 @@ export function extractRoles(text: string): string[] {
   // Pattern 1: role-like words (snake_case or simple words) in permission tables or sentences
   // Matches: "policyholder", "claims_agent", "fraud_analyst", "insurer_admin"
   // Also matches simple words like "policyholder" (no underscore)
-  const roleWordPattern = /\b([a-z][a-z_]{2,})\b/g;
+  const roleWordPattern = /(?:^|[\s,|`'"])([a-zäöüß][a-zäöüß_]{2,})(?=[\s,|`'"]|$)/g;
   let match;
   while ((match = roleWordPattern.exec(text)) !== null) {
     const word = match[1];
@@ -286,7 +286,7 @@ export function extractRoles(text: string): string[] {
   }
 
   // Pattern 2: Role names in backticks — `policyholder`, `admin`
-  const backtickPattern = /`([a-z][a-z_]{2,})`/g;
+  const backtickPattern = /`([a-zäöüß][a-zäöüß_]{2,})`/g;
   while ((match = backtickPattern.exec(text)) !== null) {
     const word = match[1];
     if (ROLE_KEYWORDS.some(kw => word.includes(kw)) || COMMON_ROLES.has(word)) {
@@ -295,7 +295,7 @@ export function extractRoles(text: string): string[] {
   }
 
   // Pattern 3: "Rolle: policyholder" or "Role: admin, user, moderator" (comma-separated list)
-  const roleLabelPattern = /(?:rolle|role)\s*:\s*((?:[a-z][a-z_]{2,}(?:\s*,\s*)?)+)/gi;
+  const roleLabelPattern = /(?:rolle|role)\s*:\s*((?:[a-zäöüß][a-zäöüß_]{2,}(?:\s*,\s*)?)+)/gi;
   while ((match = roleLabelPattern.exec(text)) !== null) {
     const parts = match[1].split(/\s*,\s*/);
     for (const part of parts) {
@@ -307,7 +307,7 @@ export function extractRoles(text: string): string[] {
   }
 
   // Pattern 3b: user.role === 'roleName' or user.role === "roleName" (all occurrences)
-  const userRolePattern = /user\.role\s*===?\s*['"]([a-z][a-z_]{2,})['"]|req\.user\.role\s*===?\s*['"]([a-z][a-z_]{2,})['"]|ctx\.user\.role\s*===?\s*['"]([a-z][a-z_]{2,})['"]|role\s*===?\s*['"]([a-z][a-z_]{2,})['"]/g;
+  const userRolePattern = /user\.role\s*===?\s*['"]([a-zäöüß][a-zäöüß_]{2,})['"]|req\.user\.role\s*===?\s*['"]([a-zäöüß][a-zäöüß_]{2,})['"]|ctx\.user\.role\s*===?\s*['"]([a-zäöüß][a-zäöüß_]{2,})['"]|role\s*===?\s*['"]([a-zäöüß][a-zäöüß_]{2,})['"]/g;
   while ((match = userRolePattern.exec(text)) !== null) {
     const role = (match[1] || match[2] || match[3] || match[4] || '').toLowerCase();
     if (role.length >= 3) {
@@ -316,7 +316,7 @@ export function extractRoles(text: string): string[] {
   }
 
   // Pattern 4: "| policyholder | ✓ |" in permission tables
-  const tableRolePattern = /^\|\s*([a-z][a-z_]{2,})\s*\|/gm;
+  const tableRolePattern = /^\|\s*([a-zäöüß][a-zäöüß_]{2,})\s*\|/gm;
   while ((match = tableRolePattern.exec(text)) !== null) {
     const word = match[1];
     if (ROLE_KEYWORDS.some(kw => word.includes(kw)) || COMMON_ROLES.has(word)) {
@@ -587,6 +587,9 @@ const LOWERCASE_NOISE = new Set([
   "then", "after", "before", "durch", "nach", "von", "mit", "oder", "und",
   "nur", "auch", "als", "bei", "per", "bis", "alle", "jede", "jeder",
   "automatisch", "manuell", "korrektur", "reaktivierung", "gast",
+  "begründung", "pflicht", "kündigungsfrist", "wochen", "kinder",
+  "betreuung", "startdatum", "platzanzahl", "prüft", "unterlagen",
+  "beginnt", "frist", "freigegeben", "reduziert", "zeitpunkt",
 ]);
 
 const GENERIC_WORDS = new Set([

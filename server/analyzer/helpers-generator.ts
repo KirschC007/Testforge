@@ -897,5 +897,70 @@ export async function clickButton(page: Page, textPattern: string): Promise<void
 export async function expectVisible(page: Page, textPattern: string, timeout = 10000): Promise<void> {
   await expect(page.getByText(new RegExp(textPattern, "i"))).toBeVisible({ timeout });
 }
+
+/**
+ * Smart form fill — tries multiple selector strategies in order.
+ * Fallback: getByLabel → getByPlaceholder → getByTestId → input[name] → text proximity
+ */
+export async function smartFill(page: Page, fieldName: string, value: string): Promise<void> {
+  const strategies = [
+    () => page.getByLabel(new RegExp(fieldName, "i")).first(),
+    () => page.getByPlaceholder(new RegExp(fieldName, "i")).first(),
+    () => page.getByTestId(new RegExp(fieldName.replace(/\\s+/g, "[-_]?"), "i")).first(),
+    () => page.locator(\`input[name="\${fieldName}"], textarea[name="\${fieldName}"], input[name="\${fieldName.replace(/([A-Z])/g, '_$1').toLowerCase()}"]\`).first(),
+  ];
+  for (const strategy of strategies) {
+    const el = strategy();
+    if (await el.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await el.fill(value);
+      return;
+    }
+  }
+  throw new Error(\`[TestForge] Field "\${fieldName}" not found — tried: label, placeholder, testid, name attr\`);
+}
+
+/**
+ * Smart select — tries native <select>, then combobox role, then testid.
+ */
+export async function smartSelect(page: Page, fieldName: string, value: string): Promise<void> {
+  const byLabel = page.getByLabel(new RegExp(fieldName, "i")).first();
+  if (await byLabel.isVisible({ timeout: 1500 }).catch(() => false)) {
+    try { await byLabel.selectOption(value); return; } catch { /* not a <select> */ }
+  }
+  const combobox = page.getByRole("combobox", { name: new RegExp(fieldName, "i") }).first();
+  if (await combobox.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await combobox.click();
+    await page.getByRole("option", { name: new RegExp(value, "i") }).first().click();
+    return;
+  }
+  const byTestId = page.getByTestId(new RegExp(fieldName.replace(/\\s+/g, "[-_]?"), "i")).first();
+  if (await byTestId.isVisible({ timeout: 1500 }).catch(() => false)) {
+    try { await byTestId.selectOption(value); return; } catch { /* */ }
+    await byTestId.click();
+    await page.getByText(new RegExp(value, "i")).first().click();
+    return;
+  }
+  throw new Error(\`[TestForge] Select "\${fieldName}" not found\`);
+}
+
+/**
+ * Smart click — tries button role, then text, then link, then testid.
+ */
+export async function smartClick(page: Page, textPattern: string): Promise<void> {
+  const strategies = [
+    () => page.getByRole("button", { name: new RegExp(textPattern, "i") }).first(),
+    () => page.getByRole("link", { name: new RegExp(textPattern, "i") }).first(),
+    () => page.getByTestId(new RegExp(textPattern.replace(/\\s+/g, "[-_]?"), "i")).first(),
+    () => page.getByText(new RegExp(textPattern, "i")).first(),
+  ];
+  for (const strategy of strategies) {
+    const el = strategy();
+    if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await el.click();
+      return;
+    }
+  }
+  throw new Error(\`[TestForge] Button "\${textPattern}" not found\`);
+}
 `;
 }

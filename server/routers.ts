@@ -97,6 +97,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       }
       // Add report
       archive.append(result.report, { name: "testforge-report.md" });
+      archive.append(result.htmlReport, { name: "testforge-report.html" });
       // Add all generated helper files (api.ts, auth.ts, factories.ts, schemas.ts, etc.)
       const helpers = result.helpers;
       for (const [filename, content] of Object.entries(helpers)) {
@@ -454,6 +455,7 @@ export const appRouter = router({
             passThrough.on("data", (chunk: Buffer) => chunks.push(chunk));
             for (const tf of result.testFiles) archive.append(tf.content, { name: tf.filename });
             archive.append(result.report, { name: "testforge-report.md" });
+            archive.append(result.htmlReport, { name: "testforge-report.html" });
             for (const [filename, content] of Object.entries(result.helpers)) archive.append(content, { name: filename });
             for (const extFile of result.extendedSuite.files) {
               if (!result.testFiles.some(tf => tf.filename === extFile.filename)) {

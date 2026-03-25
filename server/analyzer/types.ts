@@ -353,6 +353,7 @@ export interface AnalysisJobResult {
   riskModel: RiskModel;
   validatedSuite: ValidatedProofSuite;
   report: string;
+  htmlReport: string;
   testFiles: Array<{ filename: string; content: string }>;
   helpers: GeneratedHelpers;
   llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
