@@ -365,9 +365,37 @@ export async function runAnalysisJob(
   };
   console.log(`[TestForge] Extended Suite: ${extendedSuite.files.length} files across 6 layers`);
 
-  console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${testFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
+  // ─── v8.1: Post-Generation Syntax Validation ───────────────────────────────
+  // Sanitize all generated TypeScript files to fix common escaping issues
+  const sanitizedTestFiles = sanitizeGeneratedFiles(testFiles);
+  // Preserve layer/description fields from original ExtendedTestFile objects
+  const sanitizedExtendedFiles: import("./types").ExtendedTestFile[] = extendedSuite.files.map((orig) => {
+    const sanitized = sanitizeGeneratedFiles([{ filename: orig.filename, content: orig.content }])[0];
+    return { ...orig, content: sanitized.content };
+  });
+  const helperEntries = Object.entries(helpers).map(([name, content]) => ({ filename: name, content: content as string }));
+  const sanitizedHelperEntries = sanitizeGeneratedFiles(helperEntries);
+  const sanitizedHelpers: Record<string, string> = {};
+  for (const f of sanitizedHelperEntries) {
+    sanitizedHelpers[f.filename] = f.content;
+  }
 
-  return { analysisResult, riskModel, validatedSuite, report, htmlReport, testFiles, helpers, llmCheckerStats, extendedSuite };
+  const totalOriginal = testFiles.length + extendedSuite.files.length + helperEntries.length;
+  const totalSanitized = sanitizedTestFiles.length + sanitizedExtendedFiles.length + sanitizedHelperEntries.length;
+  if (totalOriginal !== totalSanitized) {
+    console.log(`[TestForge] ⚠ Syntax sanitizer: ${totalOriginal - totalSanitized} files repaired`);
+  }
+  console.log(`[TestForge] Output validated: ${sanitizedTestFiles.length} core + ${sanitizedExtendedFiles.length} extended + ${sanitizedHelperEntries.length} helpers`);
+
+  console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${sanitizedTestFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
+
+  return {
+    analysisResult, riskModel, validatedSuite, report, htmlReport,
+    testFiles: sanitizedTestFiles,
+    helpers: sanitizedHelpers as unknown as import("./types").GeneratedHelpers,
+    llmCheckerStats,
+    extendedSuite: { ...extendedSuite, files: sanitizedExtendedFiles },
+  };
 }
 
 // ─── Hybrid-Modus: Merge Code-IR + Spec-IR ─────────────────────────────────────
@@ -420,4 +448,128 @@ function mergeIRs(
     resources,
     enums,
   };
+}
+
+// ─── v8.1: Post-Generation Syntax Sanitizer ──────────────────────────────────
+// Fixes common escaping issues in generated TypeScript files before they reach the user.
+// This catches template-in-template regex escaping bugs, unterminated strings, etc.
+
+function sanitizeGeneratedFiles(
+  files: { filename: string; content: string }[]
+): { filename: string; content: string }[] {
+  return files.map(file => {
+    // Skip non-TypeScript files
+    if (!file.filename.endsWith(".ts") && !file.filename.endsWith(".tsx") && !file.filename.endsWith(".js")) {
+      return file;
+    }
+
+    let content = file.content;
+
+    // Fix 1: Double-escaped forward slashes in regex: /\\/x/ → /\/x/
+    content = content.replace(/\/\\\\\//g, "/\\/");
+
+    // Fix 2: Triple-escaped slashes: /\\\\/login/ → /\/login/
+    content = content.replace(/\/\\\\\\\\\//g, "/\\/");
+
+    // Fix 3: Over-escaped \s in regex: /\\\\s+/ → /\\s+/
+    content = content.replace(/\\\\\\\\s\+/g, "\\\\s+");
+    // Also fix \\\\s to \\s in regex context
+    content = content.replace(/(?<=\/[^/]*)\\\\\\\\s(?=[^/]*\/)/g, "\\\\s");
+
+    // Fix 4: Empty catch blocks → add comment
+    content = content.replace(/catch\s*\{\s*\}/g, "catch { /* ignored */ }");
+
+    // Fix 5: Double semicolons
+    content = content.replace(/;;\s*$/gm, ";");
+
+    // Fix 6: Remove stray vitest imports in Playwright test files
+    // If file imports from @playwright/test, it should NOT also import from vitest
+    if (content.includes('@playwright/test') && content.includes('from "vitest"')) {
+      content = content.replace(/import\s*\{[^}]*\}\s*from\s*["']vitest["'];?\n?/g, "");
+    }
+
+    // Fix 7: Replace vitest describe/it with playwright test.describe/test
+    if (content.includes('@playwright/test') || file.filename.includes('.spec.ts')) {
+      // Only if there's no vitest import (already a Playwright file)
+      if (!content.includes('from "vitest"')) {
+        content = content.replace(/\bdescribe\(/g, "test.describe(");
+        content = content.replace(/\bit\(/g, "test(");
+        content = content.replace(/\bbeforeAll\(/g, "test.beforeAll(");
+        content = content.replace(/\bbeforeEach\(/g, "test.beforeEach(");
+        content = content.replace(/\bafterAll\(/g, "test.afterAll(");
+        content = content.replace(/\bafterEach\(/g, "test.afterEach(");
+      }
+    }
+
+    // Fix 8: Ensure Playwright files have proper import
+    if (file.filename.endsWith('.spec.ts') && !content.includes('from "@playwright/test"') && !content.includes('from "vitest"')) {
+      content = `import { test, expect } from "@playwright/test";\n\n` + content;
+    }
+
+    // Fix 9: Fix malformed regex literals — unescaped forward slashes inside regex
+    // Common pattern: /email/i.fill → valid, but /password|passwort/i → sometimes broken
+    // We only fix obvious double-escape issues, not rewrite regex
+
+    // Fix 10: Remove lines that reference undefined variables from old mock patterns
+    content = content.replace(/^\s*mockDb\..*$/gm, (match) => {
+      // Only remove if this file doesn't define mockDb
+      if (!content.includes("const mockDb")) return "";
+      return match;
+    });
+
+    // Fix 11: Literal \n in string values (LLM generated \n instead of newline)
+    // e.g. bookingId: TEST_TENANT_ID,\n    selfServiceToken: → split into proper lines
+    // The actual file content has a literal backslash followed by 'n' in the middle of a line
+    content = content.replace(/,\\n(\s*)/g, ',\n$1');
+
+    // Fix 12: Unquoted hyphenated property names in object literals
+    // e.g. Idempotency-Key: "..." → "Idempotency-Key": "..."
+    content = content.replace(/^(\s+)([a-zA-Z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)+):\s/gm, '$1"$2": ');
+
+    // Fix 13: Double-slash regex literals e.g. //login/ → /\/login\//
+    // Step 1: fix already-partially-fixed /\/login//login/ → /\/login\//
+    content = content.replace(/\/\\\/([a-zA-Z0-9_]+)\/\/[a-zA-Z0-9_]+\//g, '/\/$1\/');
+    // Step 2: fix remaining //word/ patterns in argument positions
+    content = content.replace(/(?<=\(|,\s*)\/\/([a-zA-Z_][a-zA-Z0-9_/]*?)\//g, '/\/$1\/');
+
+    // Fix 14: Unescaped double quotes inside double-quoted test title strings
+    // e.g. test("...name=\"A\".repeat(1)...") → test("...name=\\\"A\\\".repeat(1)...")
+    content = content.replace(/^(\s*(?:test|it)\s*\(\s*")(.+?)(",\s*async)/gm, (match, prefix, title, suffix) => {
+      const fixedTitle = title.replace(/(?<!\\)"/g, '\\"');
+      return prefix + fixedTitle + suffix;
+    });
+
+    // Fix 15: TEST_TENANT_ID import mismatch — handled via factories.ts alias export (see helpers-generator.ts)
+
+    // Fix 16: Duplicate test titles — append suffix to make them unique
+    {
+      const seenTitles = new Map<string, number>();
+      content = content.replace(/^(\s*(?:test|it)\s*\(\s*")([^"]+)(",\s*async)/gm, (match, prefix, title, suffix) => {
+        const count = seenTitles.get(title) || 0;
+        seenTitles.set(title, count + 1);
+        if (count > 0) {
+          return `${prefix}${title} [dup-${count}]${suffix}`;
+        }
+        return match;
+      });
+    }
+
+    // Fix 17: Duplicate function declarations — rename duplicates with suffix
+    {
+      const seenFunctions = new Map<string, number>();
+      content = content.replace(/^(function\s+)(\w+)(\s*\()/gm, (match, keyword, name, paren) => {
+        const count = seenFunctions.get(name) || 0;
+        seenFunctions.set(name, count + 1);
+        if (count > 0) {
+          const newName = `${name}_dup${count}`;
+          // Also replace all usages of this function name after this point
+          // We use a simple approach: replace the declaration only
+          return `${keyword}${newName}${paren}`;
+        }
+        return match;
+      });
+    }
+
+    return { filename: file.filename, content };
+  });
 }

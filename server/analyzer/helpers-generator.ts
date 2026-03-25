@@ -53,10 +53,24 @@ export async function loginAndGetCookie(
   username: string,
   password: string
 ): Promise<string> {
-  const response = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+  // Auto-detect REST vs tRPC: try REST-style body first (plain JSON), fall back to tRPC-style ({json: ...})
+  const isTrpc = "${loginEndpoint}".includes("trpc");
+  const primaryBody = isTrpc ? { json: { username, password } } : { username, password };
+  const fallbackBody = isTrpc ? { username, password } : { json: { username, password } };
+
+  let response = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
     headers: { "Content-Type": "application/json" },
-    data: { json: { username, password } },
+    data: primaryBody,
   });
+
+  // If primary format fails, try the alternative
+  if (!response.ok()) {
+    response = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+      headers: { "Content-Type": "application/json" },
+      data: fallbackBody,
+    });
+  }
+
   if (!response.ok()) {
     throw new Error(\`Login failed for \${username}: HTTP \${response.status()}\`);
   }
@@ -174,6 +188,9 @@ import { trpcMutation, trpcQuery } from "./api";
 // Test tenant IDs — update these to match your test environment
 export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
 export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
+// Canonical alias — always available regardless of tenant entity name
+export const TEST_TENANT_ID = TEST_${tenantEntity.toUpperCase()}_ID;
+export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;
 
 ${createEndpoint ? `
 export interface CreateTestResourceOpts {
@@ -427,13 +444,20 @@ export default defineConfig({
     {
       // Layer 1: API Security Tests (no browser needed — uses request fixture only)
       name: "api-security",
-      testMatch: /tests\/(security|business|compliance|integration|concurrency)\/.*/,
+      testMatch: [
+        "**/tests/security/**/*.ts",
+        "**/tests/business/**/*.ts",
+        "**/tests/compliance/**/*.ts",
+        "**/tests/integration/**/*.ts",
+        "**/tests/concurrency/**/*.ts",
+        "**/tests/unit/**/*.ts",
+      ],
       use: { ...devices["Desktop Chrome"] },
     },
     {
       // Layer 2: Browser E2E Tests (real Chromium browser)
       name: "browser-e2e",
-      testMatch: /tests\/e2e\/.*/,
+      testMatch: ["**/tests/e2e/**/*.ts"],
       use: {
         ...devices["Desktop Chrome"],
         headless: true,
@@ -559,8 +583,15 @@ TEST_TENANT_ID=99001
 TEST_TENANT_B_ID=99002
 
 # Credentials for each role
-${roles.map(r => `${r.envUserVar}=${r.name.toLowerCase()}@example.com
-${r.envPassVar}=changeme`).join("\n")}
+${roles.map(r => {
+  const user = r.defaultUser && r.defaultUser !== "undefined" && r.defaultUser !== ""
+    ? r.defaultUser
+    : r.name.toLowerCase().replace(/[^a-z0-9]/g, "-") + "@test.com";
+  const pass = r.defaultPass && r.defaultPass !== "undefined" && r.defaultPass !== ""
+    ? r.defaultPass
+    : "TestPass2026x";
+  return `${r.envUserVar}=${user}\n${r.envPassVar}=${pass}`;
+}).join("\n")}
 
 # Optional: Debug token for direct DB state checks
 DEBUG_API_TOKEN=
