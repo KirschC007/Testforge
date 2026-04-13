@@ -535,14 +535,20 @@ function sanitizeGeneratedFiles(
     content = content.replace(/,\\n(\s*)/g, ',\n$1');
     content = content.replace(/\);\\n/g, ');\n');
     content = content.replace(/"\\n(\s*)/g, '"\n$1');
+    // Catch remaining literal \n in comments and after values
+    content = content.replace(/([a-z0-9])\\n(\s+)/g, '$1\n$2');
 
     // ── Fix 12: Unquoted hyphenated property names ──
     // Idempotency-Key: "..." → "Idempotency-Key": "..."
     content = content.replace(/^(\s+)([a-zA-Z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)+):\s/gm, '$1"$2": ');
 
     // ── Fix 13: Unterminated regex — trailing backslash-slash ──
-    // /\/login\/ → /\/login/ (the trailing \/ breaks the regex literal)
-    content = content.replace(/\/\\\/([a-zA-Z_|][a-zA-Z0-9_|.]*)\\\//g, '/\\/$1/');
+    // /\/login\/ → /\/login/ (only remove the TRAILING \/ that breaks the regex)
+    content = content.replace(/(\/.+?)\\\/(\s*[,;)\]])/g, '$1/$2');
+
+    // ── Fix 13b: Double-slash regex (//login/) → /\/login/ ──
+    // When Fix 1 or old sanitizer stripped backslash from /\/login/ producing //login/
+    content = content.replace(/\.toHaveURL\(\/\/([a-zA-Z_|]+)\//g, '.toHaveURL(/\\/$1/');
     // ── Fix 14: Unescaped double quotes in test titles ──
     content = content.replace(/^(\s*(?:test|it)\s*\(\s*")(.+?)(",\s*async)/gm, (match, prefix, title, suffix) => {
       const fixedTitle = title.replace(/(?<!\\)"/g, '\\"');

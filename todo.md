@@ -840,3 +840,10 @@
 - [x] job-runner.ts Fix 13 überarbeitet: trailing `\/` Regex-Pattern (statt double-slash)
 - [x] job-runner.ts Fix 18: Dedup top-level `let`-Deklarationen (seenTopLevelLets Set)
 - [x] job-runner.ts Fix 19: getAdminCookie Import-Guard (kein doppelter Import wenn auth.ts Alias vorhanden)
+
+## Phase Enterprise-Hardening (v8.6)
+- [x] Dependencies: axios 1.15.0, drizzle-orm 0.45.2, vite 8.0.8, @trpc 11.16.0 (alle kritischen CVEs gepatcht)
+- [x] Enterprise-Spec: BankCore API (mandantenfähig, 12 absichtliche Bugs eingebaut)
+- [x] Pipeline-Test: 10/12 Bugs erkannt (83% Detection Rate)
+- [ ] BUG-01 SQL-Injection: Spec-seitige Formulierung "string concatenation" nicht erkannt — Prompt-Verbesserung nötig
+- [ ] BUG-11 Hardcoded Secret: JWT-Secret-Hardcoding nicht als Test-Ziel erkannt — Static Analysis Layer nötig
