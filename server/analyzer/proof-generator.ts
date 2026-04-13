@@ -2,6 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import type { Behavior, EndpointField, APIEndpoint, AnalysisResult, ProofType, ProofTarget, RiskModel, RawProof, FlowStep } from "./types";
 import { normalizeEndpointName } from "./normalize";
+import { generateSQLInjectionTest, generateHardcodedSecretTest } from "./proof-templates-security";
 
 // ─── Schicht 3: Proof Generator ───────────────────────────────────────────────
 
@@ -101,6 +102,8 @@ function getFilename(pt: ProofType): string {
     webhook: "tests/integration/webhooks.spec.ts",
     feature_gate: "tests/business/feature-gates.spec.ts",
     e2e_flow: "tests/e2e/flows.spec.ts",
+    sql_injection: "tests/security/sql-injection.spec.ts",
+    hardcoded_secret: "tests/security/hardcoded-secrets.spec.ts",
   };
   return map[pt];
 }
@@ -3497,6 +3500,8 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     webhook: generateWebhookTest,
     feature_gate: generateFeatureGateTest,
     e2e_flow: generateE2EFlowTest,
+    sql_injection: generateSQLInjectionTest,
+    hardcoded_secret: generateHardcodedSecretTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);

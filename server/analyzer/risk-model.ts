@@ -412,12 +412,78 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
     return true;
   });
 
+  // ── Global Invariant Injection ──────────────────────────────────────────────
+  // Some security invariants (SQL injection, hardcoded secrets) are spec-level concerns
+  // that may not surface in individual behavior tags. Detect them from invariants + behavior text.
+  const specInvariantText = [
+    ...analysis.ir.invariants.map(i => `${i.id} ${i.description} ${i.alwaysTrue}`),
+    ...analysis.ir.behaviors.map(b => `${b.title} ${b.preconditions.join(' ')} ${b.postconditions.join(' ')} ${b.errorCases.join(' ')}`),
+  ].join(" ").toLowerCase();
+
+  const hasSQLInjectionConcern = /sql.inject|parameteriz|prepared.stat|string.concat|raw.sql|unsanitiz|unescap|user.input.*quer|search.*quer/.test(specInvariantText);
+  const hasHardcodedSecretConcern = /hardcod|jwt.secret|api.key|secret.key|private.key|process\.env|env.variable|credential|token.rotat/.test(specInvariantText);
+
+  const alreadyHasSQLInjection = deduplicatedProofTargets.some(t => t.proofType === "sql_injection");
+  const alreadyHasHardcodedSecret = deduplicatedProofTargets.some(t => t.proofType === "hardcoded_secret");
+
+  const globalTargets: ProofTarget[] = [];
+
+  if (hasSQLInjectionConcern && !alreadyHasSQLInjection) {
+    const searchEp = analysis.ir.apiEndpoints.find(e =>
+      e.name.toLowerCase().includes("search") || e.name.toLowerCase().includes("list") || e.name.toLowerCase().includes("find")
+    ) || analysis.ir.apiEndpoints[0];
+    const syntheticBehavior = analysis.ir.behaviors.find(b =>
+      b.title.toLowerCase().includes("search") || b.title.toLowerCase().includes("query") || b.title.toLowerCase().includes("filter")
+    ) || analysis.ir.behaviors[0];
+    if (syntheticBehavior && searchEp) {
+      globalTargets.push({
+        id: `GLOBAL-SQL-INJECTION`,
+        behaviorId: syntheticBehavior.id,
+        proofType: "sql_injection",
+        riskLevel: "critical",
+        endpoint: normalizeEndpointName(searchEp.name, searchEp.method),
+        description: "SQL injection prevention — all user input must be parameterized",
+        preconditions: ["User is authenticated"],
+        assertions: [],
+        mutationTargets: [{ description: "Raw SQL string concatenation allows injection", expectedKill: true }],
+        constraints: [],
+      });
+    }
+  }
+
+  if (hasHardcodedSecretConcern && !alreadyHasHardcodedSecret) {
+    const authBehavior = analysis.ir.behaviors.find(b =>
+      b.title.toLowerCase().includes("auth") || b.title.toLowerCase().includes("login") || b.title.toLowerCase().includes("jwt")
+    ) || analysis.ir.behaviors[0];
+    if (authBehavior) {
+      globalTargets.push({
+        id: `GLOBAL-HARDCODED-SECRET`,
+        behaviorId: authBehavior.id,
+        proofType: "hardcoded_secret",
+        riskLevel: "critical",
+        endpoint: analysis.ir.apiEndpoints.find(e =>
+          e.name.toLowerCase().includes("auth") || e.name.toLowerCase().includes("me")
+        )?.name || "auth.me",
+        description: "Hardcoded secrets detection — JWT secrets, API keys must come from environment",
+        preconditions: ["User is authenticated"],
+        assertions: [],
+        mutationTargets: [{ description: "JWT secret hardcoded in source code", expectedKill: true }],
+        constraints: [],
+      });
+    }
+  }
+
+  const finalProofTargets = [...deduplicatedProofTargets, ...globalTargets];
+  if (globalTargets.length > 0) {
+    console.log(`[TestForge] Global Invariant Injection: +${globalTargets.length} targets (${globalTargets.map(t => t.proofType).join(", ")})`);
+  }
+
   const idorVectors = analysis.ir.resources.reduce(
     (acc, r) => acc + r.operations.filter(o => o === "read" || o === "create").length, 0
   );
   const csrfEndpoints = behaviors.filter(b => b.proofTypes.includes("csrf")).length;
 
-  return { behaviors, proofTargets: deduplicatedProofTargets, idorVectors, csrfEndpoints };
+  return { behaviors, proofTargets: finalProofTargets, idorVectors, csrfEndpoints };
 }
 
 function assessRiskLevel(b: Behavior): RiskLevel {
@@ -483,6 +549,8 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     webhook: ["webhook", "callback", "event"],
     feature_gate: ["create", "series", "ai", "premium"],
     e2e_flow: ["create", "submit", "book", "order", "register"],
+    sql_injection: ["create", "update", "get", "list", "search"],
+    hardcoded_secret: [],
   };
 
   const kws = keywords[proofType] || [];

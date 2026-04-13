@@ -191,7 +191,7 @@ export interface CheckResult {
 // ─── Risk Model ───────────────────────────────────────────────────────────────
 
 export type RiskLevel = "critical" | "high" | "medium" | "low";
-export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix" | "flow" | "cron_job" | "webhook" | "feature_gate" | "e2e_flow";
+export type ProofType = "idor" | "csrf" | "rate_limit" | "business_logic" | "dsgvo" | "status_transition" | "boundary" | "risk_scoring" | "spec_drift" | "concurrency" | "idempotency" | "auth_matrix" | "flow" | "cron_job" | "webhook" | "feature_gate" | "e2e_flow" | "sql_injection" | "hardcoded_secret";
 
 export interface ScoredBehavior {
   behavior: Behavior;

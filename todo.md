@@ -847,3 +847,9 @@
 - [x] Pipeline-Test: 10/12 Bugs erkannt (83% Detection Rate)
 - [ ] BUG-01 SQL-Injection: Spec-seitige Formulierung "string concatenation" nicht erkannt — Prompt-Verbesserung nötig
 - [ ] BUG-11 Hardcoded Secret: JWT-Secret-Hardcoding nicht als Test-Ziel erkannt — Static Analysis Layer nötig
+
+## Phase Enterprise-Hardening v2 (v8.7)
+- [ ] Fix: SQL-Injection-Erkennung — Layer-1-Prompt um "raw SQL concatenation" als Invarianten-Kategorie erweitern
+- [ ] Fix: Static-Analysis-Layer (Layer 0) — deterministischer Code-Scanner für Hardcoded Secrets, MD5/SHA1, eval(), SQL-Concatenation
+- [ ] Fix: helpers-generator.ts — Alias-Guard: prüfen ob getAdminCookie/getUserCookie bereits als function deklariert, kein Re-Export wenn ja
+- [ ] Brutale Tests: mehr Concurrent-Tests, Negative-Amount-Chains, Cross-Tenant-Chains, AML-Bypass-Chains

@@ -238,6 +238,35 @@ export const RISK_RULES: RiskRule[] = [
     },
     priority: 25,
   },
+  // ─── SQL Injection ──────────────────────────────────────────────────────────
+  {
+    proofType: "sql_injection",
+    triggers: {
+      keywords: [
+        "sql injection", "sql-injection", "raw sql", "string concatenation",
+        "parameterized", "prepared statement", "query builder", "orm bypass",
+        "user input", "search query", "filter query", "dynamic query",
+        "unsanitized", "unescaped", "injection attack",
+      ],
+      tags: ["sql-injection", "injection", "security"],
+      endpointPatterns: ["*.search", "*.filter", "*.query", "*.list", "*.find"],
+    },
+    priority: 92,
+  },
+  // ─── Hardcoded Secret ─────────────────────────────────────────────────────
+  {
+    proofType: "hardcoded_secret",
+    triggers: {
+      keywords: [
+        "hardcoded", "hardcoded secret", "hardcoded key", "hardcoded password",
+        "jwt secret", "api key", "secret key", "private key", "env variable",
+        "environment variable", "process.env", "config secret", "credential",
+        "token rotation", "secret rotation", "secret management",
+      ],
+      tags: ["hardcoded-secret", "secret", "credential", "security"],
+    },
+    priority: 91,
+  },
   // ─── E2E Flow ─────────────────────────────────────────────────────────────
   {
     proofType: "e2e_flow",
