@@ -396,7 +396,7 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
     // Pattern: export const bookingsRouter = router({...}) → "bookings"
     // Fallback: use filename (e.g. accounts.ts → "accounts")
     const fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
-    const GENERIC_NAMES = new Set(["app", "api", "trpc", "main", "index", "router", "routes"]);
+    const GENERIC_NAMES = new Set(["app", "api", "trpc", "main", "index", "router", "routes", "routers", "server", "backend", "handlers", "controller", "controllers"]);
 
     // Find ALL router exports in the file
     const routerExportRegex = /export\s+const\s+(\w+)\s*=\s*(?:createTRPCRouter|router|createRouter|t\.router)\s*\(\s*\{/g;
@@ -1006,8 +1006,9 @@ function inferAction(procName: string, method: string): string {
 }
 
 function inferSubject(fullName: string): string {
-  const parts = fullName.split(".");
-  return parts[0] || fullName;
+  // Use the full procedure name as subject to avoid dedup across endpoints
+  // e.g. "admin.login" → "admin login", "angebote.create" → "angebote create"
+  return fullName.replace(/\./g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
 }
 
 function buildStatusTransitions(states: string[]): [string, string][] {

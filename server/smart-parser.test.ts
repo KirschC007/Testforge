@@ -272,13 +272,22 @@ describe("semanticDedup", () => {
     expect(result[0].id).toBe("B-001");
   });
 
-  it("removes near-duplicate titles with 80%+ word overlap", () => {
+  it("removes near-duplicate titles with 90%+ word overlap (same endpoint)", () => {
     const behaviors = [
       makeBehavior("B-001", "User cannot create booking when restaurant is closed"),
-      makeBehavior("B-002", "User cannot create booking when restaurant is closed today"), // 80%+ overlap
+      makeBehavior("B-002", "User cannot create booking when restaurant is closed"), // exact duplicate
     ];
     const result = semanticDedup(behaviors);
     expect(result).toHaveLength(1);
+  });
+
+  it("keeps behaviors with same title but different endpoints (Block 3 fix)", () => {
+    const behaviors = [
+      { ...makeBehavior("B-001", "User cannot create booking when restaurant is closed"), endpoint: "bookings.create" },
+      { ...makeBehavior("B-002", "User cannot create booking when restaurant is closed"), endpoint: "reservations.create" },
+    ];
+    const result = semanticDedup(behaviors);
+    expect(result).toHaveLength(2);
   });
 
   it("keeps behaviors with different enough titles", () => {

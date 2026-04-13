@@ -597,9 +597,10 @@ Output ONLY valid JSON. No markdown.`;
 
 // ─── Pass 3: Deterministic Merge + Enrich ─────────────────────────────────────
 
-export function semanticDedup(behaviors: Behavior[]): Behavior[] {
+export function semanticDedup(behaviors: Behavior[], threshold = 0.9): Behavior[] {
   const kept: Behavior[] = [];
-  const titles = new Set<string>();
+  // Key = normalized title + endpoint combination (different endpoints = different behaviors)
+  const seen = new Set<string>();
 
   for (const b of behaviors) {
     // Normalize title for comparison
@@ -608,21 +609,31 @@ export function semanticDedup(behaviors: Behavior[]): Behavior[] {
       .replace(/\s+/g, " ")
       .trim();
 
-    // Check for near-duplicates
+    // Include endpoint/subject in dedup key — same title on different endpoints is NOT a dupe
+    const endpoint = (b as any).endpoint || b.subject || "";
+    const dedupKey = `${normalized}::${endpoint}`;
+
+    // Exact match = dupe
+    if (seen.has(dedupKey)) continue;
+
+    // Check for near-duplicates (same endpoint AND similar title)
     let isDupe = false;
-    for (const existing of Array.from(titles)) {
-      if (existing === normalized) { isDupe = true; break; }
-      // Simple word-overlap check: if 80%+ of words match, it's a dupe
+    for (const existing of Array.from(seen)) {
+      const [existingTitle, existingEndpoint] = existing.split("::");
+      // Different endpoints → never a dupe
+      if (existingEndpoint && endpoint && existingEndpoint !== endpoint) continue;
+      // Same endpoint or no endpoint info → check title similarity
+      if (existingTitle === normalized) { isDupe = true; break; }
       const wordsA = new Set(normalized.split(" ").filter((w: string) => w.length > 3));
-      const wordsB = new Set(existing.split(" ").filter((w: string) => w.length > 3));
+      const wordsB = new Set(existingTitle.split(" ").filter((w: string) => w.length > 3));
       if (wordsA.size === 0 || wordsB.size === 0) continue;
       const overlap = Array.from(wordsA).filter((w: string) => wordsB.has(w)).length;
       const similarity = overlap / Math.max(wordsA.size, wordsB.size);
-      if (similarity > 0.8) { isDupe = true; break; }
+      if (similarity > threshold) { isDupe = true; break; }
     }
 
     if (!isDupe) {
-      titles.add(normalized);
+      seen.add(dedupKey);
       kept.push(b);
     }
   }

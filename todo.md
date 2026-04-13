@@ -853,3 +853,17 @@
 - [ ] Fix: Static-Analysis-Layer (Layer 0) — deterministischer Code-Scanner für Hardcoded Secrets, MD5/SHA1, eval(), SQL-Concatenation
 - [ ] Fix: helpers-generator.ts — Alias-Guard: prüfen ob getAdminCookie/getUserCookie bereits als function deklariert, kein Re-Export wenn ja
 - [ ] Brutale Tests: mehr Concurrent-Tests, Negative-Amount-Chains, Cross-Tenant-Chains, AML-Bypass-Chains
+
+## v9.0 Briefing-Implementierung
+
+- [ ] Block 1: IIFE-Alias in helpers-generator.ts entfernen
+- [ ] Block 2: Fix 19 (Auth dedup) + Fix 20 (@prisma/client) in job-runner.ts
+- [ ] Block 3: semanticDedup Threshold 0.8→0.9 + Endpoint-aware in smart-parser.ts
+- [ ] Block 4: LLM-Code-Pass in job-runner.ts
+- [ ] Block 5: static-analyzer.ts (neue Datei, 15 Rules) + Integration in job-runner.ts + report.ts
+- [ ] Block 6: Fix 13 in job-runner.ts verifizieren
+- [ ] Block 7: Fix 11 in job-runner.ts erweitern
+- [ ] TypeScript: 0 Fehler
+- [ ] Vitest: ≥611/626 grün
+- [ ] Xpansio-Pipeline: >15 Behaviors (war 6)
+- [ ] Verifikations-Checks: keine Duplicate-Exports, kein @prisma/client, kein //login/
