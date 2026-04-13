@@ -2905,12 +2905,12 @@ test.describe("Idempotency: ${behaviorTitle}", () => {
     const payload = basePayload_${fnSuffix}();
     // First request
     const response1 = await trpcMutation(request, "${endpoint}", payload, cookie);
-    expect(response1.status).toBeOneOf([200, 201]);
+    expect([200, 201]).toContain(response1.status);
     const id1 = response1.data?.result?.data?.id;
     // Second identical request
     const response2 = await trpcMutation(request, "${endpoint}", payload, cookie);
     // Must succeed or return conflict — never 500
-    expect(response2.status).toBeOneOf([200, 201, 409]);
+    expect([200, 201, 409]).toContain(response2.status);
     if (response2.status === 200 || response2.status === 201) {
       // If it succeeds, must return the same resource
       const id2 = response2.data?.result?.data?.id;
@@ -2944,10 +2944,10 @@ test.describe("Idempotency: ${behaviorTitle}", () => {
     const payload = { ...basePayload_${fnSuffix}(), idempotencyKey };
     // First call
     const response1 = await trpcMutation(request, "${endpoint}", payload, cookie);
-    expect(response1.status).toBeOneOf([200, 201, 422]); // 422 if idempotencyKey not supported
+    expect([200, 201, 422]).toContain(response1.status); // 422 if idempotencyKey not supported
     // Second call with same key
     const response2 = await trpcMutation(request, "${endpoint}", payload, cookie);
-    expect(response2.status).toBeOneOf([200, 201, 409, 422]);
+    expect([200, 201, 409, 422]).toContain(response2.status);
     // If both succeed, they must return identical data
     if ((response1.status === 200 || response1.status === 201) &&
         (response2.status === 200 || response2.status === 201)) {
@@ -3025,7 +3025,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     // Kills: ${killDesc}
     const cookie = await ${roleFn}(request);
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
-    expect(response.status).toBeOneOf([401, 403]);
+    expect([401, 403]).toContain(response.status);
     // Kills: ${killDesc} — verify no data leaked in error response
     const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
@@ -3040,7 +3040,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     // Kills: ${killDesc}
     const cookie = await ${adminFnName}(request);
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
+    expect([200, 201]).toContain(response.status);
     // Kills: ${killDesc} — verify response has expected structure (not empty/null)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
@@ -3055,7 +3055,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   test("${role.name} must NOT be able to ${action} ${object}", async ({ request }) => {
     const roleCookie = await ${roleFn}(request);
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), roleCookie);
-    expect(response.status).toBeOneOf([401, 403]);
+    expect([401, 403]).toContain(response.status);
     // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
@@ -3078,14 +3078,14 @@ test.describe("Auth Matrix: ${behaviorTitle}", () => {
   test("${adminRole?.name || "admin"} must be able to ${action} ${object}", async ({ request }) => {
     const cookie = await ${adminFnName}(request);
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
-    expect(response.status).toBeOneOf([200, 201]);
+    expect([200, 201]).toContain(response.status);
     // Verify response has data (not empty)
     const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), "");
-    expect(response.status).toBeOneOf([401, 403]);
+    expect([401, 403]).toContain(response.status);
     // Must not leak data to unauthenticated callers
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
@@ -3101,7 +3101,7 @@ ${nonAdminTests}
       ${tenantEntity}Id: ${tenantConst} + 99999, // Bug 3 Fix: use numeric offset from real tenantConst
     };
     const response = await ${trpcFn}(request, "${endpoint}", crossTenantPayload, cookie);
-    expect(response.status).toBeOneOf([401, 403, 404]);
+    expect([401, 403, 404]).toContain(response.status);
     // Must not leak data from other tenant
     const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();

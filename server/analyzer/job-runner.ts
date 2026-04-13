@@ -727,6 +727,17 @@ function sanitizeGeneratedFiles(
       }
     }
 
+    // ── Fix 21: toBeOneOf → toContain (Playwright-kompatibel) ──
+    // toBeOneOf existiert in Jest/Vitest aber NICHT in Playwright
+    if (content.includes("toBeOneOf")) {
+      const before21 = content;
+      content = content.replace(
+        /expect\(([^)]+)\)\.toBeOneOf\(\[([^\]]+)\]\)/g,
+        "expect([$2]).toContain($1)"
+      );
+      if (content !== before21) fixes++;
+    }
+
     if (fixes > 0) {
       console.log(`[TestForge] Sanitizer: ${file.filename} — ${fixes} fixes applied`);
       totalFixes += fixes;

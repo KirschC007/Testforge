@@ -867,3 +867,10 @@
 - [ ] Vitest: ≥611/626 grün
 - [ ] Xpansio-Pipeline: >15 Behaviors (war 6)
 - [ ] Verifikations-Checks: keine Duplicate-Exports, kein @prisma/client, kein //login/
+
+## v9.1 Fixes
+- [x] FIX 1A: toBeOneOf -> toContain in proof-generator.ts
+- [x] FIX 1B: Safety Net Sanitizer in job-runner.ts (Fix 21)
+- [x] FIX 2A: "routers" zu GENERIC_NAMES in code-parser.ts
+- [x] FIX 2B: Nested Router Detection in code-parser.ts
+- [x] FIX 3: Dedup-Threshold in smart-parser.ts pruefen
