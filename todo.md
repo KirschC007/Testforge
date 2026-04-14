@@ -874,3 +874,6 @@
 - [x] FIX 2A: "routers" zu GENERIC_NAMES in code-parser.ts
 - [x] FIX 2B: Nested Router Detection in code-parser.ts
 - [x] FIX 3: Dedup-Threshold in smart-parser.ts pruefen
+- [x] FIX: Cancel-Guard nach Layer 5 (cancelledJobs.has check)
+- [x] FIX: zlib level 9 → level 1 (ZIP-Bau 5-10x schneller)
+- [x] FIX: resultJson früh speichern (vor ZIP-Bau)

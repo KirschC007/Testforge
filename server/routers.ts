@@ -83,16 +83,42 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         await updateAnalysis(analysisId, update as any);
       }, industryPack, { baseUrl, authToken });
 
+      // Cancel-Guard: check if job was cancelled while Layer 5 was running (no progress callback after L5)
+      if (cancelledJobs.has(analysisId)) {
+        cancelledJobs.delete(analysisId);
+        throw new Error("Job cancelled by user");
+      }
+
       // Store report and test files in S3
       const reportKey = `analyses/${analysisId}/testforge-report.md`;
       const { url: reportUrl } = await storagePut(reportKey, Buffer.from(result.report), "text/markdown");
+
+      // Pre-save resultJson so data is available even if ZIP upload fails
+      const suite = result.validatedSuite;
+      await updateAnalysis(analysisId, {
+        status: "running",
+        progressLayer: 5,
+        progressMessage: `ZIP wird erstellt...`,
+        resultJson: {
+          analysisResult: result.analysisResult,
+          riskModel: result.riskModel,
+          validatedSuite: suite,
+          report: result.report,
+          testFileCount: result.testFiles.length,
+          specHealth: result.analysisResult.specHealth,
+          llmCheckerStats: result.llmCheckerStats,
+          industryPack: industryPack ?? null,
+        } as any,
+        behaviorCount: result.analysisResult.ir.behaviors.length,
+      });
 
       // Build ZIP with all test files + report
       const archiver = await import("archiver");
       const { PassThrough } = await import("stream");
 
       const chunks: Buffer[] = [];
-      const archive = archiver.default("zip", { zlib: { level: 9 } });
+      // Use level 1 (fastest) instead of level 9 — ZIP is for download, not long-term storage
+      const archive = archiver.default("zip", { zlib: { level: 1 } });
       const passThrough = new PassThrough();
 
       // Pipe archive output into passthrough so we can collect chunks
@@ -152,7 +178,6 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       const zipKey = `analyses/${analysisId}/testforge-output.zip`;
       const { url: zipUrl } = await storagePut(zipKey, zipBuffer, "application/zip");
 
-      const suite = result.validatedSuite;
       await updateAnalysis(analysisId, {
         status: "completed",
         resultJson: {
@@ -493,7 +518,7 @@ export const appRouter = router({
             const archiver = await import("archiver");
             const { PassThrough } = await import("stream");
             const chunks: Buffer[] = [];
-            const archive = archiver.default("zip", { zlib: { level: 9 } });
+            const archive = archiver.default("zip", { zlib: { level: 1 } });
             const passThrough = new PassThrough();
             archive.pipe(passThrough);
             passThrough.on("data", (chunk: Buffer) => chunks.push(chunk));
