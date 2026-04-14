@@ -86,9 +86,14 @@ export async function loginAndGetCookie(
   if (!response.ok()) {
     throw new Error(\`Login failed for \${username}: HTTP \${response.status()}\`);
   }
+  // Support both Cookie-based auth (tRPC/session) and JWT Bearer Token (REST)
   const setCookie = response.headers()["set-cookie"];
-  if (!setCookie) throw new Error(\`Login succeeded but no cookie returned for \${username}\`);
-  return setCookie;
+  if (setCookie) return setCookie;
+  // Try JWT Bearer Token from response body
+  const body = await response.json().catch(() => null);
+  const token = body?.token ?? body?.accessToken ?? body?.access_token ?? body?.jwt;
+  if (token) return "Bearer " + token;
+  throw new Error("Login succeeded but no auth credential returned for " + username);
 }
 
 export async function trpcMutation(
@@ -99,13 +104,41 @@ export async function trpcMutation(
   extraHeaders?: Record<string, string>
 ): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...extraHeaders };
-  if (cookieHeader) headers["Cookie"] = cookieHeader;
+  if (cookieHeader) {
+    if (cookieHeader.startsWith("Bearer ")) headers["Authorization"] = cookieHeader;
+    else headers["Cookie"] = cookieHeader;
+  }
   // REST-path detection: if procedure contains "/", treat as REST endpoint
+  // Handle "METHOD /path" format (e.g. "POST /api/auth/login" or "GET /api/users")
+  const verbMatch = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/.*)/i);
   const isRestPath = procedure.includes("/");
-  const url = isRestPath ? \`\${BASE_URL}\${procedure.startsWith("/") ? "" : "/"}\${procedure}\` : \`\${BASE_URL}/api/trpc/\${procedure}\`;
-  const response = isRestPath
-    ? await request.post(url, { headers, data: input })
-    : await request.post(url, { headers, data: { json: input } });
+  let restMethod = "POST";
+  let restPath = procedure;
+  if (verbMatch) {
+    restMethod = verbMatch[1].toUpperCase();
+    restPath = verbMatch[2];
+  } else if (isRestPath) {
+    restPath = procedure.startsWith("/") ? procedure : "/" + procedure;
+  }
+  let response: any;
+  if (isRestPath) {
+    const url = \`\${BASE_URL}\${restPath}\`;
+    if (restMethod === "GET") {
+      const qs = Object.keys(input).length > 0 ? "?" + new URLSearchParams(Object.entries(input).map(([k, v]) => [k, String(v)])).toString() : "";
+      response = await request.get(url + qs, { headers });
+    } else if (restMethod === "PUT") {
+      response = await request.put(url, { headers, data: input });
+    } else if (restMethod === "PATCH") {
+      response = await request.patch(url, { headers, data: input });
+    } else if (restMethod === "DELETE") {
+      response = await request.delete(url, { headers, data: input });
+    } else {
+      response = await request.post(url, { headers, data: input });
+    }
+  } else {
+    const url = \`\${BASE_URL}/api/trpc/\${procedure}\`;
+    response = await request.post(url, { headers, data: { json: input } });
+  }
   const body = await response.json().catch(() => null);
   const data = isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null);
   const error = isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? body?.[0]?.error ?? null);
@@ -119,14 +152,37 @@ export async function trpcQuery(
   cookieHeader?: string
 ): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
   const headers: Record<string, string> = {};
-  if (cookieHeader) headers["Cookie"] = cookieHeader;
+  if (cookieHeader) {
+    if (cookieHeader.startsWith("Bearer ")) headers["Authorization"] = cookieHeader;
+    else headers["Cookie"] = cookieHeader;
+  }
   // REST-path detection: if procedure contains "/", treat as REST endpoint
+  // Handle "METHOD /path" format (e.g. "GET /api/users" or "POST /api/auth/login")
+  const verbMatchQ = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/.*)/i);
   const isRestPath = procedure.includes("/");
+  let restMethodQ = "GET";
+  let restPathQ = procedure;
+  if (verbMatchQ) {
+    restMethodQ = verbMatchQ[1].toUpperCase();
+    restPathQ = verbMatchQ[2];
+  } else if (isRestPath) {
+    restPathQ = procedure.startsWith("/") ? procedure : "/" + procedure;
+  }
   let response: any;
   if (isRestPath) {
-    const base = procedure.startsWith("/") ? procedure : \`/\${procedure}\`;
-    const qs = Object.keys(input).length > 0 ? \`?\${new URLSearchParams(Object.entries(input).map(([k, v]) => [k, String(v)])).toString()}\` : "";
-    response = await request.get(\`\${BASE_URL}\${base}\${qs}\`, { headers });
+    const qs = Object.keys(input).length > 0 ? "?" + new URLSearchParams(Object.entries(input).map(([k, v]) => [k, String(v)])).toString() : "";
+    const url = \`\${BASE_URL}\${restPathQ}\`;
+    if (restMethodQ === "POST") {
+      response = await request.post(url, { headers, data: input });
+    } else if (restMethodQ === "PUT") {
+      response = await request.put(url, { headers, data: input });
+    } else if (restMethodQ === "PATCH") {
+      response = await request.patch(url, { headers, data: input });
+    } else if (restMethodQ === "DELETE") {
+      response = await request.delete(url, { headers });
+    } else {
+      response = await request.get(url + qs, { headers });
+    }
   } else {
     response = await request.get(
       \`\${BASE_URL}/api/trpc/\${procedure}?input=\${encodeURIComponent(JSON.stringify({ json: input }))}\`,

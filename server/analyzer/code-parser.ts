@@ -869,7 +869,10 @@ function buildIRFromCode(
     });
 
     // Build APIEndpoint
-    const httpMethod = `${proc.method} /api/trpc/${proc.fullName}`;
+    // For REST routes (Express/Next.js), fullName already contains "METHOD /path"
+    // For tRPC procedures, fullName is just the procedure name (e.g. "auth.login")
+    const isRestRoute = /^(GET|POST|PUT|PATCH|DELETE)\s+\//.test(proc.fullName);
+    const httpMethod = isRestRoute ? proc.fullName : `${proc.method} /api/trpc/${proc.fullName}`;
     apiEndpoints.push({
       name: proc.fullName,
       method: httpMethod,

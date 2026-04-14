@@ -902,3 +902,9 @@
 - [x] Punkt 3A: package.json im ZIP mit korrekten Dependencies
 - [x] Punkt 3B: playwright.config.ts im ZIP mit BASE_URL aus api.ts
 - [x] Punkt 3C: README.md im ZIP mit exakten Setup-Schritten
+
+### v10.2 REST-API Modus
+- [x] code-parser.ts: Express REST-Routen korrekte httpMethod (kein /api/trpc Prefix für REST)
+- [x] helpers-generator.ts: JWT Bearer Token aus Response-Body + Authorization Header
+- [x] helpers-generator.ts: trpcMutation/trpcQuery extrahieren HTTP-Verb aus Endpoint-Namen
+- [x] helpers-generator.ts: Alle HTTP-Methoden korrekt (GET, POST, PUT, PATCH, DELETE)
