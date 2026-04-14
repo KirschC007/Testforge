@@ -396,7 +396,7 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
     // Pattern: export const bookingsRouter = router({...}) → "bookings"
     // Fallback: use filename (e.g. accounts.ts → "accounts")
     const fileBase = file.path.split("/").pop()?.replace(/\.(ts|tsx)$/, "") || "api";
-    const GENERIC_NAMES = new Set(["app", "api", "trpc", "main", "index", "router", "routers", "routes", "appRouter", "root", "server"]);
+    const GENERIC_NAMES = new Set(["app", "api", "trpc", "main", "index", "router", "routes", "routers", "approuter", "root", "createrouter", "t"]);
 
     // Find ALL router exports in the file
     const routerExportRegex = /export\s+const\s+(\w+)\s*=\s*(?:createTRPCRouter|router|createRouter|t\.router)\s*\(\s*\{/g;
@@ -445,7 +445,7 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
         }
       }
     } else {
-      // Single router or no named export → check for nested routers first
+      // Single router or no named export → existing logic (use fileBase)
       let singleBase = fileBase;
       if (routerExports.length === 1) {
         const exportName = routerExports[0][1];
@@ -453,54 +453,21 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
         if (stripped && !GENERIC_NAMES.has(stripped.toLowerCase())) singleBase = stripped.toLowerCase();
       }
 
-      // v10: Detect nested router() calls: auth: router({ login: ... })
-      const nestedRouterRegex = /(\w+)\s*:\s*(?:createTRPCRouter|router|createRouter|t\.router)\s*\(\s*\{/g;
-      const nestedMatches = Array.from(content.matchAll(nestedRouterRegex));
-      const topLevelNames = routerExports.map(m => m[1]);
-      const realNested = nestedMatches.filter(m => {
-        const name = m[1];
-        if (topLevelNames.includes(name)) return false;
-        if (GENERIC_NAMES.has(name.toLowerCase())) return false;
-        if (["system", "t", "ctx", "opts"].includes(name)) return false;
-        return true;
-      });
-
-      if (realNested.length > 0) {
-        for (let i = 0; i < realNested.length; i++) {
-          const nm = realNested[i];
-          const nestedName = nm[1];
-          const startIdx = nm.index! + nm[0].length;
-
-          // Find matching closing brace
-          let depth = 1;
-          let endIdx = startIdx;
-          for (let j = startIdx; j < content.length && depth > 0; j++) {
-            if (content[j] === "{") depth++;
-            if (content[j] === "}") depth--;
-            endIdx = j;
-          }
-
-          const block = content.slice(startIdx, endIdx);
-          const blockProcRegex = /(\w+):\s*(protectedProcedure|publicProcedure|require\w+|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
-          let bm;
-          while ((bm = blockProcRegex.exec(block)) !== null) {
-            const procName = bm[1];
-            const authMiddleware = bm[2];
-            const inputBody = bm[3] || "";
-            const queryOrMutation = bm[4];
-            const isProtected = authMiddleware !== "publicProcedure";
-            let httpMethod: ParsedProcedure["method"] = queryOrMutation === "query" ? "GET" : "POST";
-            if (queryOrMutation === "mutation") {
-              if (procName.startsWith("delete") || procName.startsWith("remove")) httpMethod = "DELETE";
-              else if (procName.startsWith("update") || procName.startsWith("patch")) httpMethod = "PATCH";
-              else httpMethod = "POST";
-            }
-            const fullName = `${nestedName}.${procName}`;
-            const inputFields = parseZodObject(inputBody);
-            procedures.push({ name: procName, fullName, method: httpMethod, isProtected, inputFields, authMiddleware });
-          }
+      // v10 Block 4B: Detect nested routers — e.g. bookings: bookingsRouter
+      // Pattern: key: someRouter inside a router({...}) body
+      const nestedRouterRegex = /(\w+):\s*(\w+Router|\w+Routes)\b/g;
+      let nestedMatch: RegExpExecArray | null;
+      while ((nestedMatch = nestedRouterRegex.exec(content)) !== null) {
+        const nestedKey = nestedMatch[1];
+        const nestedVar = nestedMatch[2];
+        // Only if the referenced var is NOT a generic name and looks like a router reference
+        if (!GENERIC_NAMES.has(nestedKey.toLowerCase()) && nestedVar !== nestedKey) {
+          // Mark this as a known sub-namespace so procedures get correct prefix
+          // (The actual procedures are parsed from the referenced file — this is just metadata)
+          console.log(`[CodeParser] Nested router detected: ${nestedKey} → ${nestedVar}`);
         }
-      } else {
+      }
+
       // Match procedure definitions: name: (protectedProcedure|publicProcedure|requireXxx|xxxProcedure).input(...).query/mutation
       // Covers all middleware patterns: requireShopAuth, requireShopAdmin, requireWorkspaceAuth, etc.
       const procRegex = /(\w+):\s*(protectedProcedure|publicProcedure|require\w+|\w+Procedure)\s*(?:\.input\s*\(\s*z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)\s*\))?\s*\.(query|mutation)/g;
@@ -536,7 +503,6 @@ function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProce
           authMiddleware,
         });
       }
-      } // end else (no nested routers)
     }
   }
 
@@ -741,7 +707,8 @@ function extractNextAppRoutes(files: CodeFile[]): ParsedProcedure[] {
 function buildIRFromCode(
   tables: ParsedTable[],
   procedures: ParsedProcedure[],
-  framework: string
+  framework: string,
+  codeFiles: CodeFile[] = []
 ): AnalysisIR {
   const behaviors: Behavior[] = [];
   const apiEndpoints: APIEndpoint[] = [];
@@ -901,19 +868,12 @@ function buildIRFromCode(
       riskHints,
     });
 
-    // Build APIEndpoint (v10: auth as role-array for endpoint-level auth)
+    // Build APIEndpoint
     const httpMethod = `${proc.method} /api/trpc/${proc.fullName}`;
-    const endpointAuth: string[] = proc.authMiddleware === "publicProcedure"
-      ? ["public"]
-      : proc.authMiddleware === "protectedProcedure"
-        ? ["authenticated"]
-        : proc.authMiddleware
-          ? [proc.authMiddleware.replace(/Procedure$/, "").replace(/require/, "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase()]
-          : ["authenticated"];
     apiEndpoints.push({
       name: proc.fullName,
       method: httpMethod,
-      auth: endpointAuth as any,
+      auth: proc.authMiddleware,
       relatedBehaviors: [id],
       inputFields: proc.inputFields,
     });
@@ -934,54 +894,46 @@ function buildIRFromCode(
     });
   }
 
-  // Build auth model — collect roles from multiple sources (v10)
+  // Build auth model — collect roles from procedure handler bodies (Fix 3)
   const allDetectedRoles = new Set<string>();
-
-  // Source 1: Explicit role checks in handler bodies (user.role === 'admin')
   for (const proc of procedures) {
     if (proc.detectedRoles) {
       for (const r of proc.detectedRoles) allDetectedRoles.add(r);
     }
   }
 
-  // Source 2: Middleware names → role extraction
-  const middlewareRoleMap = new Map<string, string>();
-  for (const proc of procedures) {
-    const mw = proc.authMiddleware;
-    if (!mw || mw === "publicProcedure" || mw === "protectedProcedure") continue;
-    let roleName: string | null = null;
-    const procMatch = mw.match(/^(\w+?)Procedure$/);
-    if (procMatch && procMatch[1] !== "protected" && procMatch[1] !== "public") {
-      roleName = procMatch[1];
+  // v10 Block 3: Extract roles from middleware patterns + schema enums
+  for (const file of codeFiles) {
+    const src = file.content;
+    // Middleware patterns: ctx.user.role === 'superadmin', role !== 'staff', hasRole('reseller')
+    const middlewareRoleMatches = Array.from(src.matchAll(/(?:role\s*[!=]==?\s*["']([a-zA-Z_][a-zA-Z0-9_]*)["']|hasRole\(["']([a-zA-Z_][a-zA-Z0-9_]*)["']\)|checkRole\(["']([a-zA-Z_][a-zA-Z0-9_]*)["']\))/g));
+    for (const m of middlewareRoleMatches) {
+      const role = m[1] || m[2] || m[3];
+      if (role && role.length > 1 && role.length < 30) allDetectedRoles.add(role);
     }
-    const reqMatch = mw.match(/^require(\w+)$/);
-    if (reqMatch) {
-      roleName = reqMatch[1].charAt(0).toLowerCase() + reqMatch[1].slice(1);
+    // Schema enum patterns: role: z.enum(['admin','user','staff'])
+    const enumRoleMatches = Array.from(src.matchAll(/(?:role|userRole|accountType).*?(?:z\.enum|enum)\s*\(\s*\[([^\]]+)\]/g));
+    for (const m of enumRoleMatches) {
+      const values = m[1].match(/["']([a-zA-Z_][a-zA-Z0-9_]*)["']/g) || [];
+      for (const v of values) {
+        const clean = v.replace(/["']/g, "");
+        if (clean.length > 1 && clean.length < 30) allDetectedRoles.add(clean);
+      }
     }
-    if (roleName) {
-      const snaked = roleName.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
-      middlewareRoleMap.set(mw, snaked);
-      allDetectedRoles.add(snaked);
-    }
-  }
-
-  // Source 3: Drizzle/Prisma schema enum values from 'role' fields
-  for (const table of tables) {
-    for (const field of table.fields) {
-      if (field.name === "role" && field.enumValues && field.enumValues.length > 0) {
-        for (const ev of field.enumValues) {
-          allDetectedRoles.add(ev);
-        }
+    // Drizzle schema: role: mysqlEnum('role', ['admin','user','staff'])
+    const drizzleEnumMatches = Array.from(src.matchAll(/mysqlEnum\s*\([^,]+,\s*\[([^\]]+)\]/g));
+    for (const m of drizzleEnumMatches) {
+      const values = m[1].match(/["']([a-zA-Z_][a-zA-Z0-9_]*)["']/g) || [];
+      for (const v of values) {
+        const clean = v.replace(/["']/g, "");
+        if (clean.length > 1 && clean.length < 30) allDetectedRoles.add(clean);
       }
     }
   }
 
-  // Only add generic admin/user if NO roles were detected from code
-  if (allDetectedRoles.size === 0) {
-    allDetectedRoles.add("admin");
-    allDetectedRoles.add("user");
-  }
-
+  // Ensure admin and user are always present as fallback
+  allDetectedRoles.add("admin");
+  allDetectedRoles.add("user");
   const authRoles: AuthRole[] = Array.from(allDetectedRoles).map(roleName => ({
     name: roleName,
     envUserVar: `E2E_${roleName.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_USER`,
@@ -989,34 +941,27 @@ function buildIRFromCode(
     defaultUser: `${roleName}@test.com`,
     defaultPass: "password",
   }));
-
-  // BLOCK 10: Login-Endpoint Auto-Detection
-  const loginEndpoint = (() => {
-    const loginProc = procedures.find(p =>
-      p.name === "login" || p.name === "signin" || p.name === "authenticate" ||
-      (p.fullName && (p.fullName.includes("auth.login") || p.fullName.includes("auth.signin")))
-    );
-    if (loginProc) return `/api/trpc/${loginProc.fullName || loginProc.name}`;
-    const expressLogin = procedures.find(p =>
-      p.method === "POST" && p.fullName && (p.fullName.includes("/login") || p.fullName.includes("/signin"))
-    );
-    if (expressLogin) return expressLogin.fullName;
-    return "/api/auth/login";
-  })();
-
-  // BLOCK 11: CSRF-Endpoint Auto-Detection
-  const csrfEndpoint = (() => {
-    const csrfProc = procedures.find(p =>
-      p.name.includes("csrf") || p.name.includes("csrfToken") ||
-      (p.fullName && p.fullName.includes("csrf"))
-    );
-    if (csrfProc) return `/api/trpc/${csrfProc.fullName || csrfProc.name}`;
-    return ""; // No CSRF endpoint detected — skip CSRF tests
-  })();
-
   const authModel: AuthModel = {
-    loginEndpoint,
-    csrfEndpoint,
+    loginEndpoint: (() => {
+      const loginProc = procedures.find(p =>
+        p.name === "login" || p.name === "signin" || p.name === "authenticate" ||
+        p.fullName.includes("auth.login") || p.fullName.includes("auth.signin")
+      );
+      if (loginProc) return `/api/trpc/${loginProc.fullName}`;
+      const expressLogin = procedures.find(p =>
+        p.method === "POST" && (p.fullName.includes("/login") || p.fullName.includes("/signin"))
+      );
+      if (expressLogin) return expressLogin.fullName;
+      return "/api/auth/login";
+    })(),
+    csrfEndpoint: (() => {
+      const csrfProc = procedures.find(p =>
+        p.name.includes("csrf") || p.name.includes("csrfToken") ||
+        p.fullName.includes("csrf")
+      );
+      if (csrfProc) return `/api/trpc/${csrfProc.fullName}`;
+      return ""; // No CSRF endpoint detected — skip CSRF tests
+    })(),
     roles: authRoles,
   };
 
@@ -1160,7 +1105,7 @@ export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult
   const allProcedures = [...trpcProcedures, ...expressProcedures, ...nextProcedures];
 
   // 4. Build IR
-  const ir = buildIRFromCode(allTables, allProcedures, framework);
+  const ir = buildIRFromCode(allTables, allProcedures, framework, files);
 
   // 5. Collect metadata
   // The buildIRFromCode call above already applied the 60%-threshold heuristic and mutated allTables

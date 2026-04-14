@@ -599,32 +599,35 @@ Output ONLY valid JSON. No markdown.`;
 
 export function semanticDedup(behaviors: Behavior[]): Behavior[] {
   const kept: Behavior[] = [];
+  // v10 Block 5: Endpoint-aware dedup — same title + same endpoint = dupe
   const seen = new Set<string>();
 
   for (const b of behaviors) {
+    // Normalize title for comparison
     const normalized = b.title.toLowerCase()
       .replace(/[^a-z0-9äöüß→\s]/g, "")
       .replace(/\s+/g, " ")
       .trim();
 
-    // Include endpoint/subject in dedup key — different endpoints = different behaviors
-    const endpoint = (b as any).endpoint || b.subject || "";
-    const dedupKey = `${normalized}::${endpoint}`;
-
+    // Endpoint-aware dedup key: title + endpoint
+    const endpoint = (b as { endpoint?: string }).endpoint || "";
+    const dedupKey = `${normalized}||${endpoint.toLowerCase()}`;
     if (seen.has(dedupKey)) continue;
 
+    // Check for near-duplicates (threshold 0.9 — was 0.8, reduces false-positive dedup)
     let isDupe = false;
     for (const existing of Array.from(seen)) {
-      const [existingTitle, existingEndpoint] = existing.split("::");
-      // Different endpoints → never a dupe
-      if (existingEndpoint && endpoint && existingEndpoint !== endpoint) continue;
+      const existingTitle = existing.split("||")[0];
+      const existingEndpoint = existing.split("||")[1] || "";
+      // Different endpoints = never a dupe (even if titles are similar)
+      if (endpoint && existingEndpoint && endpoint !== existingEndpoint) continue;
       if (existingTitle === normalized) { isDupe = true; break; }
       const wordsA = new Set(normalized.split(" ").filter((w: string) => w.length > 3));
       const wordsB = new Set(existingTitle.split(" ").filter((w: string) => w.length > 3));
       if (wordsA.size === 0 || wordsB.size === 0) continue;
       const overlap = Array.from(wordsA).filter((w: string) => wordsB.has(w)).length;
       const similarity = overlap / Math.max(wordsA.size, wordsB.size);
-      if (similarity > 0.9) { isDupe = true; break; }
+      if (similarity > 0.9) { isDupe = true; break; } // 0.9 threshold (was 0.8)
     }
 
     if (!isDupe) {

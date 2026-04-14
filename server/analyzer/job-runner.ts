@@ -15,8 +15,8 @@ import { discoverAPI } from "./api-discovery";
 import { normalizeEndpointName, isGenericEndpoint } from "./normalize";
 import { sanitizeIR } from "./llm-sanitizer";
 import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
-import { runStaticAnalysis, type StaticFinding } from "./static-analyzer";
 import { extractRoles } from "./spec-regex-extractor";
+import { runStaticAnalysis, type StaticFinding } from "./static-analyzer";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -79,41 +79,33 @@ export async function runAnalysisJob(
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
       console.log(`[TestForge] Hybrid-Modus done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
     } else {
-      // Code-only path: deterministic static analysis, no LLM call
-      console.log(`[TestForge] Code-Scan detected — using deterministic code parser (no LLM)`);
-      await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien werden analysiert (deterministisch, kein LLM-Call)...`);
+      // Code-only path: deterministic static analysis + LLM-Code-Pass
+      console.log(`[TestForge] Code-Scan detected — using deterministic code parser + LLM-Code-Pass`);
+      await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien werden analysiert...`);
       const codeResult = parseCodeToIR(options!.codeFiles!);
       analysisResult = {
         ir: codeResult.ir,
         qualityScore: codeResult.qualityScore,
         specType: codeResult.specType,
       };
-
-      // BLOCK 8: Static Analysis
-      let staticFindings: StaticFinding[] = [];
-      if (options!.codeFiles!.length > 0) {
-        staticFindings = runStaticAnalysis(options!.codeFiles!);
-        console.log(`[TestForge] Static Analysis: ${staticFindings.length} findings`);
-        (analysisResult as any).staticFindings = staticFindings;
-      }
-
-      // BLOCK 9: LLM-Code-Pass (Behaviors aus Code extrahieren)
+      // Block 8: Static Analysis
+      const staticFindings: StaticFinding[] = runStaticAnalysis(options!.codeFiles!);
+      console.log(`[TestForge] Static Analysis: ${staticFindings.length} findings`);
+      (analysisResult as any).staticFindings = staticFindings;
+      // Block 9: LLM-Code-Pass — extract behaviors from code via LLM
       try {
-        const codeText = options!.codeFiles!.map((f: CodeFile) => `// File: ${f.path}\n${f.content}`).join("\n\n");
+        const codeText = options!.codeFiles!.map(f => `// File: ${f.path}\n${f.content}`).join("\n\n");
         const truncatedCode = codeText.slice(0, 50000);
-        const llmCodeResult = await withTimeout(parseSpec(truncatedCode), LLM_TIMEOUT_MS, null as any);
-        if (llmCodeResult?.ir?.behaviors?.length > 0) {
-          const existing = new Set(analysisResult.ir.behaviors.map((b: any) => b.title?.toLowerCase()));
-          const newBehaviors = llmCodeResult.ir.behaviors.filter((b: any) => !existing.has(b.title?.toLowerCase()));
-          if (newBehaviors.length > 0) {
-            analysisResult.ir.behaviors = [...analysisResult.ir.behaviors, ...newBehaviors];
-            console.log(`[TestForge] LLM-Code-Pass: +${newBehaviors.length} new behaviors (total: ${analysisResult.ir.behaviors.length})`);
-          }
+        const llmCodeIR = await withTimeout(parseSpec(truncatedCode), LLM_TIMEOUT_MS, null);
+        if (llmCodeIR && llmCodeIR.ir?.behaviors && llmCodeIR.ir.behaviors.length > 0) {
+          const existing = new Set(analysisResult.ir.behaviors.map((b: { title?: string }) => b.title?.toLowerCase()));
+          const newBehaviors = llmCodeIR.ir.behaviors.filter((b: { title?: string }) => !existing.has(b.title?.toLowerCase()));
+          analysisResult.ir.behaviors = [...analysisResult.ir.behaviors, ...newBehaviors];
+          console.log(`[TestForge] LLM-Code-Pass: +${newBehaviors.length} behaviors (total: ${analysisResult.ir.behaviors.length})`);
         }
       } catch (e) {
-        console.warn(`[TestForge] LLM-Code-Pass failed (non-fatal): ${e}`);
+        console.log(`[TestForge] LLM-Code-Pass skipped: ${e}`);
       }
-
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
       console.log(`[TestForge] Code-Scan done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
     }
@@ -636,7 +628,7 @@ function sanitizeGeneratedFiles(
       }
       const before19 = content;
       content = content.replace(/^\/\/.*?[Aa]lias.*\n?/gm, "");
-      content = content.replace(/^export\s+const\s+(\w+)\s*=\s*\w+;\s*$/gm, (match, name) => {
+      content = content.replace(/^export\s+const\s+(\w+)\s*=\s*\w+;\s*$/gm, (match: string, name: string) => {
         if (exportedFns.has(name)) return `// [dedup] ${match.trim()}`;
         return match;
       });

@@ -2969,30 +2969,17 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
   const roles = (analysis.ir.authModel?.roles || []).filter((r: { name?: string }) => r && r.name);
   const adminRole = roles.find((r: { name: string }) => r.name.toLowerCase().includes("admin")) || roles[0];
-  const nonAdminRoles = roles.filter((r: { name: string }) => r !== adminRole);
-
-  const endpoint = normalizeEndpointName(target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT");
-  const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
-
-  // v10: Endpoint-level auth — determine which roles CAN access this endpoint
-  const epAuth: string[] = (epDef as any)?.auth || [];
-  const allowedRoles = epAuth.length > 0
-    ? roles.filter((r: { name: string }) => {
-        if (epAuth.includes("public")) return true;
-        if (epAuth.includes("authenticated")) return true;
-        return epAuth.some((a: string) =>
-          a === r.name ||
-          a.includes(r.name) ||
-          r.name.includes(a.replace("_admin", "").replace("admin", ""))
-        );
-      })
-    : [adminRole];
-  const deniedRoles = roles.filter((r: { name: string }) =>
-    r.name !== (adminRole as any)?.name && !allowedRoles.some((ar: any) => ar?.name === r.name)
-  );
+  // v10 Block 7: Endpoint-Level Auth — use epDef.auth if available, else fall back to all non-admin roles
+  const epDef0 = analysis.ir.apiEndpoints.find(e => e.name === (target.endpoint || ""));
+  const epAuth: string[] | undefined = (epDef0 as { auth?: string[] } | undefined)?.auth;
+  const nonAdminRoles = epAuth && epAuth.length > 0
+    ? roles.filter((r: { name: string }) => !epAuth.includes(r.name))
+    : roles.filter((r: { name: string }) => r !== adminRole);
   const adminFnName = adminRole
     ? "get" + adminRole.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
     : "getAdminCookie";
+  const endpoint = normalizeEndpointName(target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT");
+  const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
   const inputFields = epDef?.inputFields || [];
   const behaviorTitle = behavior?.title || target.description;
   const object = behavior?.object || target.endpoint?.split(".").pop() || "resource";
@@ -3065,14 +3052,16 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     expect(data).not.toBeUndefined();
   });`;
     }
-  }).join("\n")  // ── NON-ADMIN ROLE TESTS (v10: endpoint-level auth) ──────────────────────────────────
-  const nonAdminTests = deniedRoles.slice(0, 3).map((role: { name: string }) => {
+  }).join("\n");
+  // ── NON-ADMIN ROLE TESTS (original) ─────────────────────────────────────────
+  const nonAdminTests = nonAdminRoles.slice(0, 2).map((role: { name: string }) => {
     const roleFn = "get" + role.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie";
     return `
   test("${role.name} must NOT be able to ${action} ${object}", async ({ request }) => {
     const roleCookie = await ${roleFn}(request);
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), roleCookie);
     expect([401, 403]).toContain(response.status);
+    // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });`;
@@ -3520,35 +3509,10 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     hardcoded_secret: generateHardcodedSecretTest,
   };
 
-  // v10.1: Endpoint-Validierung — bei Code-Scan nur Targets mit bekanntem Endpoint generieren
-  const knownEndpointNames = new Set(analysis.ir.apiEndpoints.map(e => e.name));
-  const isCodeScan = analysis.specType === "code" || analysis.specType === "hybrid";
+  const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
+  const llmTargets = riskModel.proofTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
 
-  const validatedTargets = isCodeScan && knownEndpointNames.size > 0
-    ? riskModel.proofTargets.filter(t => {
-        // Types that don't need a specific endpoint (global checks)
-        const globalTypes = ["hardcoded_secret", "sql_injection", "dsgvo", "cron_job"];
-        if (globalTypes.includes(t.proofType)) return true;
-        // No endpoint specified → keep (will use first known endpoint)
-        if (!t.endpoint) return true;
-        const normalized = t.endpoint.replace(/^\/?api\/trpc\//, "");
-        if (knownEndpointNames.has(normalized)) return true;
-        // Fuzzy match: endpoint name is substring of known endpoint
-        const fuzzy = Array.from(knownEndpointNames).some(k =>
-          k.includes(normalized) || normalized.includes(k.split(".").pop() || "")
-        );
-        if (!fuzzy) {
-          console.log(`[TestForge] Endpoint-Validierung: Skipping ${t.id} — endpoint "${t.endpoint}" not found in code scan (${knownEndpointNames.size} known)`);
-        }
-        return fuzzy;
-      })
-    : riskModel.proofTargets;
-
-  const templateTargets = validatedTargets.filter(t => templateMap[t.proofType]);
-  const llmTargets = validatedTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
-
-  const skipped = riskModel.proofTargets.length - validatedTargets.length;
-  console.log(`[TestForge] Schicht 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL${skipped > 0 ? ` (${skipped} skipped: unknown endpoints)` : ""}`);
+  console.log(`[TestForge] Schicht 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL`);
 
   // Template tests (instant)
   const templateProofs: RawProof[] = templateTargets.map(target => {
