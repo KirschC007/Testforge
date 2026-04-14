@@ -895,3 +895,10 @@
 - [x] BLOCK 9: LLM-Code-Pass in job-runner.ts
 - [x] BLOCK 10: Login-Endpoint Auto-Detection in code-parser.ts
 - [x] BLOCK 11: CSRF-Endpoint Auto-Detection in code-parser.ts
+
+## v10.1 Kaufkriterien
+
+- [x] Punkt 2: Endpoint-Validierung vor Test-Generierung (nicht-existente Endpoints überspringen)
+- [x] Punkt 3A: package.json im ZIP mit korrekten Dependencies
+- [x] Punkt 3B: playwright.config.ts im ZIP mit BASE_URL aus api.ts
+- [x] Punkt 3C: README.md im ZIP mit exakten Setup-Schritten

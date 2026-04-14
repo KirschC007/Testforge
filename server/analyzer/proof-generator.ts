@@ -3520,10 +3520,35 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     hardcoded_secret: generateHardcodedSecretTest,
   };
 
-  const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
-  const llmTargets = riskModel.proofTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
+  // v10.1: Endpoint-Validierung — bei Code-Scan nur Targets mit bekanntem Endpoint generieren
+  const knownEndpointNames = new Set(analysis.ir.apiEndpoints.map(e => e.name));
+  const isCodeScan = analysis.specType === "code" || analysis.specType === "hybrid";
 
-  console.log(`[TestForge] Schicht 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL`);
+  const validatedTargets = isCodeScan && knownEndpointNames.size > 0
+    ? riskModel.proofTargets.filter(t => {
+        // Types that don't need a specific endpoint (global checks)
+        const globalTypes = ["hardcoded_secret", "sql_injection", "dsgvo", "cron_job"];
+        if (globalTypes.includes(t.proofType)) return true;
+        // No endpoint specified → keep (will use first known endpoint)
+        if (!t.endpoint) return true;
+        const normalized = t.endpoint.replace(/^\/?api\/trpc\//, "");
+        if (knownEndpointNames.has(normalized)) return true;
+        // Fuzzy match: endpoint name is substring of known endpoint
+        const fuzzy = Array.from(knownEndpointNames).some(k =>
+          k.includes(normalized) || normalized.includes(k.split(".").pop() || "")
+        );
+        if (!fuzzy) {
+          console.log(`[TestForge] Endpoint-Validierung: Skipping ${t.id} — endpoint "${t.endpoint}" not found in code scan (${knownEndpointNames.size} known)`);
+        }
+        return fuzzy;
+      })
+    : riskModel.proofTargets;
+
+  const templateTargets = validatedTargets.filter(t => templateMap[t.proofType]);
+  const llmTargets = validatedTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
+
+  const skipped = riskModel.proofTargets.length - validatedTargets.length;
+  console.log(`[TestForge] Schicht 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL${skipped > 0 ? ` (${skipped} skipped: unknown endpoints)` : ""}`);
 
   // Template tests (instant)
   const templateProofs: RawProof[] = templateTargets.map(target => {
