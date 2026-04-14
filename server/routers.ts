@@ -322,13 +322,13 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         // ─── Plan-Based Rate Limit ────────────────────────────────────────────────────
         const PLAN_LIMITS: Record<string, number> = {
-          free: 3,
+          free: 10,
           pro: 50,
           team: 200,
           enterprise: Infinity,
         };
         const userPlan = (ctx.user as any).plan || "free";
-        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
         if (DAILY_LIMIT !== Infinity) {
           const todayCount = await countAnalysesToday(ctx.user.id);
           if (todayCount >= DAILY_LIMIT) {
@@ -447,9 +447,9 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Either githubUrl or codeFiles is required" });
         }
         // Rate-limit (same as analyses.create)
-        const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 50, team: 200, enterprise: Infinity };
+        const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 50, team: 200, enterprise: Infinity };
         const userPlan = (ctx.user as any).plan || "free";
-        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
         if (DAILY_LIMIT !== Infinity) {
           const todayCount = await countAnalysesToday(ctx.user.id);
           if (todayCount >= DAILY_LIMIT) {
@@ -694,9 +694,9 @@ export const appRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       // Rate-limit
-      const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 50, team: 200, enterprise: Infinity };
+      const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 50, team: 200, enterprise: Infinity };
       const userPlan = (ctx.user as any).plan || "free";
-      const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+      const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
       if (DAILY_LIMIT !== Infinity) {
         const todayCount = await countAnalysesToday(ctx.user.id);
         if (todayCount >= DAILY_LIMIT) {
@@ -1071,9 +1071,9 @@ export const appRouter = router({
   // ─── Analytics / Usage Stats ──────────────────────────────────────────────
   analytics: router({
     getUsage: protectedProcedure.query(async ({ ctx }) => {
-      const PLAN_LIMITS: Record<string, number> = { free: 3, pro: 50, team: 200, enterprise: Infinity };
+      const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 50, team: 200, enterprise: Infinity };
       const userPlan = (ctx.user as any).plan || "free";
-      const dailyLimit = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 3);
+      const dailyLimit = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
       const todayCount = await countAnalysesToday(ctx.user.id);
       const allAnalyses = await getAnalysesByUserId(ctx.user.id);
       const completed = allAnalyses.filter((a: any) => a.status === "completed");
