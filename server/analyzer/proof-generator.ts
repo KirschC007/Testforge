@@ -351,7 +351,7 @@ function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name:
  */
 function roleToCookieFn(role: { name: string } | undefined): string {
   if (!role) return "getAdminCookie";
-  return `get${role.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
+  return `get${role.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
 }
 
 function generateIDORTest(target: ProofTarget, analysis: AnalysisResult): string {
@@ -2970,11 +2970,29 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const roles = (analysis.ir.authModel?.roles || []).filter((r: { name?: string }) => r && r.name);
   const adminRole = roles.find((r: { name: string }) => r.name.toLowerCase().includes("admin")) || roles[0];
   const nonAdminRoles = roles.filter((r: { name: string }) => r !== adminRole);
-  const adminFnName = adminRole
-    ? "get" + adminRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
-    : "getAdminCookie";
+
   const endpoint = normalizeEndpointName(target.endpoint || analysis.ir.apiEndpoints[0]?.name || "TODO_REPLACE_WITH_ENDPOINT");
   const epDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+
+  // v10: Endpoint-level auth — determine which roles CAN access this endpoint
+  const epAuth: string[] = (epDef as any)?.auth || [];
+  const allowedRoles = epAuth.length > 0
+    ? roles.filter((r: { name: string }) => {
+        if (epAuth.includes("public")) return true;
+        if (epAuth.includes("authenticated")) return true;
+        return epAuth.some((a: string) =>
+          a === r.name ||
+          a.includes(r.name) ||
+          r.name.includes(a.replace("_admin", "").replace("admin", ""))
+        );
+      })
+    : [adminRole];
+  const deniedRoles = roles.filter((r: { name: string }) =>
+    r.name !== (adminRole as any)?.name && !allowedRoles.some((ar: any) => ar?.name === r.name)
+  );
+  const adminFnName = adminRole
+    ? "get" + adminRole.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    : "getAdminCookie";
   const inputFields = epDef?.inputFields || [];
   const behaviorTitle = behavior?.title || target.description;
   const object = behavior?.object || target.endpoint?.split(".").pop() || "resource";
@@ -2998,7 +3016,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
   const fnSuffix = target.id.replace(/-/g, "_");
   // Build role cookie imports
   const roleFnNames = roles.map((r: { name: string }) =>
-    "get" + r.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+    "get" + r.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
   );
   const uniqueRoleFns = Array.from(new Set([adminFnName, ...roleFnNames]));
   // ── MUTATION KILL TESTS ─────────────────────────────────────────────────────
@@ -3014,7 +3032,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
       ? nonAdminRoles.find((r: { name: string }) => killDesc.toLowerCase().includes(r.name.toLowerCase()))
       : null;
     const roleFn = targetRole
-      ? "get" + targetRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
+      ? "get" + targetRole.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie"
       : adminFnName;
     const isPrivilegeEscalation = killDesc.toLowerCase().includes("lower-privileged") ||
       killDesc.toLowerCase().includes("should not") || isRoleSpecific;
@@ -3047,16 +3065,14 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     expect(data).not.toBeUndefined();
   });`;
     }
-  }).join("\n");
-  // ── NON-ADMIN ROLE TESTS (original) ─────────────────────────────────────────
-  const nonAdminTests = nonAdminRoles.slice(0, 2).map((role: { name: string }) => {
-    const roleFn = "get" + role.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie";
+  }).join("\n")  // ── NON-ADMIN ROLE TESTS (v10: endpoint-level auth) ──────────────────────────────────
+  const nonAdminTests = deniedRoles.slice(0, 3).map((role: { name: string }) => {
+    const roleFn = "get" + role.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("") + "Cookie";
     return `
   test("${role.name} must NOT be able to ${action} ${object}", async ({ request }) => {
     const roleCookie = await ${roleFn}(request);
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), roleCookie);
     expect([401, 403]).toContain(response.status);
-    // Must not leak any data in error response
     const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });`;
@@ -3328,10 +3344,10 @@ export function generateFeatureGateTest(target: ProofTarget, analysis: AnalysisR
   const freeRole = roles.find(r => r.name.toLowerCase().includes("free") || r.name.toLowerCase().includes("guest") || r.name.toLowerCase().includes("user")) || roles[roles.length - 1];
 
   const adminFnName = adminRole
-    ? `get${adminRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    ? `get${adminRole.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getAdminCookie";
   const freeFnName = freeRole && freeRole !== adminRole
-    ? `get${freeRole.name.split(/[_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    ? `get${freeRole.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
     : "getUserCookie";
 
   // Resolve feature gate def from IR

@@ -13,10 +13,10 @@ import { applyProofPack, type IndustryPack } from "./industry-proof-packs";
 import { parseCodeToIR, type CodeFile } from "./code-parser";
 import { discoverAPI } from "./api-discovery";
 import { normalizeEndpointName, isGenericEndpoint } from "./normalize";
-import { extractRoles } from "./spec-regex-extractor";
-import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
 import { sanitizeIR } from "./llm-sanitizer";
+import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
 import { runStaticAnalysis, type StaticFinding } from "./static-analyzer";
+import { extractRoles } from "./spec-regex-extractor";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -53,7 +53,6 @@ export async function runAnalysisJob(
   const t1 = Date.now();
   let analysisResult: AnalysisResult;
   let llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
-  let staticFindings: StaticFinding[] = [];
 
   if (isCodeScan) {
     const hasSpec = specText && specText.length > 100;
@@ -80,81 +79,42 @@ export async function runAnalysisJob(
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
       console.log(`[TestForge] Hybrid-Modus done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
     } else {
-      // Code-only path: deterministic static analysis + LLM-Code-Pass for business logic
-      console.log(`[TestForge] Code-Scan detected — deterministic parser + LLM-Code-Pass`);
-      await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien analysiert + LLM extrahiert Business-Logik...`);
+      // Code-only path: deterministic static analysis, no LLM call
+      console.log(`[TestForge] Code-Scan detected — using deterministic code parser (no LLM)`);
+      await progress(1, `Code-Scan: ${options!.codeFiles!.length} Dateien werden analysiert (deterministisch, kein LLM-Call)...`);
       const codeResult = parseCodeToIR(options!.codeFiles!);
+      analysisResult = {
+        ir: codeResult.ir,
+        qualityScore: codeResult.qualityScore,
+        specType: codeResult.specType,
+      };
 
-      // ── LLM-Code-Pass: extract behaviors, invariants, roles from code text ──
-      // Concatenate code files (max 60KB to stay within LLM context)
-      const MAX_CODE_CHARS = 60000;
-      const codeText = options!.codeFiles!
-        .map(f => `// FILE: ${f.path}\n${f.content}`)
-        .join("\n\n")
-        .slice(0, MAX_CODE_CHARS);
+      // BLOCK 8: Static Analysis
+      let staticFindings: StaticFinding[] = [];
+      if (options!.codeFiles!.length > 0) {
+        staticFindings = runStaticAnalysis(options!.codeFiles!);
+        console.log(`[TestForge] Static Analysis: ${staticFindings.length} findings`);
+        (analysisResult as any).staticFindings = staticFindings;
+      }
 
-      let llmCodeIR: import("./types").AnalysisIR | null = null;
+      // BLOCK 9: LLM-Code-Pass (Behaviors aus Code extrahieren)
       try {
-        const codePassPrompt = `You are a senior security engineer. Analyze the following backend code and extract ALL behaviors, invariants, and security properties.
-
-For each endpoint/procedure found, extract:
-- All business rules (e.g. "only owner can delete", "amount must be positive")
-- All authorization checks (who can call what)
-- All state transitions
-- All validation rules
-- Any missing security controls (missing rate limiting, missing auth checks, etc.)
-
-Return a JSON object with this exact structure:
-{
-  "behaviors": [{"title": string, "subject": string, "preconditions": string[], "postconditions": string[], "errorCases": string[], "tags": string[]}],
-  "roles": [string],
-  "tenantKey": string | null,
-  "missingControls": [string]
-}
-
-Code to analyze:
-${codeText}`;
-
-        const llmResp = await withTimeout(
-          invokeLLM({ messages: [{ role: "user", content: codePassPrompt }], response_format: { type: "json_object" } }),
-          LLM_TIMEOUT_MS,
-          null as any
-        );
-        const raw = JSON.parse(llmResp.choices[0].message.content as string);
-        if (raw.behaviors && Array.isArray(raw.behaviors)) {
-          // Merge LLM behaviors into code IR
-          const existingTitles = new Set(codeResult.ir.behaviors.map((b: any) => b.title?.toLowerCase() ?? ""));
-          const newBehaviors = raw.behaviors.filter((b: any) => !existingTitles.has(b.title?.toLowerCase() ?? ""));
-          llmCodeIR = {
-            ...codeResult.ir,
-            behaviors: [...codeResult.ir.behaviors, ...newBehaviors],
-            missingControls: raw.missingControls ?? [],
-          } as any;
-          if (raw.roles && Array.isArray(raw.roles) && raw.roles.length > 0 && (!codeResult.ir.authModel || codeResult.ir.authModel.roles.length === 0)) {
-            (llmCodeIR as any).authModel = { ...codeResult.ir.authModel, roles: raw.roles.map((r: string) => ({ name: r, canCreate: true, canRead: true, canUpdate: true, canDelete: false })) };
+        const codeText = options!.codeFiles!.map((f: CodeFile) => `// File: ${f.path}\n${f.content}`).join("\n\n");
+        const truncatedCode = codeText.slice(0, 50000);
+        const llmCodeResult = await withTimeout(parseSpec(truncatedCode), LLM_TIMEOUT_MS, null as any);
+        if (llmCodeResult?.ir?.behaviors?.length > 0) {
+          const existing = new Set(analysisResult.ir.behaviors.map((b: any) => b.title?.toLowerCase()));
+          const newBehaviors = llmCodeResult.ir.behaviors.filter((b: any) => !existing.has(b.title?.toLowerCase()));
+          if (newBehaviors.length > 0) {
+            analysisResult.ir.behaviors = [...analysisResult.ir.behaviors, ...newBehaviors];
+            console.log(`[TestForge] LLM-Code-Pass: +${newBehaviors.length} new behaviors (total: ${analysisResult.ir.behaviors.length})`);
           }
-          if (raw.tenantKey && !codeResult.ir.tenantModel?.tenantIdField) {
-            (llmCodeIR as any).tenantModel = { tenantEntity: raw.tenantKey, tenantIdField: raw.tenantKey };
-          }
-          console.log(`[TestForge] LLM-Code-Pass: +${newBehaviors.length} behaviors (total: ${llmCodeIR!.behaviors.length})`);
         }
       } catch (e) {
         console.warn(`[TestForge] LLM-Code-Pass failed (non-fatal): ${e}`);
       }
 
-      analysisResult = {
-        ir: llmCodeIR ?? codeResult.ir,
-        qualityScore: codeResult.qualityScore,
-        specType: codeResult.specType,
-      };
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
-      // ── Layer 0: Static Analysis (always runs when code files are present) ──
-      staticFindings = runStaticAnalysis(options!.codeFiles!);
-      if (staticFindings.length > 0) {
-        const critical = staticFindings.filter(f => f.severity === "critical").length;
-        const high = staticFindings.filter(f => f.severity === "high").length;
-        console.log(`[TestForge] Static Analysis: ${staticFindings.length} findings (${critical} critical, ${high} high)`);
-      }
       console.log(`[TestForge] Code-Scan done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
     }
   } else {
@@ -226,9 +186,7 @@ ${codeText}`;
   // Fix 4: Behavior dedup after LLM Checker — remove duplicates introduced by improveBehavior
   if (analysisResult?.ir?.behaviors) {
     const beforeDedup = analysisResult.ir.behaviors.length;
-    // v9.0: Code-Scan uses higher threshold (0.95) to avoid over-dedup of LLM-generated behaviors
-    const dedupThreshold = isCodeScan ? 0.95 : 0.9;
-    analysisResult.ir.behaviors = semanticDedup(analysisResult.ir.behaviors, dedupThreshold);
+    analysisResult.ir.behaviors = semanticDedup(analysisResult.ir.behaviors);
     const afterDedup = analysisResult.ir.behaviors.length;
     if (beforeDedup !== afterDedup) {
       console.log(`[TestForge] Behavior dedup: ${beforeDedup} → ${afterDedup} (removed ${beforeDedup - afterDedup} duplicates)`);
@@ -393,17 +351,7 @@ ${codeText}`;
   await progress(5, `Layer 5 fertig: ${validatedSuite.proofs.length} validierte Tests, ${validatedSuite.discardedProofs.length} verworfen`);
 
   // Report
-  let report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);
-  // Append Static Analysis findings to report if present
-  if (staticFindings.length > 0) {
-    const lines = ["\n\n## Static Analysis Findings\n"];
-    for (const f of staticFindings) {
-      lines.push(`**[${f.rule}] ${f.severity.toUpperCase()}** \`${f.file}:${f.line}\``);
-      lines.push(`> ${f.description}`);
-      lines.push(`> 💡 ${f.fix}\n`);
-    }
-    report += lines.join("\n");
-  }
+  const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);
   // HTML Dashboard
   const htmlReport = generateHTMLReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats, analysisResult.specHealth);
 
@@ -676,59 +624,42 @@ function sanitizeGeneratedFiles(
       });
     }
 
-    // ── Fix 19: Auth.ts — ensure getAdminCookie/getUserCookie exist without duplicates ──
-    if (file.filename.includes("auth.ts") || (file.filename.includes("auth") && file.filename.endsWith(".ts") && !file.filename.includes("spec") && !file.filename.includes("test"))) {
-      // Step 1: Find all exported async functions
+    // ── Fix 19: Auth.ts — Duplicate-Export-Prevention + Alias-Garantie ──
+    if (file.filename.includes("auth") && file.filename.endsWith(".ts") &&
+        !file.filename.includes("spec") && !file.filename.includes("test") &&
+        !file.filename.includes("matrix")) {
       const exportedFns = new Set<string>();
-      const fnPattern = /export\s+async\s+function\s+(\w+)/g;
+      const fnRegex = /export\s+async\s+function\s+(\w+)/g;
       let fnMatch: RegExpExecArray | null;
-      while ((fnMatch = fnPattern.exec(content)) !== null) {
+      while ((fnMatch = fnRegex.exec(content)) !== null) {
         exportedFns.add(fnMatch[1]);
       }
-
-      // Step 2: Remove any export const that conflicts with an export async function
       const before19 = content;
-      content = content.replace(/^\/\/.*?[Aa]lias.*\n?/gm, ""); // remove alias comments
+      content = content.replace(/^\/\/.*?[Aa]lias.*\n?/gm, "");
       content = content.replace(/^export\s+const\s+(\w+)\s*=\s*\w+;\s*$/gm, (match, name) => {
-        if (exportedFns.has(name)) {
-          return `// [dedup] ${match.trim()}`;
-        }
+        if (exportedFns.has(name)) return `// [dedup] ${match.trim()}`;
         return match;
       });
-
-      // Step 3: If getAdminCookie doesn't exist as a function, add alias to first role
       if (!exportedFns.has("getAdminCookie") && exportedFns.size > 0) {
         const firstFn = Array.from(exportedFns)[0];
-        content += `\n// Alias: getAdminCookie → ${firstFn}\nexport const getAdminCookie = ${firstFn};\n`;
+        content += `\nexport const getAdminCookie = ${firstFn};\n`;
       }
-
-      // Step 4: If getUserCookie doesn't exist as a function, add alias to last role
       if (!exportedFns.has("getUserCookie") && exportedFns.size > 1) {
         const fns = Array.from(exportedFns);
-        const lastFn = fns[fns.length - 1];
-        content += `// Alias: getUserCookie → ${lastFn}\nexport const getUserCookie = ${lastFn};\n`;
+        content += `export const getUserCookie = ${fns[fns.length - 1]};\n`;
       }
-
       if (content !== before19) fixes++;
     }
 
-    // ── Fix 20: Remove @prisma/client imports from generated tests ──
+    // ── Fix 20: Remove @prisma/client imports ──
     if (content.includes("@prisma/client")) {
       const before20 = content;
       content = content.replace(/import\s*\{[^}]*\}\s*from\s*["']@prisma\/client["'];?\n?/g, "");
-      content = content.replace(/import\s+.*from\s*["']@prisma\/client["'];?\n?/g, "");
-      // Also remove any lines that use the prisma variable if import was removed
-      if (!content.includes("@prisma/client") && content !== before20) {
-        content = content.replace(/^const prisma = new PrismaClient\(\);?\s*$/gm, "// [removed] prisma client");
-        content = content.replace(/^\s*(?:const|let)\s+\w+\s*=\s*await\s+prisma\.\w+\..*$/gm, (line) => {
-          return `// [removed] ${line.trim()}`;
-        });
-        fixes++;
-      }
+      content = content.replace(/^const prisma = new PrismaClient\(\);?\s*$/gm, "// [removed] prisma");
+      if (content !== before20) fixes++;
     }
 
     // ── Fix 21: toBeOneOf → toContain (Playwright-kompatibel) ──
-    // toBeOneOf existiert in Jest/Vitest aber NICHT in Playwright
     if (content.includes("toBeOneOf")) {
       const before21 = content;
       content = content.replace(
@@ -736,6 +667,16 @@ function sanitizeGeneratedFiles(
         "expect([$2]).toContain($1)"
       );
       if (content !== before21) fixes++;
+    }
+
+    // ── Fix 22: Literal backslash-n in generated code (expanded) ──
+    {
+      const before22 = content;
+      content = content.replace(/,\\n(\s*)/g, ',\n$1');
+      content = content.replace(/\);\\n/g, ');\n');
+      content = content.replace(/"\\n(\s*)/g, '"\n$1');
+      content = content.replace(/([a-z0-9])\\n(\s+)/g, '$1\n$2');
+      if (content !== before22) fixes++;
     }
 
     if (fixes > 0) {

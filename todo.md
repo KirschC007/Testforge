@@ -877,3 +877,21 @@
 - [x] FIX: Cancel-Guard nach Layer 5 (cancelledJobs.has check)
 - [x] FIX: zlib level 9 → level 1 (ZIP-Bau 5-10x schneller)
 - [x] FIX: resultJson früh speichern (vor ZIP-Bau)
+
+## v10.0 GOD MODE Fixes
+
+- [x] BLOCK 1A: toBeOneOf → toContain in proof-generator.ts (alle Stellen)
+- [x] BLOCK 1B: Fix 21 Safety Net in job-runner.ts
+- [x] BLOCK 2A: Duplicate-Export-Prevention in helpers-generator.ts (bereits korrekt)
+- [x] BLOCK 2B: Fix 19 Duplicate-Export-Sanitizer in job-runner.ts
+- [x] BLOCK 3: Rollen-Extraktion aus Middleware + Schema + Fallback in code-parser.ts
+- [x] BLOCK 3B: auth-Array im APIEndpoint speichern (Endpoint-Level Auth)
+- [x] BLOCK 4A: GENERIC_NAMES erweitert (routers, appRouter, root, server)
+- [x] BLOCK 4B: Nested Router Detection im else-Block
+- [x] BLOCK 5: Dedup-Threshold 0.8→0.9 + Endpoint-aware dedupKey
+- [x] BLOCK 6: Hyphen-Split /[-_\s]+/ bereits überall korrekt
+- [x] BLOCK 7: Auth-Matrix mit Endpoint-Level Auth (deniedRoles statt nonAdminRoles)
+- [x] BLOCK 8: Static Analysis Import + Integration in job-runner.ts
+- [x] BLOCK 9: LLM-Code-Pass in job-runner.ts
+- [x] BLOCK 10: Login-Endpoint Auto-Detection in code-parser.ts
+- [x] BLOCK 11: CSRF-Endpoint Auto-Detection in code-parser.ts
