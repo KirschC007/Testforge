@@ -908,3 +908,9 @@
 - [x] helpers-generator.ts: JWT Bearer Token aus Response-Body + Authorization Header
 - [x] helpers-generator.ts: trpcMutation/trpcQuery extrahieren HTTP-Verb aus Endpoint-Namen
 - [x] helpers-generator.ts: Alle HTTP-Methoden korrekt (GET, POST, PUT, PATCH, DELETE)
+
+## v10.3 Output-ZIP Kritische Bugs
+- [x] helpers-generator.ts: TEST_TENANT Alias nur generieren wenn tenantEntity !== 'tenant' (kein Duplicate identifier)
+- [x] helpers-generator.ts: Template-Literal-Strings mit Date.now() als Backtick-Strings generieren
+- [x] job-runner.ts Fix 19: const-Exports in exportedFns aufnehmen (getUserCookie Duplikat-Fix)
+- [x] job-runner.ts Fix 19: seenConstExports Set für Dedup statt exportedFns (korrekte Logik)

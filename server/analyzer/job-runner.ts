@@ -620,25 +620,34 @@ function sanitizeGeneratedFiles(
     if (file.filename.includes("auth") && file.filename.endsWith(".ts") &&
         !file.filename.includes("spec") && !file.filename.includes("test") &&
         !file.filename.includes("matrix")) {
+      // Collect all exported names (both async functions AND const aliases)
       const exportedFns = new Set<string>();
       const fnRegex = /export\s+async\s+function\s+(\w+)/g;
       let fnMatch: RegExpExecArray | null;
       while ((fnMatch = fnRegex.exec(content)) !== null) {
         exportedFns.add(fnMatch[1]);
       }
+      // Also collect const alias exports
+      const constRegex = /export\s+const\s+(\w+)\s*=/g;
+      let constMatch: RegExpExecArray | null;
+      while ((constMatch = constRegex.exec(content)) !== null) {
+        exportedFns.add(constMatch[1]);
+      }
       const before19 = content;
-      content = content.replace(/^\/\/.*?[Aa]lias.*\n?/gm, "");
+      // Deduplicate const alias exports (keep first occurrence)
+      const seenConstExports = new Set<string>();
       content = content.replace(/^export\s+const\s+(\w+)\s*=\s*\w+;\s*$/gm, (match: string, name: string) => {
-        if (exportedFns.has(name)) return `// [dedup] ${match.trim()}`;
+        if (seenConstExports.has(name)) return `// [dedup] ${match.trim()}`;
+        seenConstExports.add(name);
         return match;
       });
       if (!exportedFns.has("getAdminCookie") && exportedFns.size > 0) {
-        const firstFn = Array.from(exportedFns)[0];
-        content += `\nexport const getAdminCookie = ${firstFn};\n`;
+        const firstFn = Array.from(exportedFns).find(n => n.startsWith("get") && n.endsWith("Cookie") && n !== "getUserCookie");
+        if (firstFn) content += `\nexport const getAdminCookie = ${firstFn};\n`;
       }
       if (!exportedFns.has("getUserCookie") && exportedFns.size > 1) {
-        const fns = Array.from(exportedFns);
-        content += `export const getUserCookie = ${fns[fns.length - 1]};\n`;
+        const cookieFns = Array.from(exportedFns).filter(n => n.startsWith("get") && n.endsWith("Cookie") && n !== "getAdminCookie");
+        if (cookieFns.length > 0) content += `export const getUserCookie = ${cookieFns[cookieFns.length - 1]};\n`;
       }
       if (content !== before19) fixes++;
     }

@@ -270,11 +270,11 @@ export async function getCsrfToken(request: any, cookie: string): Promise<string
 import { trpcMutation, trpcQuery } from "./api";
 
 // Test tenant IDs — update these to match your test environment
-export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
-export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
-// Canonical alias — always available regardless of tenant entity name
+export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
+export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_B_ID || process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
+${tenantEntity.toUpperCase() !== "TENANT" ? `// Canonical alias — always available regardless of tenant entity name
 export const TEST_TENANT_ID = TEST_${tenantEntity.toUpperCase()}_ID;
-export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;
+export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;` : ""}
 
 ${createEndpoint ? `
 export interface CreateTestResourceOpts {
@@ -301,16 +301,16 @@ ${(createEndpoint.inputFields || []).filter((f) => !f.isTenantKey && f.name !== 
   else if (f.type === 'boolean') defaultVal = 'false';
   else if (f.type === 'date' || fl.includes('date') || fl.includes('datum')) defaultVal = 'tomorrowStr()';
   else if (fl.includes('email')) defaultVal = `\"test@example.com\"`;
-  else if (fl.includes('phone')) defaultVal = `\"+49176\${Date.now().toString().slice(-8)}\"`;
-  else if (fl.includes('sku')) defaultVal = `\"SKU-\${Date.now()}\"`;
-  else if (fl.includes('name') || fl.includes('title')) defaultVal = `\"Test ${fname}-\${Date.now()}\"`;
-  else if (fl.includes('status')) defaultVal = `\"active\"`;
-  else if (fl.includes('priority')) defaultVal = `\"medium\"`;
+  else if (fl.includes('phone')) defaultVal = `\`+49176\${Date.now().toString().slice(-8)}\``;
+  else if (fl.includes('sku')) defaultVal = `\`SKU-\${Date.now()}\``;
+  else if (fl.includes('name') || fl.includes('title')) defaultVal = `\`Test ${fname}-\${Date.now()}\``;
+  else if (fl.includes('status')) defaultVal = `"active"`;
+  else if (fl.includes('priority')) defaultVal = `"medium"`;
   else if (fl.includes('count') || fl.includes('size') || fl.includes('num')) defaultVal = '1';
   else if (fl.includes('id') || fl.includes('workspace') || fl.includes('tenant')) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
     else {
     // Generic fallback: use getValidDefault logic for unknown fields
-    defaultVal = `"test-${fname}-\${Date.now()}"`;
+    defaultVal = `\`test-${fname}-\${Date.now()}\``;
   }
   return `    ${fname}: opts.${fname} ?? ${defaultVal},`;
 }).join("\n")}
