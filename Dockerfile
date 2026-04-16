@@ -1,4 +1,4 @@
-# TestForge Self-Hosted Dockerfile (S4-4)
+# TestForge Self-Hosted Dockerfile
 # Multi-stage build: build frontend + server, then minimal runtime image
 
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
@@ -9,14 +9,13 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-# Copy package files
+# Copy package files AND patches (required by pnpm for patched deps)
 COPY package.json pnpm-lock.yaml ./
+COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile
 
-# Copy source
+# Copy source and build
 COPY . .
-
-# Build frontend
 RUN pnpm build
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
@@ -26,11 +25,12 @@ WORKDIR /app
 
 RUN npm install -g pnpm
 
-# Copy package files and install production deps only
+# Copy package files AND patches before install
 COPY package.json pnpm-lock.yaml ./
+COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile --prod
 
-# Copy built assets
+# Copy built assets from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/drizzle ./drizzle
