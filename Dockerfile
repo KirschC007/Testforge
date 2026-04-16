@@ -30,4 +30,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/index.js"]
+# Run drizzle migrations before starting the server.
+# Migrations are idempotent — already-applied ones are skipped.
+# If migrations fail, the container will fail to start (correct behavior).
+CMD ["sh", "-c", "pnpm drizzle-kit migrate && node dist/index.js"]
