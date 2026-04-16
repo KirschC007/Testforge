@@ -14,7 +14,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile
 
-# Copy source and build
+# Copy all source and build (vite → dist/public, esbuild → dist/index.js)
 COPY . .
 RUN pnpm build
 
@@ -31,8 +31,8 @@ COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile --prod
 
 # Copy built assets from builder
+# dist/ contains: index.js (server) + public/ (frontend, built by vite)
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/shared ./shared
 
