@@ -914,3 +914,19 @@
 - [x] helpers-generator.ts: Template-Literal-Strings mit Date.now() als Backtick-Strings generieren
 - [x] job-runner.ts Fix 19: const-Exports in exportedFns aufnehmen (getUserCookie Duplikat-Fix)
 - [x] job-runner.ts Fix 19: seenConstExports Set für Dedup statt exportedFns (korrekte Logik)
+
+## v11 High-End Qualitätssprung
+- [ ] Layer 0: static-analyzer.ts — 15 deterministiche Rules (Hardcoded Secrets, SQL-Injection, MD5/SHA1, eval(), CORS-Wildcard, Rate-Limit-Missing, JWT-None-Alg, Mass-Assignment, Path-Traversal, ReDoS, SSRF, XXE, Prototype-Pollution, Timing-Attack, Insecure-Deserialization)
+- [ ] Layer 0: Integration in job-runner.ts (vor Layer 1, Ergebnisse in AnalysisIR.staticFindings)
+- [ ] Layer 0: Static-Findings in Report + als eigene Proof-Targets
+- [ ] getPreferredRole(): Hilfsfunktion in helpers-generator.ts — Admin bevorzugen, Fallback auf ersten Role
+- [ ] Alle 12 Generatoren: getPreferredRole() statt hardcoded roles[0]
+- [ ] Auth-Matrix: JSON.stringify entfernen aus Payload-Generierung
+- [ ] Concurrency: Cookie-Init + Payload-Typen (Zahlen statt Strings)
+- [ ] Idempotency: Cookie-Initialisierung fixen
+- [ ] Multiple Status-Machines: statusMachines[] Array in types.ts + Layer-1-Prompt + proof-generator.ts
+- [ ] NestJS Support: @Controller/@Get/@Post/@Roles Decorator-Parser in code-parser.ts
+- [ ] OpenAPI 3.x Parser: deterministisch (kein LLM), Upload-Flow für .json/.yaml
+- [ ] SQL-Injection Tests: Layer-1-Prompt um "raw SQL concatenation" erweitern + sql-injection.gen.ts
+- [ ] Brutale Security-Tests: Negative-Amount-Chains, Cross-Tenant-Chains, AML-Bypass, Concurrent-Writes
+- [ ] TypeScript 0 Fehler + Vitest ≥611/626 grün

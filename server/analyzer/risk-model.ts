@@ -551,6 +551,11 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     e2e_flow: ["create", "submit", "book", "order", "register"],
     sql_injection: ["create", "update", "get", "list", "search"],
     hardcoded_secret: [],
+    negative_amount: ["create", "transfer", "pay", "charge", "debit"],
+    aml_bypass: ["create", "transfer", "pay", "transaction"],
+    cross_tenant_chain: ["create", "get", "list", "update"],
+    concurrent_write: ["create", "update", "reserve", "book", "purchase"],
+    mass_assignment: ["create", "update", "register", "edit"],
   };
 
   const kws = keywords[proofType] || [];

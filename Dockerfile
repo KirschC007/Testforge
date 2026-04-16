@@ -32,7 +32,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 # Copy built assets
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server ./server
+COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/shared ./shared
 
@@ -40,7 +40,7 @@ COPY --from=builder /app/shared ./shared
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget -qO- http://localhost:3000/api/health || exit 1
 
-CMD ["node", "--loader", "tsx", "server/index.ts"]
+CMD ["node", "dist/index.js"]

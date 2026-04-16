@@ -2,7 +2,15 @@ import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import type { Behavior, EndpointField, APIEndpoint, AnalysisResult, ProofType, ProofTarget, RiskModel, RawProof, FlowStep } from "./types";
 import { normalizeEndpointName } from "./normalize";
-import { generateSQLInjectionTest, generateHardcodedSecretTest } from "./proof-templates-security";
+import {
+  generateSQLInjectionTest,
+  generateHardcodedSecretTest,
+  generateNegativeAmountTest,
+  generateAMLBypassTest,
+  generateCrossTenantChainTest,
+  generateConcurrentWriteTest,
+  generateMassAssignmentTest,
+} from "./proof-templates-security";
 
 // ─── Schicht 3: Proof Generator ───────────────────────────────────────────────
 
@@ -104,6 +112,11 @@ function getFilename(pt: ProofType): string {
     e2e_flow: "tests/e2e/flows.spec.ts",
     sql_injection: "tests/security/sql-injection.spec.ts",
     hardcoded_secret: "tests/security/hardcoded-secrets.spec.ts",
+    negative_amount: "tests/security/negative-amount.spec.ts",
+    aml_bypass: "tests/security/aml-bypass.spec.ts",
+    cross_tenant_chain: "tests/security/cross-tenant-chain.spec.ts",
+    concurrent_write: "tests/concurrency/concurrent-writes.spec.ts",
+    mass_assignment: "tests/security/mass-assignment.spec.ts",
   };
   return map[pt];
 }
@@ -3507,6 +3520,11 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     e2e_flow: generateE2EFlowTest,
     sql_injection: generateSQLInjectionTest,
     hardcoded_secret: generateHardcodedSecretTest,
+    negative_amount: generateNegativeAmountTest,
+    aml_bypass: generateAMLBypassTest,
+    cross_tenant_chain: generateCrossTenantChainTest,
+    concurrent_write: generateConcurrentWriteTest,
+    mass_assignment: generateMassAssignmentTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);

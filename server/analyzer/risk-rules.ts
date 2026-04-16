@@ -279,7 +279,7 @@ export const RISK_RULES: RiskRule[] = [
     },
     priority: 20,
   },
-  // ─── Flow (multi-step / workflow) ─────────────────────────────────────────
+  // ─── Flow (multi-step / workflow) ─────────────────────────────────────────────────────────────────────
   // Note: "flow" is a legacy ProofType alias. Tests expect 'flow' from tags/riskHints
   // like 'flow', 'multi-step', 'workflow', 'end-to-end'.
   {
@@ -291,6 +291,77 @@ export const RISK_RULES: RiskRule[] = [
       tags: ["flow", "multi-step", "workflow"],
     },
     priority: 18,
+  },
+  // ─── Negative Amount / Financial Bypass ────────────────────────────────────────────────
+  {
+    proofType: "negative_amount" as ProofType,
+    triggers: {
+      keywords: [
+        "amount", "price", "payment", "transfer", "charge", "debit", "credit",
+        "balance", "fee", "cost", "refund", "withdrawal", "deposit",
+        "negative", "zero", "minimum amount", "positive",
+        "financial", "monetary", "currency", "money",
+      ],
+      tags: ["financial", "payment", "amount", "money", "transfer"],
+    },
+    priority: 93,
+  },
+  // ─── AML / Structuring Bypass ─────────────────────────────────────────────────────────
+  {
+    proofType: "aml_bypass" as ProofType,
+    triggers: {
+      keywords: [
+        "aml", "anti-money laundering", "structuring", "smurfing", "velocity",
+        "threshold", "suspicious", "transaction limit", "daily limit",
+        "compliance", "kyc", "know your customer", "reporting", "flagged",
+        "large transaction", "bulk transaction", "rapid transaction",
+      ],
+      tags: ["aml", "compliance", "financial", "velocity", "kyc"],
+    },
+    priority: 96,
+  },
+  // ─── Cross-Tenant Chain Attack ───────────────────────────────────────────────────────
+  {
+    proofType: "cross_tenant_chain" as ProofType,
+    triggers: {
+      keywords: [
+        "tenant", "organization", "workspace", "multi-tenant", "isolation",
+        "cross-tenant", "tenant isolation", "data isolation", "tenant boundary",
+        "tenant id", "org id", "workspace id", "tenant context",
+        "access control", "resource ownership", "data segregation",
+      ],
+      tags: ["multi-tenant", "tenant", "isolation", "idor", "access-control"],
+    },
+    priority: 94,
+  },
+  // ─── Concurrent Write / Race Condition ────────────────────────────────────────────────
+  {
+    proofType: "concurrent_write" as ProofType,
+    triggers: {
+      keywords: [
+        "concurrent", "race condition", "double spend", "double booking",
+        "optimistic lock", "pessimistic lock", "version", "etag",
+        "simultaneous", "parallel", "atomic", "transaction", "idempotent",
+        "reserve", "book", "seat", "slot", "inventory", "stock",
+      ],
+      tags: ["concurrency", "race-condition", "locking", "atomic"],
+    },
+    priority: 88,
+  },
+  // ─── Mass Assignment / Parameter Pollution ──────────────────────────────────────────────
+  {
+    proofType: "mass_assignment" as ProofType,
+    triggers: {
+      keywords: [
+        "mass assignment", "parameter pollution", "allowlist", "whitelist",
+        "field filtering", "input sanitization", "role escalation",
+        "privilege escalation", "admin field", "protected field",
+        "readonly", "immutable", "not updatable", "cannot change",
+        "prototype pollution", "__proto__",
+      ],
+      tags: ["mass-assignment", "security", "input-validation", "privilege-escalation"],
+    },
+    priority: 87,
   },
 ];
 

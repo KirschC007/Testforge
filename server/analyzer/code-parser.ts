@@ -702,8 +702,81 @@ function extractNextAppRoutes(files: CodeFile[]): ParsedProcedure[] {
   return procedures;
 }
 
-// ─── IR Builder ───────────────────────────────────────────────────────────────
+// ─── NestJS Decorator Parser ────────────────────────────────────────────────
+/**
+ * Parses NestJS controllers with @Controller/@Get/@Post/@Put/@Patch/@Delete decorators.
+ * Also detects @Roles/@UseGuards for auth middleware.
+ */
+function parseNestJSControllers(files: CodeFile[]): ParsedProcedure[] {
+  const procedures: ParsedProcedure[] = [];
+  for (const file of files) {
+    if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx")) continue;
+    const content = file.content;
+    if (!content.includes("@Controller")) continue;
 
+    // Extract controller base path: @Controller('api/v1/users') or @Controller()
+    const controllerMatch = content.match(/@Controller\(\s*['"]?([^'"\)]*)['"]?\s*\)/);
+    const controllerPath = controllerMatch?.[1]?.trim() || "";
+    const basePath = controllerPath ? (controllerPath.startsWith("/") ? controllerPath : "/" + controllerPath) : "";
+
+    // Detect class-level auth guard
+    const classHasAuth = /@UseGuards\s*\([^)]*(?:Auth|Jwt|Guard|Role)[^)]*\)/i.test(content);
+    const classRoles: string[] = [];
+    const classRolesMatch = content.match(/@Roles\s*\(\s*([^)]+)\)/);
+    if (classRolesMatch) {
+      classRoles.push(...classRolesMatch[1].split(",").map(r => r.trim().replace(/['"`]/g, "").toLowerCase()));
+    }
+
+    // Parse method-level decorators
+    const methodRegex = /@(Get|Post|Put|Patch|Delete|Head)\s*\(\s*['"]?([^'"\)]*)['"]?\s*\)[\s\S]*?(?:async\s+)?(\w+)\s*\(/gm;
+    let match;
+    while ((match = methodRegex.exec(content)) !== null) {
+      const httpVerb = match[1].toUpperCase();
+      const methodPath = match[2]?.trim() || "";
+      const handlerName = match[3];
+      if (!handlerName || handlerName === "function") continue;
+
+      // Build full path
+      const subPath = methodPath ? (methodPath.startsWith("/") ? methodPath : "/" + methodPath) : "";
+      const finalPath = basePath + subPath || "/";
+
+      // Detect method-level auth from context before the decorator
+      const before = content.slice(Math.max(0, match.index - 500), match.index);
+      const methodHasAuth = classHasAuth || /@UseGuards\s*\([^)]*(?:Auth|Jwt|Guard|Role)[^)]*\)/i.test(before);
+      const methodRoles = [...classRoles];
+      const methodRolesMatch = before.match(/@Roles\s*\(\s*([^)]+)\)/);
+      if (methodRolesMatch) {
+        methodRoles.push(...methodRolesMatch[1].split(",").map(r => r.trim().replace(/['"`]/g, "").toLowerCase()));
+      }
+
+      // Derive resource.action name
+      const procName = pathToResourceAction(finalPath, httpVerb);
+      const fullName = `${httpVerb} ${finalPath}`;
+
+      // Extract Zod/class-validator input fields from handler body
+      const afterMatch = content.slice(match.index);
+      const handlerBodyMatch = afterMatch.match(/\{([\s\S]*?)^\}/m);
+      const handlerBody = handlerBodyMatch?.[1] || "";
+      const inputFields = parseZodObject(handlerBody);
+
+      const authMiddleware = methodHasAuth
+        ? (methodRoles.length > 0 ? methodRoles[0] : "authenticated")
+        : "publicProcedure";
+
+      procedures.push({
+        name: procName,
+        fullName,
+        method: httpVerb as ParsedProcedure["method"],
+        isProtected: methodHasAuth,
+        inputFields,
+        authMiddleware,
+      });
+    }
+  }
+  return procedures;
+}
+
+// ─── IR Builder ───────────────────────────────────────────────────────────────
 function buildIRFromCode(
   tables: ParsedTable[],
   procedures: ParsedProcedure[],
@@ -1105,7 +1178,8 @@ export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult
   const trpcProcedures = parseTRPCRouters(files);
   const expressProcedures = parseExpressRoutes(files);
   const nextProcedures = extractNextAppRoutes(files);
-  const allProcedures = [...trpcProcedures, ...expressProcedures, ...nextProcedures];
+  const nestProcedures = parseNestJSControllers(files);
+  const allProcedures = [...trpcProcedures, ...expressProcedures, ...nextProcedures, ...nestProcedures];
 
   // 4. Build IR
   const ir = buildIRFromCode(allTables, allProcedures, framework, files);

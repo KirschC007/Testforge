@@ -84,7 +84,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
             <span className="font-bold text-sm tracking-tight">TestForge</span>
-            <span className="text-xs text-muted-foreground ml-1 hidden sm:inline">by Manus</span>
+            
           </div>
           <div className="flex items-center gap-4">
             <Link href="/docs">
@@ -744,7 +744,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-4">
             <Link href="/pricing"><span className="hover:text-foreground transition-colors cursor-pointer">Pricing</span></Link>
-            <span>Built with Manus</span>
+            <span>TestForge</span>
           </div>
         </div>
       </footer>
