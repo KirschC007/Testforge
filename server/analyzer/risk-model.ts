@@ -556,6 +556,9 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     cross_tenant_chain: ["create", "get", "list", "update"],
     concurrent_write: ["create", "update", "reserve", "book", "purchase"],
     mass_assignment: ["create", "update", "register", "edit"],
+    db_transaction: ["create", "update", "transfer", "submit", "process"],
+    audit_log: ["delete", "update", "transfer", "admin", "cancel"],
+    graphql: ["graphql", "query", "mutation"],
   };
 
   const kws = keywords[proofType] || [];

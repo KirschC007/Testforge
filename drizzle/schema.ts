@@ -58,6 +58,10 @@ export const analyses = mysqlTable("analyses", {
   layer1Json: json("layer1Json"), // AnalysisResult after Layer 1 — available early
   layer2Json: json("layer2Json"), // RiskModel after Layer 2 — available early
 
+  // Job tracking for crash recovery
+  startedAt: timestamp("startedAt"),
+  workerPid: int("workerPid"),
+
   // Error info if failed
   errorMessage: text("errorMessage"),
 

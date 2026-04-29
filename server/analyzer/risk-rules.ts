@@ -363,6 +363,52 @@ export const RISK_RULES: RiskRule[] = [
     },
     priority: 87,
   },
+
+  // ─── DB Transaction / Atomicity ─────────────────────────────────────────────
+  {
+    proofType: "db_transaction" as ProofType,
+    triggers: {
+      keywords: [
+        "transaction", "rollback", "atomic", "atomicity", "commit",
+        "saga", "two-phase", "2pc", "consistency", "acid",
+        "partial write", "partial failure", "compensating",
+        "multi-step", "multi step", "side-effect",
+      ],
+      tags: ["transaction", "atomic", "consistency", "acid", "rollback"],
+    },
+    priority: 76,
+  },
+
+  // ─── Audit Log Validation ────────────────────────────────────────────────────
+  {
+    proofType: "audit_log" as ProofType,
+    triggers: {
+      keywords: [
+        "audit", "audit trail", "audit log", "event log", "immutable log",
+        "history", "trail", "who did what", "activity log",
+        "compliance log", "access log", "forensic", "non-repudiation",
+        "hipaa", "psd2", "sox", "loggable",
+      ],
+      tags: ["audit", "compliance", "logging", "hipaa", "psd2", "sox", "forensic"],
+    },
+    priority: 86,
+  },
+
+  // ─── GraphQL Security ─────────────────────────────────────────────────────────
+  {
+    proofType: "graphql" as ProofType,
+    triggers: {
+      keywords: [
+        "graphql", "graph ql", "schema definition language", "sdl",
+        "type query", "type mutation", "type subscription",
+        "__introspection", "query depth", "query complexity",
+        "hasura", "apollo", "pothos", "nexus", "relay",
+      ],
+      tags: ["graphql", "gql", "api"],
+      endpointPatterns: ["*/graphql", "graphql"],
+    },
+    priority: 89,
+  },
 ];
 
 /**

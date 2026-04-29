@@ -37,6 +37,43 @@ import { getAllSettings, upsertSetting, resetSetting } from "./settings-db";
 const runningJobs = new Set<number>();
 const cancelledJobs = new Set<number>(); // Jobs that should stop at next checkpoint
 
+/**
+ * Crash recovery: on server start, find any analyses stuck in "running" state
+ * from a previous process and mark them as failed.
+ * Runs once in setImmediate so it doesn't block server startup.
+ */
+setImmediate(async () => {
+  try {
+    const db = await getDb();
+    if (!db) return; // DB not configured (e.g. dev without DATABASE_URL)
+    const staleThreshold = new Date(Date.now() - 16 * 60 * 1000); // 16 min ago
+    const { analyses } = await import("../drizzle/schema");
+    const { and, lt, isNotNull } = await import("drizzle-orm");
+    const staleJobs = await db
+      .select({ id: analyses.id, projectName: analyses.projectName })
+      .from(analyses)
+      .where(
+        and(
+          eq(analyses.status, "running"),
+          isNotNull(analyses.startedAt),
+          lt(analyses.startedAt, staleThreshold)
+        )
+      );
+    if (staleJobs.length > 0) {
+      console.warn(`[Recovery] Found ${staleJobs.length} stale job(s) from previous process — marking as failed`);
+      for (const job of staleJobs) {
+        await updateAnalysis(job.id, {
+          status: "failed",
+          errorMessage: "Server restarted during job execution. Please re-run the analysis.",
+        }).catch(() => {});
+        console.warn(`[Recovery] Job #${job.id} (${job.projectName}) marked as failed`);
+      }
+    }
+  } catch {
+    // Non-fatal: recovery is best-effort, don't crash the server
+  }
+});
+
 async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string, industryPack?: IndustryPack, baseUrl?: string, authToken?: string) {
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
@@ -60,7 +97,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
     }, JOB_TIMEOUT_MS);
 
     try {
-      await updateAnalysis(analysisId, { status: "running" });
+      await updateAnalysis(analysisId, { status: "running", startedAt: new Date(), workerPid: process.pid });
       // Fetch spec text from S3
       const { url } = await storageGet(specKey);
       const resp = await fetch(url);
@@ -497,7 +534,7 @@ export const appRouter = router({
           if (runningJobs.has(analysisId)) return;
           runningJobs.add(analysisId);
           try {
-            await updateAnalysis(analysisId, { status: "running" });
+            await updateAnalysis(analysisId, { status: "running", startedAt: new Date(), workerPid: process.pid });
             const result = await runAnalysisJob(
               "", // specText not used for code scan
               input.projectName,

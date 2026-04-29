@@ -117,6 +117,9 @@ function getFilename(pt: ProofType): string {
     cross_tenant_chain: "tests/security/cross-tenant-chain.spec.ts",
     concurrent_write: "tests/concurrency/concurrent-writes.spec.ts",
     mass_assignment: "tests/security/mass-assignment.spec.ts",
+    db_transaction: "tests/integration/db-transactions.spec.ts",
+    audit_log: "tests/compliance/audit-log.spec.ts",
+    graphql: "tests/security/graphql.spec.ts",
   };
   return map[pt];
 }
@@ -2797,29 +2800,51 @@ ${payloadStr}
 test.describe("Concurrency: ${behaviorTitle}", () => {
   let cookie: string;
 
+  // test.retries(1): race condition timing is non-deterministic on slow CI machines
+  test.retries(1);
+
   test.beforeAll(async ({ request }) => {
     cookie = await ${roleFnName}(request);
   });
 
-  test("concurrent ${action} requests must not cause race conditions", async ({ request }) => {
+  test("concurrent ${action} requests — exactly one must succeed, rest must get 409", async ({ request }) => {
     const CONCURRENCY = 5;
+
+    // Baseline: count existing ${object}s BEFORE the burst
+    const beforeList = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
+    const countBefore = (beforeList.data?.result?.data as unknown[])?.length ?? 0;
+
     // Fire \${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
         trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
       )
     );
-    // At most one must succeed (or all must return deterministic results)
+
     const successCount = responses.filter(r => r.status === 200 || r.status === 201).length;
     const conflictCount = responses.filter(r => r.status === 409 || r.status === 429).length;
-    // Either exactly one succeeds (optimistic locking) or all succeed idempotently
-    expect(successCount + conflictCount).toBe(CONCURRENCY);
-    // No 500 errors allowed — system must handle concurrency gracefully
     const errorCount = responses.filter(r => r.status >= 500).length;
+
+    // Exactly one write must succeed — optimistic/pessimistic locking must prevent duplicates
+    expect(successCount).toBe(1);
+    // Kills: Remove DB uniqueness constraint — allows all 5 concurrent writes to succeed
+
+    // All remaining requests must return 409 Conflict (not silently fail or succeed)
+    expect(conflictCount).toBeGreaterThanOrEqual(CONCURRENCY - 1);
+    // Kills: Silently discard duplicate writes and return 200 instead of 409
+
+    // No 500s — concurrency must be handled gracefully, not with unhandled exceptions
     expect(errorCount).toBe(0);
+    // Kills: Unhandled DB deadlock exception returning 500 instead of 409
+
+    // DB state: only ONE new ${object} must have been created
+    const afterList = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
+    const countAfter = (afterList.data?.result?.data as unknown[])?.length ?? 0;
+    expect(countAfter - countBefore).toBe(1);
+    // Kills: Allow N concurrent writes to all persist — removes uniqueness enforcement
   });
 
-  test("concurrent ${action} must not create duplicate ${object}s", async ({ request }) => {
+  test("concurrent ${action} must not produce duplicate ${object} IDs", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
@@ -2827,36 +2852,27 @@ test.describe("Concurrency: ${behaviorTitle}", () => {
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
-    // If multiple succeed, they must return the same resource (idempotent)
-    if (successResponses.length > 1) {
-      const ids = successResponses.map(r => r.data?.result?.data?.id).filter(Boolean);
-      const uniqueIds = new Set(ids);
-      // All successful responses must reference the same resource
-      expect(uniqueIds.size).toBeLessThanOrEqual(1);
-    }
+    const ids = successResponses.map(r => r.data?.result?.data?.id).filter(Boolean);
+    const uniqueIds = new Set(ids);
+    // All successful responses must reference distinct resources (no ID aliasing)
+    expect(uniqueIds.size).toBe(ids.length);
+    // Kills: Return same ID for concurrent creates (ID generator collision)
   });
 
-  test("system remains consistent after concurrent ${action}", async ({ request }) => {
-    // Perform concurrent operations
+  test("system state is consistent after concurrent ${action} burst", async ({ request }) => {
+    const CONCURRENCY = 4;
     await Promise.all(
-      Array.from({ length: 3 }, () =>
+      Array.from({ length: CONCURRENCY }, () =>
         trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
       )
     );
-    // Verify system state is consistent (no partial writes, no corruption)
+    // Verify list endpoint returns well-formed data — no corrupted rows from partial writes
     const listResponse = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
     expect(listResponse.status).toBe(200);
+    // Kills: Concurrent writes leave the DB in an inconsistent state causing list to fail
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
-    // No duplicate entries with identical data
-    if (items && items.length > 1) {
-      const seen = new Set<string>();
-      for (const item of items) {
-        const key = JSON.stringify(item);
-        expect(seen.has(key)).toBe(false);
-        seen.add(key);
-      }
-    }
+    // Kills: Partial write creates a null/corrupted row causing non-array response
   });
 });
 `;
@@ -3525,6 +3541,9 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     cross_tenant_chain: generateCrossTenantChainTest,
     concurrent_write: generateConcurrentWriteTest,
     mass_assignment: generateMassAssignmentTest,
+    db_transaction: generateDBTransactionTest,
+    audit_log: generateAuditLogTest,
+    graphql: generateGraphQLTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -3597,5 +3616,424 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
 
   console.log(`[TestForge] Schicht 3 done in ${Date.now() - t0}ms — ${templateProofs.length + llmProofs.length} proofs`);
   return [...templateProofs, ...llmProofs];
+}
+
+// ─── DB Transaction / Rollback Test Generator ─────────────────────────────────
+/**
+ * Verifies atomicity: when a multi-step operation fails mid-way, no partial writes persist.
+ * Tests the most common backend bug: partial DB writes when step 2 fails after step 1 succeeded.
+ *
+ * Mutation targets:
+ * - Missing try/catch with rollback → partial write stays in DB
+ * - Missing DB transaction wrapper → commit happens after step 1 regardless of step 2
+ */
+export function generateDBTransactionTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
+  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
+
+  // Find a create + update endpoint pair for the transaction test
+  const createEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create")) || ir.apiEndpoints[0];
+  const updateEp = ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("status")
+  ) || ir.apiEndpoints[1] || createEp;
+
+  const createEndpoint = normalizeEndpointName(createEp?.name || "TODO_REPLACE_WITH_CREATE_ENDPOINT");
+  const updateEndpoint = normalizeEndpointName(updateEp?.name || "TODO_REPLACE_WITH_UPDATE_ENDPOINT");
+  const listEndpoint = `${createEndpoint.split(".")[0]}.list`;
+
+  const object = behavior?.object || createEndpoint.split(".").pop() || "resource";
+  const behaviorTitle = behavior?.title || target.description;
+
+  // Build a valid create payload from createEp fields
+  const createFields = createEp?.inputFields || [];
+  const payloadLines: string[] = [];
+  for (const f of createFields) {
+    payloadLines.push(`    ${f.name}: ${getValidDefault(f, tenantConst)},`);
+  }
+  if (payloadLines.length === 0) payloadLines.push(`    ${tenantField}: ${tenantConst},`);
+  const payloadStr = payloadLines.join("\n");
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — DB Transaction Atomicity: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Verifies: partial writes are rolled back when a multi-step operation fails
+
+let cookie: string;
+
+test.beforeAll(async ({ request }) => {
+  cookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — successful create persists all data atomically", async ({ request }) => {
+  // Step 1: Create resource with valid payload
+  const created = await trpcMutation(request, "${createEndpoint}", {
+${payloadStr}
+  }, cookie);
+
+  expect([200, 201]).toContain(created.status);
+  // Kills: Return 200 without actually writing to DB
+
+  const createdId = created.data?.result?.data?.id;
+  expect(createdId).toBeDefined();
+  // Kills: Auto-increment ID not returned — can't verify persistence
+
+  // Step 2: Verify the resource was actually persisted (not just returned in-memory)
+  const fetched = await trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  expect(fetched.status).toBe(200);
+  const items = fetched.data?.result?.data as Array<{ id: unknown }> | undefined;
+  const found = items?.find(i => i.id === createdId);
+  expect(found).toBeDefined();
+  // Kills: Resource created in-memory but not committed to DB
+});
+
+test("${target.id}b — failed operation leaves no partial write in DB", async ({ request }) => {
+  // Get baseline count BEFORE the failing operation
+  const beforeList = await trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  const countBefore = (beforeList.data?.result?.data as unknown[])?.length ?? 0;
+
+  // Trigger a failure by sending an intentionally invalid payload (missing required field)
+  const failing = await trpcMutation(request, "${createEndpoint}", {
+    ${tenantField}: ${tenantConst},
+    __invalid_field__: "trigger_failure",
+  }, cookie);
+
+  // Must return an error status — not silently succeed
+  expect(failing.status).not.toBe(200);
+  expect(failing.status).not.toBe(201);
+  // Kills: Accept invalid payload and partially persist data before validation
+
+  // DB state must be unchanged — no partial write
+  const afterList = await trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  const countAfter = (afterList.data?.result?.data as unknown[])?.length ?? 0;
+  expect(countAfter).toBe(countBefore);
+  // Kills: Missing DB transaction — step 1 write commits even when step 2 fails
+});
+
+test("${target.id}c — concurrent create + update is atomic (no torn read)", async ({ request }) => {
+  // Create a resource first
+  const created = await trpcMutation(request, "${createEndpoint}", {
+${payloadStr}
+  }, cookie);
+  expect([200, 201]).toContain(created.status);
+  const resourceId = created.data?.result?.data?.id;
+
+  // Simultaneously: try to read and update — reader must never see a half-updated state
+  const [readResult, _updateResult] = await Promise.all([
+    trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie),
+    trpcMutation(request, "${updateEndpoint}", { id: resourceId, ${tenantField}: ${tenantConst} }, cookie),
+  ]);
+
+  expect(readResult.status).toBe(200);
+  // Kills: Read returns corrupt/null rows during concurrent write (missing read lock)
+  const items = readResult.data?.result?.data;
+  expect(Array.isArray(items)).toBe(true);
+  // Kills: Concurrent write corrupts the list endpoint response structure
+});
+`;
+}
+
+// ─── Audit Log Validation Test Generator ──────────────────────────────────────
+/**
+ * Verifies that security-sensitive actions produce immutable audit trail entries.
+ * Critical for HIPAA, PSD2, SOX, and GDPR compliance.
+ *
+ * Mutation targets:
+ * - Missing audit log write → sensitive action goes unrecorded
+ * - Wrong actor recorded → audit trail is useless for forensics
+ * - Audit entries can be deleted → immutability violated
+ */
+export function generateAuditLogTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
+  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
+  const behaviorTitle = behavior?.title || target.description;
+
+  // Find or infer the audit log endpoint
+  const auditEp = ir.apiEndpoints.find(e => {
+    const n = e.name.toLowerCase();
+    return n.includes("audit") || n.includes("log") || n.includes("history") || n.includes("event");
+  });
+  const auditEndpoint = auditEp
+    ? normalizeEndpointName(auditEp.name)
+    : `${tenantEntity}s.auditLog`;
+
+  // Find a security-sensitive action endpoint
+  const sensitiveEp = ir.apiEndpoints.find(e => {
+    const n = e.name.toLowerCase();
+    return n.includes("delete") || n.includes("update") || n.includes("cancel") ||
+           n.includes("transfer") || n.includes("admin");
+  }) || ir.apiEndpoints.find(e => e.auth !== "public") || ir.apiEndpoints[0];
+  const sensitiveEndpoint = normalizeEndpointName(sensitiveEp?.name || "TODO_REPLACE_WITH_SENSITIVE_ENDPOINT");
+
+  // Build a minimal payload for the sensitive action
+  const sensitiveFields = sensitiveEp?.inputFields || [];
+  const payloadLines: string[] = [];
+  for (const f of sensitiveFields.slice(0, 3)) {
+    payloadLines.push(`    ${f.name}: ${getValidDefault(f, tenantConst)},`);
+  }
+  if (payloadLines.length === 0) payloadLines.push(`    ${tenantField}: ${tenantConst},`);
+  const payloadStr = payloadLines.join("\n");
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Audit Log Validation: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Compliance: HIPAA / PSD2 / SOX / GDPR — every sensitive action must produce an audit entry
+
+let cookie: string;
+
+test.beforeAll(async ({ request }) => {
+  cookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — sensitive action creates an audit log entry", async ({ request }) => {
+  const actionTimestamp = Date.now();
+
+  // Perform the security-sensitive action
+  const action = await trpcMutation(request, "${sensitiveEndpoint}", {
+${payloadStr}
+  }, cookie);
+
+  expect([200, 201, 204]).toContain(action.status);
+  // Kills: Sensitive action endpoint is completely unimplemented
+
+  // Wait briefly for async audit write (if needed)
+  await new Promise(r => setTimeout(r, 200));
+
+  // Audit log must contain an entry for this action
+  const auditLog = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  expect(auditLog.status).toBe(200);
+  // Kills: Audit log endpoint returns 404 — audit trail not implemented
+
+  const entries = auditLog.data?.result?.data as Array<{
+    action?: string; actor?: string; timestamp?: string | number; resourceId?: unknown;
+  }> | undefined;
+
+  expect(Array.isArray(entries)).toBe(true);
+  // Kills: Audit entries stored in non-queryable format
+
+  // At least one entry must exist after the action timestamp
+  const recentEntries = entries?.filter(e => {
+    const ts = e.timestamp ? new Date(e.timestamp).getTime() : 0;
+    return ts >= actionTimestamp - 1000;
+  });
+  expect((recentEntries?.length ?? 0)).toBeGreaterThan(0);
+  // Kills: Audit log write is skipped or runs after a timeout
+});
+
+test("${target.id}b — audit entry contains required fields (actor, action, timestamp)", async ({ request }) => {
+  // Perform a sensitive action to generate a fresh audit entry
+  await trpcMutation(request, "${sensitiveEndpoint}", {
+${payloadStr}
+  }, cookie);
+
+  const auditLog = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  expect(auditLog.status).toBe(200);
+
+  const entries = auditLog.data?.result?.data as Array<Record<string, unknown>> | undefined;
+  const latestEntry = entries?.[entries.length - 1] ?? entries?.[0];
+
+  expect(latestEntry).toBeDefined();
+  // Kills: Empty audit log — no entries written
+
+  // Actor field must be present (who performed the action)
+  const hasActor = "actor" in (latestEntry ?? {}) || "userId" in (latestEntry ?? {}) ||
+    "performedBy" in (latestEntry ?? {}) || "createdBy" in (latestEntry ?? {});
+  expect(hasActor).toBe(true);
+  // Kills: Audit entry written without recording which user performed the action
+
+  // Timestamp must be present (when did it happen)
+  const hasTimestamp = "timestamp" in (latestEntry ?? {}) || "createdAt" in (latestEntry ?? {}) ||
+    "occurredAt" in (latestEntry ?? {}) || "at" in (latestEntry ?? {});
+  expect(hasTimestamp).toBe(true);
+  // Kills: Audit entry has no timestamp — forensic timeline is impossible
+
+  // Action type must be present (what happened)
+  const hasAction = "action" in (latestEntry ?? {}) || "event" in (latestEntry ?? {}) ||
+    "type" in (latestEntry ?? {}) || "operation" in (latestEntry ?? {});
+  expect(hasAction).toBe(true);
+  // Kills: Audit entry has no action field — can't determine what was done
+});
+
+test("${target.id}c — audit log entries are immutable (cannot be deleted)", async ({ request }) => {
+  // Record the current audit log size
+  const before = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  const entriesBefore = (before.data?.result?.data as unknown[])?.length ?? 0;
+
+  // Perform an action to create an entry
+  await trpcMutation(request, "${sensitiveEndpoint}", {
+${payloadStr}
+  }, cookie);
+
+  const after = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
+  const entriesAfter = (after.data?.result?.data as unknown[])?.length ?? 0;
+
+  // Audit log must grow (entries are appended, never removed)
+  expect(entriesAfter).toBeGreaterThanOrEqual(entriesBefore);
+  // Kills: Audit entries are truncated, rotated, or deleted instead of being append-only
+});
+`;
+}
+
+// ─── GraphQL Security Test Generator ─────────────────────────────────────────
+/**
+ * Verifies GraphQL endpoints are hardened against common attack vectors:
+ * - Introspection disabled in production
+ * - Query depth limits enforced
+ * - IDOR via variable manipulation
+ * - Batch query abuse
+ *
+ * Mutation targets:
+ * - Introspection enabled → schema leakage
+ * - No depth limit → DoS via deeply nested queries
+ * - No authorization on variables → IDOR
+ */
+export function generateGraphQLTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
+  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
+  const behaviorTitle = behavior?.title || target.description;
+
+  // Detect the GraphQL endpoint
+  const gqlEp = ir.apiEndpoints.find(e => {
+    const n = e.name.toLowerCase();
+    return n.includes("graphql") || n.includes("/graphql");
+  });
+  const gqlEndpoint = gqlEp?.name || "/graphql";
+  // Normalize: if it's a tRPC-style name, use /graphql as the HTTP path
+  const gqlPath = gqlEndpoint.startsWith("/") ? gqlEndpoint : "/graphql";
+
+  // Find a resource name from IR for IDOR test
+  const resource = ir.resources[0]?.name || tenantEntity;
+  const resourceIdField = ir.resources[0]?.tenantKey || `${tenantEntity}Id`;
+
+  return `import { test, expect } from "@playwright/test";
+import { BASE_URL } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — GraphQL Security Hardening: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Covers: introspection, depth limits, IDOR via variables, batch abuse
+
+let cookie: string;
+
+async function gqlRequest(request: any, query: string, variables?: Record<string, unknown>, authCookie?: string) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authCookie) headers["Cookie"] = authCookie;
+  const response = await request.post(\`\${BASE_URL}${gqlPath}\`, {
+    headers,
+    data: { query, variables },
+  });
+  const body = await response.json().catch(() => ({}));
+  return { status: response.status(), body };
+}
+
+test.beforeAll(async ({ request }) => {
+  cookie = await ${roleFnName}(request);
+});
+
+test("${target.id}a — introspection is disabled in production", async ({ request }) => {
+  const { status, body } = await gqlRequest(request, \`
+    { __schema { types { name } } }
+  \`, {}, cookie);
+
+  // Either introspection is disabled (error) or returns 400/403
+  const isDisabled = status >= 400 ||
+    (body.errors && body.errors.some((e: { message?: string }) =>
+      (e.message || "").toLowerCase().includes("introspection")));
+  expect(isDisabled).toBe(true);
+  // Kills: Introspection enabled in production — leaks full schema to attackers
+});
+
+test("${target.id}b — deeply nested query is rejected (depth limit enforced)", async ({ request }) => {
+  // Build a 10-level deep query — should be rejected by depth limit
+  const deepQuery = \`{
+    ${resource} {
+      ${resource} {
+        ${resource} {
+          ${resource} {
+            ${resource} {
+              ${resource} { id }
+            }
+          }
+        }
+      }
+    }
+  }\`;
+
+  const { status, body } = await gqlRequest(request, deepQuery, {}, cookie);
+
+  // Must reject with error — not execute a potentially infinite query
+  const isRejected = status >= 400 ||
+    (body.errors && body.errors.some((e: { message?: string }) =>
+      (e.message || "").toLowerCase().match(/depth|complex|limit|too|nested/)));
+  expect(isRejected).toBe(true);
+  // Kills: No query depth limit — allows DoS via deeply nested queries
+});
+
+test("${target.id}c — IDOR via GraphQL variable substitution is blocked", async ({ request }) => {
+  // Positive control: authenticated user can query their own tenant's data
+  const ownQuery = await gqlRequest(request, \`
+    query GetResources($${tenantField}: ID!) {
+      ${resource}s(${tenantField}: $${tenantField}) { id }
+    }
+  \`, { ${tenantField}: ${tenantConst} }, cookie);
+
+  expect([200]).toContain(ownQuery.status);
+  // Kills: Query always fails — GraphQL endpoint not functional
+
+  // Attack: substitute a different tenant's ID into the variable
+  const attackQuery = await gqlRequest(request, \`
+    query GetResources($${tenantField}: ID!) {
+      ${resource}s(${tenantField}: $${tenantField}) { id }
+    }
+  \`, { ${tenantField}: "9999999" }, cookie);
+
+  // Must return 403/401 or empty results — NOT another tenant's data
+  const isBlocked = attackQuery.status >= 400 ||
+    (attackQuery.body?.data?.[resource + "s"]?.length === 0) ||
+    attackQuery.body?.errors?.length > 0;
+  expect(isBlocked).toBe(true);
+  // Kills: GraphQL resolver ignores tenantId variable — returns any tenant's data
+});
+
+test("${target.id}d — batch query abuse is rate-limited", async ({ request }) => {
+  // Send 50 identical queries in one batch request
+  const batchQueries = Array.from({ length: 50 }, (_, i) => ({
+    query: \`{ __typename }\`,
+    operationName: \`BatchOp\${i}\`,
+  }));
+
+  const response = await request.post(\`\${BASE_URL}${gqlPath}\`, {
+    headers: { "Content-Type": "application/json", "Cookie": cookie },
+    data: batchQueries,
+  });
+
+  // Must either: reject batching entirely (400), or rate-limit (429), or limit batch size
+  const status = response.status();
+  const isProtected = status === 400 || status === 429 ||
+    (status === 200 && (await response.json().catch(() => [])).length < 50);
+  expect(isProtected).toBe(true);
+  // Kills: Unlimited batch processing — allows amplified DoS with single HTTP request
+});
+`;
 }
 

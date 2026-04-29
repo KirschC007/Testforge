@@ -1,5 +1,7 @@
 import { invokeLLM } from "../_core/llm";
+import { logger } from "../_core/logger";
 import { generateProofs } from "./proof-generator";
+import { autoDetectIndustryPack } from "./proof-pack-generator";
 import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
 import { parseSpec, withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { parseSpecSmart, semanticDedup } from "./smart-parser";
@@ -39,12 +41,15 @@ export async function runAnalysisJob(
 ): Promise<AnalysisJobResult> {
   const jobStart = Date.now();
   const isCodeScan = !!(options?.codeFiles && options.codeFiles.length > 0);
-  console.log(`[TestForge] Job START v3.1 — ${isCodeScan ? `Code-Scan (${options!.codeFiles!.length} files)` : `${specText.length} chars`}, project: ${projectName}`);
+  logger.info(
+    { layer: 0, specChars: specText.length, fileCount: options?.codeFiles?.length ?? 0 },
+    `Job START — ${isCodeScan ? `Code-Scan (${options!.codeFiles!.length} files)` : `${specText.length} chars`}, project: ${projectName}`
+  );
 
   const progress = async (layer: number, message: string, data?: Parameters<ProgressCallback>[2]) => {
-    console.log(`[TestForge] Progress Layer ${layer}: ${message}`);
+    logger.info({ layer }, message);
     if (onProgress) {
-      try { await onProgress(layer, message, data); } catch (e) { console.error("[TestForge] Progress callback error:", e); }
+      try { await onProgress(layer, message, data); } catch (e) { logger.error({ layer }, `Progress callback error: ${e}`); }
     }
   };
 
@@ -287,15 +292,25 @@ export async function runAnalysisJob(
   // Schicht 2: Risk model
   const t2 = Date.now();
   const riskModel = buildRiskModel(analysisResult);
-  console.log(`[TestForge] Schicht 2 done in ${Date.now() - t2}ms — ${riskModel.proofTargets.length} proof targets`);
+  logger.timed({ layer: 2, proofCount: riskModel.proofTargets.length }, `Schicht 2 done — ${riskModel.proofTargets.length} proof targets`, t2);
 
   await progress(2, `Layer 2 fertig: ${riskModel.proofTargets.length} Proof-Targets, ${riskModel.idorVectors} IDOR-Vektoren`, { analysisResult, riskModel });
 
+  // Auto-detect industry pack if none was manually provided
+  const resolvedPack = industryPack ?? (() => {
+    const detected = autoDetectIndustryPack(analysisResult);
+    if (detected.pack) {
+      logger.info({ layer: 2 }, `Auto-detected industry pack: ${detected.pack} — ${detected.reason}`);
+    }
+    return detected.pack ?? undefined;
+  })();
+
   // Industry Pack: inject domain-specific proof types and risk hints
-  if (industryPack) {
+  if (resolvedPack) {
+    const industryPackResolved = resolvedPack;
     // Get current proof types from all targets
     const currentProofTypes = Array.from(new Set(riskModel.proofTargets.map(t => t.proofType)));
-    const packResult = applyProofPack(industryPack, currentProofTypes);
+    const packResult = applyProofPack(industryPackResolved, currentProofTypes);
     const addedTypes = packResult.proofTypes.filter(pt => !currentProofTypes.includes(pt as any));
     // For each added proof type, create a new proof target from the highest-priority behavior
     const topBehavior = riskModel.proofTargets[0];
@@ -304,25 +319,25 @@ export async function runAnalysisJob(
         ...topBehavior,
         id: `${topBehavior.id}_pack_${pt}`,
         proofType: pt as import("./types").ProofType,
-        description: `[${industryPack.toUpperCase()} Pack] ${pt} compliance test — ${packResult.complianceFrameworks.join(", ")}`,
+        description: `[${industryPackResolved.toUpperCase()} Pack] ${pt} compliance test — ${packResult.complianceFrameworks.join(", ")}`,
         preconditions: topBehavior.preconditions,
         assertions: topBehavior.assertions,
         mutationTargets: topBehavior.mutationTargets,
       }));
       riskModel.proofTargets = [...riskModel.proofTargets, ...newTargets];
     }
-    console.log(`[TestForge] Industry Pack '${industryPack}' applied — +${addedTypes.length} proof types, frameworks: ${packResult.complianceFrameworks.join(", ")}`);
-    await progress(2, `Industry Pack '${industryPack}' angewendet: +${addedTypes.length} Proof-Typen (${packResult.complianceFrameworks.join(", ")})`);
+    logger.info({ layer: 2 }, `Industry Pack '${industryPackResolved}' applied — +${addedTypes.length} proof types, frameworks: ${packResult.complianceFrameworks.join(", ")}`);
+    await progress(2, `Industry Pack '${industryPackResolved}' angewendet: +${addedTypes.length} Proof-Typen (${packResult.complianceFrameworks.join(", ")})`);
   }
   // Helpers Generator
   const helpers = generateHelpers(analysisResult);
-  console.log(`[TestForge] Helpers generated — ${Object.keys(helpers).length} files`);
+  logger.info({ layer: 3 }, `Helpers generated — ${Object.keys(helpers).length} files`);
 
   // Schicht 3: Proof generation (ALL parallel)
   await progress(3, "Layer 3: Generiere Tests (alle parallel)...");
   const t3 = Date.now();
   const rawProofs = await generateProofs(riskModel, analysisResult);
-  console.log(`[TestForge] Schicht 3 done in ${Date.now() - t3}ms — ${rawProofs.length} raw proofs`);
+  logger.timed({ layer: 3, proofCount: rawProofs.length }, `Schicht 3 done — ${rawProofs.length} raw proofs`, t3);
 
   await progress(3, `Layer 3 fertig: ${rawProofs.length} Tests generiert`, { proofCount: rawProofs.length });
 
@@ -330,7 +345,7 @@ export async function runAnalysisJob(
   await progress(4, `Layer 4: Independent Checker prüft ${rawProofs.length} Tests...`);
   const t5 = Date.now();
   const { checkedProofs } = await runIndependentChecker(rawProofs, analysisResult);
-  console.log(`[TestForge] Schicht 5 done in ${Date.now() - t5}ms — ${checkedProofs.length} proofs after independent check`);
+  logger.timed({ layer: 5, proofCount: checkedProofs.length }, `Schicht 5 done — ${checkedProofs.length} proofs after independent check`, t5);
 
   await progress(4, `Layer 4 fertig: ${checkedProofs.length} Tests nach Independent Check`);
 
@@ -338,7 +353,7 @@ export async function runAnalysisJob(
   const t4 = Date.now();
   const behaviorIds = analysisResult.ir.behaviors.map(b => b.id);
   const validatedSuite = validateProofs(checkedProofs, behaviorIds);
-  console.log(`[TestForge] Schicht 4 done in ${Date.now() - t4}ms — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`);
+  logger.timed({ layer: 4, proofCount: validatedSuite.proofs.length }, `Schicht 4 done — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`, t4);
 
   await progress(5, `Layer 5 fertig: ${validatedSuite.proofs.length} validierte Tests, ${validatedSuite.discardedProofs.length} verworfen`);
 
@@ -406,11 +421,15 @@ export async function runAnalysisJob(
   const totalOriginal = testFiles.length + extendedSuite.files.length + helperEntries.length;
   const totalSanitized = sanitizedTestFiles.length + sanitizedExtendedFiles.length + sanitizedHelperEntries.length;
   if (totalOriginal !== totalSanitized) {
-    console.log(`[TestForge] ⚠ Syntax sanitizer: ${totalOriginal - totalSanitized} files repaired`);
+    logger.warn({ layer: 6 }, `Syntax sanitizer: ${totalOriginal - totalSanitized} files repaired`);
   }
-  console.log(`[TestForge] Output validated: ${sanitizedTestFiles.length} core + ${sanitizedExtendedFiles.length} extended + ${sanitizedHelperEntries.length} helpers`);
+  logger.info({ layer: 6 }, `Output validated: ${sanitizedTestFiles.length} core + ${sanitizedExtendedFiles.length} extended + ${sanitizedHelperEntries.length} helpers`);
 
-  console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${sanitizedTestFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
+  logger.timed(
+    { layer: 6, proofCount: validatedSuite.proofs.length, fileCount: sanitizedTestFiles.length },
+    `Job DONE — ${sanitizedTestFiles.length} test files, ${validatedSuite.proofs.length} proofs`,
+    jobStart
+  );
 
   return {
     analysisResult, riskModel, validatedSuite, report, htmlReport,
