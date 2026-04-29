@@ -113,7 +113,7 @@ const PROOF_ICONS = [
   { id: "feature_gate",     label: "Feature Gate",  icon: <Cpu className="w-3.5 h-3.5" />,           color: "var(--tf-purple)" },
 ];
 
-type InputMode = "spec" | "code";
+type InputMode = "spec" | "code" | "har";
 type SpecTab = "paste" | "github";
 type CodeTab = "github" | "zip";
 
@@ -138,6 +138,13 @@ export default function NewAnalysis() {
   const [fileError, setFileError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── HAR path state ────────────────────────────────────────────────────────
+  const [harFile, setHarFile] = useState<File | null>(null);
+  const [harBaseUrl, setHarBaseUrl] = useState("");
+  const [harLoading, setHarLoading] = useState(false);
+  const [harError, setHarError] = useState("");
+  const harRef = useRef<HTMLInputElement>(null);
 
   // ── Code path state ───────────────────────────────────────────────────────
   const [codeTab, setCodeTab] = useState<CodeTab>("github");
@@ -302,6 +309,43 @@ export default function NewAnalysis() {
     }
   };
 
+  // ── HAR submit handler ────────────────────────────────────────────────────
+  const handleHARSubmit = async () => {
+    if (!harFile) { toast.error("Please select a .har file"); return; }
+    setHarLoading(true);
+    setHarError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", harFile);
+      if (harBaseUrl.trim()) formData.append("baseUrl", harBaseUrl.trim());
+      const resp = await fetch("/api/analyze-har", { method: "POST", body: formData });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Analysis failed" }));
+        setHarError(err.error || "HAR analysis failed");
+        return;
+      }
+      // Download the ZIP
+      const summary = resp.headers.get("X-HAR-Summary");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `testforge-har-${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (summary) {
+        const s = JSON.parse(summary);
+        toast.success(`Generated tests for ${s.uniqueEndpoints} endpoints (${s.authEndpoints} authenticated, avg ${s.averageResponseMs}ms)`);
+      } else {
+        toast.success("HAR analysis complete — tests downloaded!");
+      }
+    } catch (err: any) {
+      setHarError(err.message || "Upload failed");
+    } finally {
+      setHarLoading(false);
+    }
+  };
+
   if (authLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
   }
@@ -355,7 +399,7 @@ export default function NewAnalysis() {
                 </p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-5 max-w-3xl mx-auto">
+              <div className="grid md:grid-cols-3 gap-5 max-w-4xl mx-auto">
                 {/* Spec Card */}
                 <button
                   type="button"
@@ -441,6 +485,159 @@ export default function NewAnalysis() {
                     Select this <ChevronRight className="w-3.5 h-3.5" />
                   </div>
                 </button>
+                {/* HAR Card */}
+                <button
+                  type="button"
+                  onClick={() => setInputMode("har")}
+                  className="group text-left border border-border rounded-xl p-6 hover:border-[var(--tf-green)]/60 hover:bg-[var(--tf-green)]/5 transition-all"
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-[var(--tf-green)]/10 flex items-center justify-center">
+                      <Activity className="w-5 h-5 text-[var(--tf-green)]" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-semibold">I have Traffic</h2>
+                      <p className="text-xs text-muted-foreground">HAR file from browser or proxy</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 mb-4">
+                    <p className="text-xs text-muted-foreground font-medium">Best for:</p>
+                    <ul className="space-y-1">
+                      {["Undocumented APIs", "Legacy systems", "Real usage patterns"].map(t => (
+                        <li key={t} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <CheckCircle2 className="w-3 h-3 text-[var(--tf-green)] shrink-0" /> {t}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <Zap className="w-3 h-3 text-[var(--tf-green)]" />
+                      <span className="text-[var(--tf-green)] font-medium">Instant — no LLM, no spec needed</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Eye className="w-3 h-3" />
+                      <span>Replay + security + perf baseline tests</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-[var(--tf-green)] group-hover:gap-2.5 transition-all">
+                    Select this <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── HAR Form ───────────────────────────────────────────────── */}
+          {inputMode === "har" && (
+            <div className="max-w-xl mx-auto">
+              <div className="flex items-center gap-3 mb-6">
+                <button type="button" onClick={() => setInputMode(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <div>
+                  <h1 className="text-xl font-bold">Traffic-Based Analysis</h1>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Upload a HAR file — TestForge generates replay, security, and performance tests from your real traffic.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                {/* How to get a HAR file */}
+                <div className="rounded-lg bg-muted/40 border border-border p-4 text-xs space-y-2">
+                  <p className="font-medium text-foreground">How to capture a HAR file:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                    <li>Open Chrome DevTools → Network tab</li>
+                    <li>Use your app normally (login, create, update, etc.)</li>
+                    <li>Right-click any request → <strong className="text-foreground">Save all as HAR</strong></li>
+                    <li>Upload the .har file below</li>
+                  </ol>
+                  <p className="text-muted-foreground">Proxyman / Charles Proxy: File → Export → HAR</p>
+                </div>
+
+                {/* File picker */}
+                <div>
+                  <Label className="text-sm font-medium">HAR File <span className="text-red-500">*</span></Label>
+                  <div
+                    className="mt-2 border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-[var(--tf-green)]/60 hover:bg-[var(--tf-green)]/5 transition-all"
+                    onClick={() => harRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const f = e.dataTransfer.files[0];
+                      if (f && (f.name.endsWith(".har") || f.type === "application/json")) {
+                        setHarFile(f);
+                        setHarError("");
+                      } else {
+                        setHarError("Please drop a .har file");
+                      }
+                    }}
+                  >
+                    <input
+                      ref={harRef}
+                      type="file"
+                      accept=".har,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) { setHarFile(f); setHarError(""); }
+                      }}
+                    />
+                    {harFile ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <CheckCircle2 className="w-8 h-8 text-[var(--tf-green)]" />
+                        <p className="text-sm font-medium">{harFile.name}</p>
+                        <p className="text-xs text-muted-foreground">{(harFile.size / 1024).toFixed(0)} KB — click to change</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <Upload className="w-8 h-8 text-muted-foreground" />
+                        <p className="text-sm font-medium">Drop .har file here or click to browse</p>
+                        <p className="text-xs text-muted-foreground">Max 50MB · Exported from Chrome DevTools or proxy tools</p>
+                      </div>
+                    )}
+                  </div>
+                  {harError && <p className="mt-2 text-xs text-red-500">{harError}</p>}
+                </div>
+
+                {/* Optional base URL */}
+                <div>
+                  <Label htmlFor="har-base-url" className="text-sm font-medium">Base URL <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input
+                    id="har-base-url"
+                    className="mt-1.5"
+                    placeholder="https://api.yourapp.com"
+                    value={harBaseUrl}
+                    onChange={(e) => setHarBaseUrl(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">Override the base URL from the HAR (e.g. point tests at staging)</p>
+                </div>
+
+                {/* What you'll get */}
+                <div className="rounded-lg bg-[var(--tf-green)]/5 border border-[var(--tf-green)]/20 p-4 text-xs space-y-2">
+                  <p className="font-medium text-[var(--tf-green)]">What you'll get (instant ZIP download):</p>
+                  <ul className="space-y-1 text-muted-foreground">
+                    <li className="flex gap-2"><span className="text-[var(--tf-green)]">→</span> <strong className="text-foreground">Replay tests</strong> — re-run captured calls, verify same response</li>
+                    <li className="flex gap-2"><span className="text-[var(--tf-green)]">→</span> <strong className="text-foreground">Security tests</strong> — every auth endpoint checked without cookie → must 401</li>
+                    <li className="flex gap-2"><span className="text-[var(--tf-green)]">→</span> <strong className="text-foreground">Perf baseline</strong> — budget = 3× captured avg response time</li>
+                  </ul>
+                </div>
+
+                <Button
+                  className="w-full gap-2"
+                  onClick={handleHARSubmit}
+                  disabled={!harFile || harLoading}
+                >
+                  {harLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing traffic…</>
+                  ) : (
+                    <><Activity className="w-4 h-4" /> Generate Tests from HAR</>
+                  )}
+                </Button>
               </div>
             </div>
           )}

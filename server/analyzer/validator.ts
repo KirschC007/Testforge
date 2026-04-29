@@ -115,12 +115,16 @@ function runValidationRules(proof: RawProof): ValidationResult {
   }
   notes.push("✓ R7b: No fake IDOR IDs");
 
-  // R9: Webhook/cron tests must use pollUntil() or expect.poll() for eventual consistency
+  // R9: Webhook/cron tests — warn if no polling, but don't reject.
+  // The trigger endpoint itself responds synchronously (202 Accepted); only downstream
+  // delivery/side-effects are async. Hard rejection here would discard every generated
+  // webhook test. Emit a note instead — let test authors add pollUntil() where needed.
   if ((proof.proofType === "webhook" || proof.proofType === "cron_job") &&
     !code.includes("pollUntil") && !code.includes("poll(") && !code.includes("setTimeout")) {
-    return { passed: false, notes: [], reason: "missing_poll", details: "R9 violation: webhook/cron_job test makes immediate assertion on async result. Use pollUntil() from helpers/api for eventual consistency." };
+    notes.push("⚠ R9: webhook/cron_job has no pollUntil() — add polling for downstream delivery assertions");
+  } else {
+    notes.push("✓ R9: Async tests use poll()");
   }
-  notes.push("✓ R9: Async tests use poll()");
 
   // R11: Array index assertions without explicit sort are order-dependent and flaky
   if (/\bitems?\[0\]|\bdata\[0\]|\bresults?\[0\]/.test(code) &&

@@ -199,6 +199,8 @@ export const PROOF_TYPES = [
   "concurrent_write", "mass_assignment",
   // World-class additions
   "db_transaction", "audit_log", "graphql", "accessibility",
+  // Tier-1 world-class: property-based fuzz testing
+  "property_based",
 ] as const;
 
 export type ProofType = typeof PROOF_TYPES[number];
@@ -298,11 +300,13 @@ export interface GeneratedHelpers {
   "helpers/browser.ts": string;
   "playwright.config.ts": string;
   "package.json": string;
+  "stryker.config.json": string;
   ".github/workflows/testforge.yml": string;
   "tsconfig.json": string;
   "README.md": string;
   ".env.example": string;
   "validate-payloads.mjs": string;
+  "heal.mjs": string;
 }
 
 // ─── Flow / CronJob / FeatureGate ────────────────────────────────────────────

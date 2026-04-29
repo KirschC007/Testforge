@@ -46,6 +46,12 @@
  * ── Accessibility ─────────────────────────────────────────────────────────────
  *   accessibility     → proof-templates/accessibility.ts ← NEW
  *
+ * ── Property-Based ────────────────────────────────────────────────────────────
+ *   property_based    → proof-generator.ts (generatePropertyTest) ← NEW
+ *                       Uses fast-check: 50 random inputs × 5 invariants
+ *                       P1: no 500, P2: shape consistent, P3: injection safe,
+ *                       P4: numeric overflow safe, P5: concurrent idempotent
+ *
  * Adding a new ProofType:
  *   1. Add to PROOF_TYPES in types.ts
  *   2. Create proof-templates/<domain>.ts with the generator function

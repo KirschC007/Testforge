@@ -560,6 +560,7 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     audit_log: ["delete", "update", "transfer", "admin", "cancel"],
     graphql: ["graphql", "query", "mutation"],
     accessibility: ["create", "update", "get", "list"],
+    property_based: ["create", "update", "submit", "process"],
   };
 
   const kws = keywords[proofType] || [];

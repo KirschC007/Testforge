@@ -409,6 +409,24 @@ export const RISK_RULES: RiskRule[] = [
     priority: 22,
   },
 
+  // ─── Property-Based Fuzz Testing ──────────────────────────────────────────────
+  // Triggers for any endpoint that has typed input fields — fast-check generates
+  // 50 random valid inputs and verifies invariants hold (no 500, consistent shape).
+  {
+    proofType: "property_based" as ProofType,
+    triggers: {
+      conditions: [
+        (_, ep) => (ep?.inputFields || []).filter(f => !f.isTenantKey).length >= 2,
+      ],
+      keywords: [
+        "input validation", "field validation", "schema validation",
+        "boundary", "range", "constraint", "type safety",
+        "fuzz", "random", "arbitrary",
+      ],
+    },
+    priority: 15, // Low priority — runs after all specific proof types
+  },
+
   // ─── GraphQL Security ─────────────────────────────────────────────────────────
   {
     proofType: "graphql" as ProofType,

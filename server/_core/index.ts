@@ -194,6 +194,81 @@ async function startServer() {
     }
   });
 
+  // ─── HAR Traffic Import Endpoint ────────────────────────────────────────────
+  // POST /api/analyze-har
+  // Accepts a HAR file (JSON from browser DevTools / proxy), parses real traffic,
+  // and returns a ZIP containing Playwright tests:
+  //   - tests/traffic/replay-authenticated.spec.ts  — auth endpoint replay
+  //   - tests/traffic/security-authenticated.spec.ts — auth required checks
+  //   - tests/traffic/replay-public.spec.ts          — public endpoint replay
+  //   - tests/traffic/perf-baseline.spec.ts          — response time budgets
+  // No LLM calls — fully deterministic, returns in <2s.
+  const harUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+  app.post("/api/analyze-har", harUpload.single("file"), async (req: any, res: any) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No HAR file provided" });
+
+      // Parse HAR JSON
+      let har: unknown;
+      try {
+        har = JSON.parse(req.file.buffer.toString("utf-8"));
+      } catch {
+        return res.status(422).json({ error: "Invalid JSON — upload a .har file exported from browser DevTools or a proxy tool" });
+      }
+
+      // Validate HAR structure
+      const { validateHAR, parseHAR } = await import("../analyzer/har-parser");
+      const validation = validateHAR(har);
+      if (!validation.valid) {
+        return res.status(422).json({ error: `Invalid HAR: ${validation.error}` });
+      }
+
+      // Parse and generate test files
+      const suite = parseHAR(har as any, {
+        baseUrl: req.body?.baseUrl || undefined,
+      });
+
+      if (suite.endpoints.length === 0) {
+        return res.status(422).json({
+          error: "No API calls found in HAR. Make sure to capture /api/ traffic and export from Chrome DevTools → Network → Export HAR.",
+        });
+      }
+
+      // Bundle test files into ZIP
+      const archiver = await import("archiver");
+      const chunks: Buffer[] = [];
+      const archive = archiver.default("zip", { zlib: { level: 1 } });
+      archive.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+      await new Promise<void>((resolve, reject) => {
+        archive.on("end", resolve);
+        archive.on("error", reject);
+
+        for (const f of suite.testFiles) {
+          archive.append(Buffer.from(f.content, "utf-8"), { name: f.filename });
+        }
+
+        // Include a summary JSON
+        archive.append(Buffer.from(JSON.stringify(suite.summary, null, 2), "utf-8"), {
+          name: "har-analysis-summary.json",
+        });
+
+        archive.finalize();
+      });
+
+      const zipBuffer = Buffer.concat(chunks);
+      const filename = `testforge-har-${Date.now()}.zip`;
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-HAR-Summary", JSON.stringify(suite.summary));
+      res.send(zipBuffer);
+    } catch (err: any) {
+      console.error("[analyze-har]", err);
+      res.status(500).json({ error: err.message || "HAR analysis failed" });
+    }
+  });
+
   // ─── SSE: Test Run Live Stream ─────────────────────────────────────────────
   // GET /api/test-runs/:runId/stream
   // Opens a Server-Sent Events connection. Emits:

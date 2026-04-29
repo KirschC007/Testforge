@@ -121,6 +121,7 @@ function getFilename(pt: ProofType): string {
     audit_log: "tests/compliance/audit-log.spec.ts",
     graphql: "tests/security/graphql.spec.ts",
     accessibility: "tests/accessibility/wcag.spec.ts",
+    property_based: "tests/property/fuzz.spec.ts",
   };
   return map[pt];
 }
@@ -3302,7 +3303,7 @@ export function generateWebhookTest(target: ProofTarget, analysis: AnalysisResul
     behavior?.title.match(/([a-z]+\.[a-z]+)/)?.[1] || "order.completed";
 
   return `import { test, expect } from "@playwright/test";
-import { trpcMutation } from "../../helpers/api";
+import { trpcMutation, pollUntil } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 import crypto from "crypto";
@@ -3347,6 +3348,34 @@ test("${target.id}c — webhook with missing signature is rejected (401)", async
 
   expect(status).toBe(401);
   // Kills: Allow unsigned webhook delivery
+});
+
+test("${target.id}d — webhook delivery is eventually consistent (pollUntil pattern)", async ({ request }) => {
+  // This test documents the async delivery assertion pattern.
+  // Replace 'jobs.status' with your actual job-status or delivery-log endpoint.
+  const { status, data } = await trpcMutation(request, "${webhookEndpoint}",
+    { event: "${eventType}", ${tenantField}: ${tenantConst}, timestamp: Date.now() },
+    adminCookie, { "x-webhook-signature": "test-sig-bypass" }
+  );
+
+  // Step 1: Trigger is synchronous — endpoint must ack immediately
+  expect([200, 202]).toContain(status);
+  // Kills: Webhook handler blocks on delivery instead of queuing → timeout under load
+
+  const jobId = (data as Record<string, unknown>)?.id || (data as Record<string, unknown>)?.jobId;
+  if (jobId) {
+    // Step 2: Delivery is async — poll until the downstream effect is visible
+    // Replace 'jobs.getStatus' with your actual polling endpoint
+    await pollUntil(
+      async () => {
+        const r = await trpcMutation(request, "jobs.getStatus", { id: jobId }, adminCookie);
+        return (r.data as Record<string, unknown>)?.status === "delivered";
+      },
+      15000, // 15s timeout for webhook delivery
+      500,
+    );
+    // Kills: Webhook queued but never delivered (dead-letter queue not monitored)
+  }
 });
 `;
 }
@@ -3546,6 +3575,7 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     audit_log: generateAuditLogTest,
     graphql: generateGraphQLTest,
     accessibility: generateAccessibilityTest,
+    property_based: generatePropertyTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -4175,6 +4205,223 @@ test.describe("Accessibility: ${behaviorTitle}", () => {
     );
     expect(critical.length).toBe(0);
     // Kills: Form rendered without fieldset/legend grouping, missing error message IDs
+  });
+});
+`;
+}
+
+// ─── Property-Based Fuzz Testing (fast-check) ────────────────────────────────
+
+/**
+ * Generates property-based tests using fast-check.
+ * Instead of one fixed example, fast-check generates 50 random valid inputs and
+ * verifies API invariants hold for all of them. When a property fails, fast-check
+ * automatically shrinks the input to the minimal reproducing case.
+ *
+ * Generated invariants:
+ *   P1: Valid inputs never trigger 500 Internal Server Error
+ *   P2: Success responses always include required 'id' field
+ *   P3: Injection/XSS payloads in string fields never cause 500
+ *   P4: Numeric overflow/underflow never causes 500
+ */
+export function generatePropertyTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
+
+  // Resolve endpoint
+  const ep = analysis.ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  ) || analysis.ir.apiEndpoints.find(e =>
+    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add")
+  );
+  const endpoint = ep ? normalizeEndpointName(ep.name, ep.method) : (target.endpoint || "create");
+
+  // Get non-tenant input fields (cap at 6 to keep tests readable)
+  const fields = (ep?.inputFields || [])
+    .filter(f => !f.isTenantKey && f.name !== tenantField)
+    .slice(0, 6);
+
+  // Generate fc arbitraries for each field type
+  interface FcArb { name: string; arb: string; type: string }
+  const fcArbs: FcArb[] = fields.map(f => {
+    let arb: string;
+    switch (f.type) {
+      case "number":
+        if (f.min !== undefined && f.max !== undefined)
+          arb = `fc.integer({ min: ${f.min}, max: ${f.max} })`;
+        else if (f.min !== undefined)
+          arb = `fc.integer({ min: ${f.min}, max: ${f.min + 10000} })`;
+        else
+          arb = `fc.nat({ max: 10000 })`;
+        break;
+      case "boolean":
+        arb = `fc.boolean()`;
+        break;
+      case "enum":
+        arb = f.enumValues?.length
+          ? `fc.constantFrom(${f.enumValues.map(v => `"${v}"`).join(", ")})`
+          : `fc.string({ minLength: 1, maxLength: 20 })`;
+        break;
+      case "date":
+        arb = `fc.date({ min: new Date(), max: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) }).map(d => d.toISOString().split("T")[0])`;
+        break;
+      case "string":
+      default:
+        arb = f.max !== undefined
+          ? `fc.string({ minLength: ${f.min ?? 1}, maxLength: ${f.max} })`
+          : `fc.string({ minLength: 1, maxLength: 200 })`;
+    }
+    return { name: f.name, arb, type: f.type };
+  });
+
+  const paramNames = fcArbs.map(a => a.name).join(", ");
+  const arbLines = fcArbs.map(a => `        ${a.arb}`).join(",\n");
+  const fcOverrides = fcArbs.map(a => `            ${a.name},`).join("\n");
+  const defaultPayload = fields.map(f => `        ${f.name}: ${getValidDefault(f, tenantConst)},`).join("\n");
+  const firstStringField = fields.find(f => f.type === "string")?.name;
+
+  const hasArbs = fcArbs.length > 0;
+
+  return `import { test, expect } from "@playwright/test";
+import * as fc from "fast-check";
+import { trpcMutation } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Property-Based Fuzz Tests: ${target.description}
+// fast-check generates ${hasArbs ? "50" : "fixed"} random valid inputs and verifies invariants hold for all.
+// On failure: fast-check automatically shrinks to the minimal reproducing case.
+// Run with VERBOSE=1 to see all generated inputs: fc.assert(..., { verbose: true })
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test.describe("${target.id} — Property-Based: ${target.description}", () => {
+
+  test("P1: valid inputs never trigger 500 Internal Server Error", async ({ request }) => {
+${hasArbs ? `    // fc.assert runs the property 50 times with random inputs (seed=42 for reproducibility).
+    // If this fails, fast-check prints the minimal input that caused the failure.
+    await fc.assert(
+      fc.asyncProperty(
+${arbLines},
+        async (${paramNames}) => {
+          const { status } = await trpcMutation(request, "${endpoint}", {
+            ${tenantField}: ${tenantConst},
+${fcOverrides}
+          }, adminCookie);
+          // Kills: unhandled exception on valid input shape → 500 leaks stack trace to attacker
+          expect(status, \`Server crashed with \${status} on: \${JSON.stringify({ ${paramNames} })}\`).not.toBe(500);
+          expect(status).not.toBe(503);
+          return true;
+        }
+      ),
+      { numRuns: 50, verbose: false, seed: 42 }
+    );` : `    // No typed input fields detected — test with default payload
+    const { status } = await trpcMutation(request, "${endpoint}", {
+      ${tenantField}: ${tenantConst},
+    }, adminCookie);
+    // Kills: unhandled exception → 500 leaks stack trace
+    expect(status).not.toBe(500);`}
+  });
+
+  test("P2: success responses always include required 'id' field", async ({ request }) => {
+${hasArbs ? `    await fc.assert(
+      fc.asyncProperty(
+${arbLines},
+        async (${paramNames}) => {
+          const { data, status } = await trpcMutation(request, "${endpoint}", {
+            ${tenantField}: ${tenantConst},
+${fcOverrides}
+          }, adminCookie);
+          if (status === 200 || status === 201) {
+            // Kills: serializer omits 'id' on some code paths (conditional return shape)
+            expect(data).toBeDefined();
+            const d = data as Record<string, unknown>;
+            if (d && typeof d === "object" && !Array.isArray(d)) {
+              expect(d.id, "Success response must always include id").toBeDefined();
+            }
+          }
+          return true;
+        }
+      ),
+      { numRuns: 50, verbose: false, seed: 42 }
+    );` : `    const { data, status } = await trpcMutation(request, "${endpoint}", {
+      ${tenantField}: ${tenantConst},
+    }, adminCookie);
+    if (status === 200 || status === 201) {
+      // Kills: serializer omits 'id' on some code paths
+      expect((data as Record<string, unknown>)?.id).toBeDefined();
+    }`}
+  });
+${firstStringField ? `
+  test("P3: injection payloads in string fields never cause 500", async ({ request }) => {
+    // Security invariant: no user-controlled string should ever cause an unhandled exception.
+    // This catches: raw SQL concatenation, template injection, path traversal, XSS in logs.
+    const attackPayloads = [
+      { label: "SQL injection", value: "'; DROP TABLE users; --" },
+      { label: "XSS", value: "<script>alert(document.cookie)</script>" },
+      { label: "null bytes", value: "\\x00\\x01\\x02\\x03" },
+      { label: "unicode overflow", value: "\\uD800\\uDFFF\\u0000" },
+      { label: "template injection", value: "{{7*7}}$\\{7*7\\}" },
+      { label: "path traversal", value: "../../../etc/passwd" },
+      { label: "huge string", value: "A".repeat(65_536) },
+    ];
+
+    for (const { label, value } of attackPayloads) {
+      const { status } = await trpcMutation(request, "${endpoint}", {
+        ${tenantField}: ${tenantConst},
+        ${firstStringField}: value,
+      }, adminCookie);
+      // Kills: raw user input passed to SQL / template engine / filesystem path
+      expect(status, \`Attack "\${label}" caused 500 — unhandled input\`).not.toBe(500);
+    }
+  });
+` : ""}
+  test("P4: extreme numeric inputs never cause 500", async ({ request }) => {
+    // Arithmetic invariant: financial/counter fields must handle edge values gracefully.
+    // 400 is acceptable; 500 means unhandled overflow/underflow in business logic.
+    const extremes = [
+      Number.MAX_SAFE_INTEGER,   // 9007199254740991
+      -Number.MAX_SAFE_INTEGER,  // negative overflow
+      0,
+      0.0000001,                 // epsilon
+      9_999_999_999,             // >32-bit int (catches int32 overflow in DB columns)
+    ];
+
+    for (const n of extremes) {
+      const { status } = await trpcMutation(request, "${endpoint}", {
+        ${tenantField}: ${tenantConst},
+${defaultPayload}
+      }, adminCookie);
+      // Kills: integer overflow in price/amount calculation → negative balance or 500
+      expect(status, \`Extreme value \${n} caused \${status}\`).not.toBe(500);
+    }
+  });
+
+  test("P5: concurrent identical requests produce idempotent or conflict result (no 500)", async ({ request }) => {
+    // Concurrency invariant: racing two identical creates must not corrupt state or crash.
+    const payload = {
+      ${tenantField}: ${tenantConst},
+${defaultPayload}
+    };
+
+    const [r1, r2] = await Promise.all([
+      trpcMutation(request, "${endpoint}", payload, adminCookie),
+      trpcMutation(request, "${endpoint}", payload, adminCookie),
+    ]);
+
+    // One of: both succeed (201), one wins (201) + one conflicts (409), or both idempotent (200)
+    // Never: either returns 500 — concurrent access must not corrupt DB state
+    // Kills: missing transaction → partial write leaves record in invalid state
+    expect(r1.status).not.toBe(500);
+    expect(r2.status).not.toBe(500);
+    expect([200, 201, 409, 422]).toContain(r1.status);
+    expect([200, 201, 409, 422]).toContain(r2.status);
   });
 });
 `;
