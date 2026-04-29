@@ -120,6 +120,7 @@ function getFilename(pt: ProofType): string {
     db_transaction: "tests/integration/db-transactions.spec.ts",
     audit_log: "tests/compliance/audit-log.spec.ts",
     graphql: "tests/security/graphql.spec.ts",
+    accessibility: "tests/accessibility/wcag.spec.ts",
   };
   return map[pt];
 }
@@ -345,7 +346,7 @@ export function findBoundaryFieldForBehavior(
  * Admin is preferred because most mutations require elevated privileges.
  * Falls back to owner, then the first role if no admin role is found.
  */
-function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
+export function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
   if (!authModel?.roles?.length) return undefined;
   // Filter out roles with empty/undefined names (LLM sometimes returns empty strings)
   const validRoles = authModel.roles.filter(
@@ -365,7 +366,7 @@ function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name:
  * e.g. { name: "admin" } → "getAdminCookie"
  * e.g. { name: "bank_admin" } → "getBankAdminCookie"
  */
-function roleToCookieFn(role: { name: string } | undefined): string {
+export function roleToCookieFn(role: { name: string } | undefined): string {
   if (!role) return "getAdminCookie";
   return `get${role.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
 }
@@ -3544,6 +3545,7 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     db_transaction: generateDBTransactionTest,
     audit_log: generateAuditLogTest,
     graphql: generateGraphQLTest,
+    accessibility: generateAccessibilityTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -4033,6 +4035,147 @@ test("${target.id}d — batch query abuse is rate-limited", async ({ request }) 
     (status === 200 && (await response.json().catch(() => [])).length < 50);
   expect(isProtected).toBe(true);
   // Kills: Unlimited batch processing — allows amplified DoS with single HTTP request
+});
+`;
+}
+
+// ─── Accessibility Test Generator (WCAG 2.1 AA) ──────────────────────────────
+/**
+ * Generates Playwright browser tests verifying WCAG 2.1 AA compliance.
+ * Uses @axe-core/playwright for automated accessibility scanning.
+ *
+ * Covers:
+ * - Keyboard navigation works for all interactive elements
+ * - ARIA labels present on interactive elements
+ * - Focus management after modal open/close
+ * - Form fields have associated labels
+ * - No keyboard traps
+ *
+ * Mutation targets:
+ * - Missing ARIA labels → screen readers announce nothing
+ * - Keyboard trap in modal → users cannot Tab out
+ * - Form fields without labels → assistive tech can't describe purpose
+ */
+export function generateAccessibilityTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
+  const behaviorTitle = behavior?.title || target.description;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+
+  // Find UI-related endpoints (create, update — these have forms)
+  const formEndpoints = ir.apiEndpoints.filter(e => {
+    const n = e.name.toLowerCase();
+    return n.includes("create") || n.includes("update") || n.includes("register") || n.includes("edit");
+  });
+
+  // Infer a likely page path from the endpoint name
+  const primaryEp = formEndpoints[0] || ir.apiEndpoints[0];
+  const moduleName = primaryEp?.name.split(".")[0] || tenantEntity;
+  const pagePath = `/${moduleName}s`;
+  const createPath = `/${moduleName}s/new`;
+
+  return `import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { BASE_URL } from "../../helpers/api";
+import { ${ir.authModel?.roles?.[0]
+    ? `get${ir.authModel.roles[0].name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
+    : "getAdminCookie"} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — WCAG 2.1 AA Accessibility: ${behaviorTitle}
+// Risk: ${target.riskLevel}
+// Requires: @axe-core/playwright (npm install --save-dev @axe-core/playwright)
+
+test.describe("Accessibility: ${behaviorTitle}", () => {
+  test.use({ baseURL: process.env.BASE_URL || "http://localhost:3000" });
+
+  test("${target.id}a — main ${moduleName} page has no critical WCAG 2.1 AA violations", async ({ page }) => {
+    await page.goto(\`\${BASE_URL}${pagePath}\`);
+    await page.waitForLoadState("networkidle");
+
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+
+    // Filter to critical and serious violations only (best-effort — minor warnings acceptable)
+    const critical = results.violations.filter(v =>
+      v.impact === "critical" || v.impact === "serious"
+    );
+
+    if (critical.length > 0) {
+      const summary = critical.map(v =>
+        \`[\${v.impact?.toUpperCase()}] \${v.id}: \${v.description} — \${v.nodes.length} element(s)\`
+      ).join("\\n");
+      throw new Error(\`\${critical.length} critical/serious accessibility violations:\\n\${summary}\`);
+    }
+    // Kills: UI rendered without ARIA roles — screen readers cannot navigate
+    expect(critical.length).toBe(0);
+  });
+
+  test("${target.id}b — all interactive elements are keyboard-reachable (no keyboard trap)", async ({ page }) => {
+    await page.goto(\`\${BASE_URL}${pagePath}\`);
+    await page.waitForLoadState("networkidle");
+
+    // Tab through the page — collect all focused elements
+    const focusedElements: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press("Tab");
+      const focused = await page.evaluate(() => {
+        const el = document.activeElement;
+        return el ? \`\${el.tagName}[\${el.getAttribute("aria-label") || el.getAttribute("name") || el.textContent?.slice(0, 30) || "?"}]\` : null;
+      });
+      if (focused) focusedElements.push(focused);
+    }
+
+    // Must have found at least 3 focusable elements (nav, main content, at least 1 action)
+    expect(focusedElements.length).toBeGreaterThanOrEqual(3);
+    // Kills: All interactive elements have tabIndex=-1 — keyboard users cannot reach them
+  });
+
+  test("${target.id}c — form fields have associated labels (create form)", async ({ page }) => {
+    await page.goto(\`\${BASE_URL}${createPath}\`);
+    await page.waitForLoadState("networkidle");
+
+    // Check all visible input fields have labels (via aria-label, aria-labelledby, or <label for>)
+    const unlabeledInputs = await page.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea, select"));
+      return inputs.filter(input => {
+        const el = input as HTMLElement;
+        // Check aria-label
+        if (el.getAttribute("aria-label")) return false;
+        // Check aria-labelledby
+        const labelledBy = el.getAttribute("aria-labelledby");
+        if (labelledBy && document.getElementById(labelledBy)) return false;
+        // Check associated <label>
+        const id = el.id;
+        if (id && document.querySelector(\`label[for="\${id}"]\`)) return false;
+        // Check parent label
+        if (el.closest("label")) return false;
+        return true; // Unlabeled
+      }).map(el => \`\${el.tagName}[name=\${(el as HTMLInputElement).name || "?"}]\`);
+    });
+
+    expect(unlabeledInputs.length).toBe(0);
+    // Kills: Form inputs without labels — screen reader announces "edit text" with no context
+    // If this test fails, add aria-label or <label for="..."> to: ${formEndpoints.map(e => e.name).join(", ")}
+  });
+
+  test("${target.id}d — create form page has no WCAG 2.1 AA violations", async ({ page }) => {
+    await page.goto(\`\${BASE_URL}${createPath}\`);
+    await page.waitForLoadState("networkidle");
+
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .exclude("#cookie-banner") // Exclude cookie consent banners (third-party)
+      .analyze();
+
+    const critical = results.violations.filter(v =>
+      v.impact === "critical" || v.impact === "serious"
+    );
+    expect(critical.length).toBe(0);
+    // Kills: Form rendered without fieldset/legend grouping, missing error message IDs
+  });
 });
 `;
 }

@@ -198,7 +198,7 @@ export const PROOF_TYPES = [
   "hardcoded_secret", "negative_amount", "aml_bypass", "cross_tenant_chain",
   "concurrent_write", "mass_assignment",
   // World-class additions
-  "db_transaction", "audit_log", "graphql",
+  "db_transaction", "audit_log", "graphql", "accessibility",
 ] as const;
 
 export type ProofType = typeof PROOF_TYPES[number];

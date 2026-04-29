@@ -394,6 +394,21 @@ export const RISK_RULES: RiskRule[] = [
     priority: 86,
   },
 
+  // ─── Accessibility / WCAG 2.1 AA ────────────────────────────────────────────
+  {
+    proofType: "accessibility" as ProofType,
+    triggers: {
+      keywords: [
+        "user interface", "ui", "form", "modal", "dialog", "button", "input",
+        "accessible", "wcag", "aria", "screen reader", "keyboard", "focus",
+        "a11y", "accessibility", "tab order", "label", "alt text",
+        "color contrast", "font size", "responsive", "mobile",
+      ],
+      tags: ["ui", "a11y", "wcag", "frontend", "accessibility", "form"],
+    },
+    priority: 22,
+  },
+
   // ─── GraphQL Security ─────────────────────────────────────────────────────────
   {
     proofType: "graphql" as ProofType,

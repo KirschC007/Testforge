@@ -59,12 +59,47 @@ export function generateReport(
     }
   }
 
+  // Proof-Type Coverage Summary
+  const proofTypeCounts = new Map<string, number>();
+  for (const p of suite.proofs) proofTypeCounts.set(p.proofType, (proofTypeCounts.get(p.proofType) || 0) + 1);
+  lines.push("## Proof Type Coverage\n");
+  lines.push(`| Type | Count | Avg Mutation Score |`);
+  lines.push(`|---|---|---|`);
+  const typeEntries = Array.from(proofTypeCounts.entries()).sort((a, b) => b[1] - a[1]);
+  for (const [type, count] of typeEntries) {
+    const typeProofs = suite.proofs.filter(p => p.proofType === type);
+    const avgMut = typeProofs.reduce((s, p) => s + p.mutationScore, 0) / typeProofs.length;
+    const mutBar = avgMut >= 0.9 ? "🟢" : avgMut >= 0.6 ? "🟡" : "🔴";
+    lines.push(`| \`${type}\` | ${count} | ${mutBar} ${(avgMut * 100).toFixed(0)}% |`);
+  }
+  lines.push("");
+
+  // Flakiness Risk Section
+  const flakyProofs = suite.proofs.filter(p => {
+    const code = p.code || "";
+    return (p.proofType === "webhook" || p.proofType === "cron_job") ||
+      /expect\([^)]*Date\.now\(\)/.test(code);
+  });
+  if (flakyProofs.length > 0) {
+    lines.push("## Flakiness Risk\n");
+    lines.push(`> ${flakyProofs.length} proof(s) have elevated flakiness risk and use retries or poll() guards.\n`);
+    lines.push(`| Proof | Type | Risk Reason |`);
+    lines.push(`|---|---|---|`);
+    for (const p of flakyProofs) {
+      const reason = (p.proofType === "webhook" || p.proofType === "cron_job")
+        ? "Async delivery — uses pollUntil()" : "Timing-sensitive assertion";
+      lines.push(`| \`${p.id}\` | \`${p.proofType}\` | ${reason} |`);
+    }
+    lines.push("");
+  }
+
   lines.push("## Validated Proofs\n");
   for (const p of suite.proofs) {
+    const flakyFlag = flakyProofs.includes(p) ? " ⚡ flaky-guarded" : "";
     lines.push(`### ${p.id} — ${p.proofType.toUpperCase()}`);
     lines.push(`- **File:** \`${p.filename}\``);
     lines.push(`- **Risk:** ${p.riskLevel}`);
-    lines.push(`- **Mutation Score:** ${(p.mutationScore * 100).toFixed(0)}%`);
+    lines.push(`- **Mutation Score:** ${(p.mutationScore * 100).toFixed(0)}%${flakyFlag}`);
     lines.push(`- **Validation:** ${p.validationNotes.join(", ")}\n`);
   }
 
@@ -143,6 +178,15 @@ export function generateHTMLReport(
     rate_limit: "Rate Limiting", webhook: "Webhook Security", feature_gate: "Feature Gates",
     cron_job: "Cron Jobs", risk_scoring: "Risk Scoring", flow: "User Flows",
     e2e_flow: "E2E Flows", spec_drift: "Spec Drift",
+    // World-class additions
+    db_transaction: "DB Transactions / Atomicity",
+    audit_log: "Audit Log Validation",
+    graphql: "GraphQL Security",
+    accessibility: "Accessibility (WCAG 2.1 AA)",
+    sql_injection: "SQL Injection", hardcoded_secret: "Hardcoded Secrets",
+    negative_amount: "Negative Amount / Financial", aml_bypass: "AML Bypass",
+    cross_tenant_chain: "Cross-Tenant Chain", concurrent_write: "Concurrent Write",
+    mass_assignment: "Mass Assignment",
   };
 
   const proofTypeIcons: Record<string, string> = {
@@ -150,6 +194,10 @@ export function generateHTMLReport(
     boundary: "📏", dsgvo: "🇪🇺", business_logic: "⚙️", concurrency: "⚡",
     idempotency: "🔁", rate_limit: "🚦", webhook: "🪝", feature_gate: "🚪",
     cron_job: "⏰", risk_scoring: "📊", flow: "🔀", e2e_flow: "🖥️", spec_drift: "📐",
+    db_transaction: "🗄️", audit_log: "📋", graphql: "◈", accessibility: "♿",
+    sql_injection: "💉", hardcoded_secret: "🔑", negative_amount: "💸",
+    aml_bypass: "🏦", cross_tenant_chain: "⛓️", concurrent_write: "✍️",
+    mass_assignment: "📦",
   };
 
   const scoreColor = suite.verdict.score >= 7 ? "#22c55e" : suite.verdict.score >= 4 ? "#f59e0b" : "#ef4444";

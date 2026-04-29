@@ -1287,50 +1287,76 @@ import { Rate, Trend } from "k6/metrics";
 
 // ─── Custom Metrics ───────────────────────────────────────────────────────────
 const errorRate = new Rate("errors");
-const createDuration = new Trend("create_duration");
-const listDuration = new Trend("list_duration");
+const createDuration = new Trend("create_duration", true);  // true = emit percentiles
+const listDuration = new Trend("list_duration", true);
+const authDuration = new Trend("auth_duration", true);
 
 // ─── Test Configuration ───────────────────────────────────────────────────────
+// Run scenarios independently to avoid interference:
+//   LOAD_SCENARIO=ramp_up   → steady-state load test
+//   LOAD_SCENARIO=spike     → sudden traffic burst (OOM / connection pool exhaustion)
+//   LOAD_SCENARIO=soak      → long-running leak detection (set SOAK_DURATION=30m)
+const SCENARIO = __ENV.LOAD_SCENARIO || "ramp_up";
+const SOAK_DURATION = __ENV.SOAK_DURATION || "30m";
+
 export const options = {
   scenarios: {
-    // Ramp-up: gradually increase load
+    // ── Scenario 1: Ramp-up / Steady-state ───────────────────────────────────
+    // Purpose: verify the system handles expected peak load
     ramp_up: {
       executor: "ramping-vus",
       startVUs: 0,
       stages: [
-        { duration: "30s", target: 10 },   // Ramp up to 10 users
-        { duration: "1m", target: 10 },    // Hold at 10 users
-        { duration: "30s", target: 50 },   // Ramp up to 50 users
-        { duration: "2m", target: 50 },    // Hold at 50 users (steady state)
-        { duration: "30s", target: 0 },    // Ramp down
+        { duration: "30s", target: 10 },   // Warm-up
+        { duration: "1m",  target: 10 },   // Hold at 10 VUs
+        { duration: "30s", target: 50 },   // Ramp to peak
+        { duration: "2m",  target: 50 },   // Steady state (50 concurrent users)
+        { duration: "30s", target: 0 },    // Cool-down
       ],
+      exec: SCENARIO === "ramp_up" ? "default" : "_skip",
     },
-    // Spike test: sudden traffic burst
+    // ── Scenario 2: Spike ────────────────────────────────────────────────────
+    // Purpose: detect OOM crashes and connection pool exhaustion under sudden load
     spike: {
       executor: "ramping-vus",
       startVUs: 0,
       stages: [
-        { duration: "10s", target: 100 },  // Spike to 100 users
-        { duration: "30s", target: 100 },  // Hold spike
-        { duration: "10s", target: 0 },    // Drop back
+        { duration: "10s", target: 1   },  // Baseline
+        { duration: "20s", target: 200 },  // Sudden spike (10x normal)
+        { duration: "1m",  target: 200 },  // Hold spike — catch OOM and pool exhaustion
+        { duration: "20s", target: 1   },  // Recovery
+        { duration: "30s", target: 1   },  // Verify system recovers (no permanent degradation)
       ],
-      startTime: "5m", // Start after ramp-up scenario
+      exec: SCENARIO === "spike" ? "default" : "_skip",
+    },
+    // ── Scenario 3: Soak ─────────────────────────────────────────────────────
+    // Purpose: detect memory leaks and connection leaks over time
+    soak: {
+      executor: "constant-vus",
+      vus: 10,
+      duration: SOAK_DURATION,  // Default: 30 minutes — catches slow memory leaks
+      exec: SCENARIO === "soak" ? "default" : "_skip",
     },
   },
   thresholds: {
-    // P95 response time must be under 500ms
-    http_req_duration: ["p(95)<500"],
-    // Error rate must be under 1%
-    errors: ["rate<0.01"],
-    // Create endpoint P95 under 1s
-    create_duration: ["p(95)<1000"],
-    // List endpoint P95 under 300ms
-    list_duration: ["p(95)<300"],
+    // Global: p95 under 500ms, p99 under 1500ms, error rate under 1%
+    http_req_duration: ["p(95)<500", "p(99)<1500"],
+    http_req_failed: ["rate<0.01"],  // Built-in: <1% HTTP errors
+    errors: ["rate<0.01"],           // Custom: <1% application-level errors
+
+    // Per-endpoint thresholds (SLA-based)
+    create_duration: ["p(95)<1000", "p(99)<2000"],  // Write: p95<1s, p99<2s
+    list_duration:   ["p(95)<300",  "p(99)<800"],   // Read:  p95<300ms, p99<800ms
+    auth_duration:   ["p(95)<500",  "p(99)<1000"],  // Auth:  p95<500ms, p99<1s
   },
 };
 
+// Skip function for inactive scenarios (k6 requires all exec targets to exist)
+export function _skip() { /* inactive scenario */ }
+
 // ─── Setup: Get auth token ────────────────────────────────────────────────────
 export function setup() {
+  const authStart = Date.now();
   const loginResp = http.post(
     \`\${__ENV.BASE_URL || "http://localhost:3000"}${loginEndpoint}\`,
     JSON.stringify({ json: {
@@ -1339,9 +1365,16 @@ export function setup() {
     }}),
     { headers: { "Content-Type": "application/json" } }
   );
-  check(loginResp, { "login succeeded": (r) => r.status === 200 });
+  authDuration.add(Date.now() - authStart);
+  const loginOk = check(loginResp, {
+    "login succeeded": (r) => r.status === 200,
+    "login returns cookie": (r) => !!r.headers["Set-Cookie"],
+  });
+  if (!loginOk) {
+    console.error("Login failed — all tests will fail. Check E2E credentials.");
+  }
   const cookie = loginResp.headers["Set-Cookie"];
-  return { cookie };
+  return { cookie, baseUrl: __ENV.BASE_URL || "http://localhost:3000" };
 }
 
 // ─── Main Test ────────────────────────────────────────────────────────────────

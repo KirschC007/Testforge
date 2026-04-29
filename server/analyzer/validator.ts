@@ -115,6 +115,21 @@ function runValidationRules(proof: RawProof): ValidationResult {
   }
   notes.push("✓ R7b: No fake IDOR IDs");
 
+  // R9: Webhook/cron tests must use pollUntil() or expect.poll() for eventual consistency
+  if ((proof.proofType === "webhook" || proof.proofType === "cron_job") &&
+    !code.includes("pollUntil") && !code.includes("poll(") && !code.includes("setTimeout")) {
+    return { passed: false, notes: [], reason: "missing_poll", details: "R9 violation: webhook/cron_job test makes immediate assertion on async result. Use pollUntil() from helpers/api for eventual consistency." };
+  }
+  notes.push("✓ R9: Async tests use poll()");
+
+  // R11: Array index assertions without explicit sort are order-dependent and flaky
+  if (/\bitems?\[0\]|\bdata\[0\]|\bresults?\[0\]/.test(code) &&
+    !code.includes(".sort(") && !code.includes("ORDER BY") && !code.includes("orderBy") &&
+    !code.includes("// flaky-ok:")) {
+    return { passed: false, notes: [], reason: "unstable_ordering", details: "R11 violation: Asserting on items[0] without sort — order is non-deterministic. Add .sort() or use .find() with a stable ID." };
+  }
+  notes.push("✓ R11: No unstable array ordering");
+
   return { passed: true, notes };
 }
 
@@ -127,7 +142,17 @@ function calcMutationScore(proof: RawProof): number {
   // Count actual // Kills: comments in code
   const killComments = (proof.code.match(/\/\/ Kills:/g) || []).length;
 
-  const score = Math.min(1.0, killComments / expectedKills);
+  let score = Math.min(1.0, killComments / expectedKills);
+
+  // R10: Cap mutation score at 0.80 if test uses Date.now() inside assertions without
+  // a frozen clock — these assertions are timing-sensitive and may produce false results
+  // on slow CI machines. Add `// flaky-ok: timing-sensitive` to suppress this cap.
+  if (score > 0.80 &&
+    /expect\([^)]*Date\.now\(\)/.test(proof.code) &&
+    !proof.code.includes("// flaky-ok:")) {
+    score = 0.80; // Cap: timing-sensitive assertion without clock freeze
+  }
+
   return Math.round(score * 100) / 100;
 }
 

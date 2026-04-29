@@ -54,13 +54,18 @@ export interface SpecSection {
   endLine: number;
   text: string;
   charCount: number;
-  topic: string;       // Classified topic: "endpoints", "schema", "status", "auth", "security", "dsgvo", "edge-cases", "business-logic", "other"
+  topic: string;       // Classified topic: "endpoints", "schema", "status", "auth", "security", "dsgvo", "edge-cases", "business-logic", "graphql", "user-flows", "other"
 }
 
 export function classifySection(title: string, text: string): SpecSection["topic"] {
   const t = (title + " " + text.slice(0, 500)).toLowerCase();
   // User Flows section — must be detected FIRST (before other patterns)
   if (t.includes("user flow") || t.includes("user-flow") || t.includes("userflow") || t.includes("browser-test") || t.includes("flow 1") || t.includes("flow 2")) return "user-flows";
+  // GraphQL — detect before generic "schema" to avoid mis-classification
+  if (t.includes("graphql") || t.includes("graph ql") || t.includes("type query") || t.includes("type mutation") ||
+      t.includes("type subscription") || t.includes("schema definition language") || t.includes("sdl") ||
+      /\bquery\s*\{/.test(t) || /\bmutation\s*\{/.test(t) || t.includes("__introspection") ||
+      t.includes("hasura") || t.includes("apollo server") || t.includes("pothos") || t.includes("nexus schema")) return "graphql";
   if (t.includes("trpc") || t.includes("router") || t.includes("prozedur") || t.includes("endpoint") || t.includes("api v1")) return "endpoints";
   if (t.includes("schema") || t.includes("tabelle") || t.includes("datenbank") || t.includes("create table")) return "schema";
   if (t.includes("status") || t.includes("übergang") || t.includes("transition") || t.includes("state")) return "status";
