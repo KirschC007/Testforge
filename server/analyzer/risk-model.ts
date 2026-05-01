@@ -564,6 +564,9 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     e2e_smart_form: ["create", "update", "edit", "submit", "register"],
     e2e_user_journey: ["create", "submit", "checkout", "register", "book"],
     e2e_perf_budget: ["list", "get", "search", "dashboard"],
+    e2e_visual: ["list", "get", "dashboard", "view"],
+    e2e_network: ["list", "get", "create", "update"],
+    e2e_a11y_full: ["list", "get", "create", "update", "view"],
   };
 
   const kws = keywords[proofType] || [];
@@ -1302,6 +1305,78 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
         { description: "Render-blocking script added to <head> (LCP regresses)", expectedKill: true },
         { description: "Image without width/height attributes (CLS regresses)", expectedKill: true },
         { description: "Synchronous DB query in page render path (TTFB regresses)", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "e2e_visual") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-E2E_VISUAL`,
+      description: `E2E Visual Regression: ${b.title}`,
+      preconditions: ["Page accessible", "Baseline screenshot exists (auto-created on first run)"],
+      assertions: [
+        { type: "field_value", target: "screenshot_diff_pct", operator: "lt", value: 1, rationale: "Visual diff within 1% pixel threshold" },
+      ],
+      mutationTargets: [
+        { description: "CSS regression breaks layout (e.g. missing display:flex)", expectedKill: true },
+        { description: "Component swap renders differently (button replaced with link)", expectedKill: true },
+        { description: "Hidden element becomes visible (CSS visibility regression)", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "e2e_network") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-E2E_NETWORK`,
+      description: `E2E Network Conditions: ${b.title}`,
+      preconditions: ["Page accessible", "App has loading/error UI states"],
+      assertions: [
+        { type: "field_value", target: "page_loads_under_slow_3g", operator: "eq", value: true, rationale: "Page works on slow 3G" },
+        { type: "field_value", target: "offline_shows_error_ui", operator: "eq", value: true, rationale: "Offline state shows clear error UI, not blank" },
+        { type: "field_value", target: "api_500_handled", operator: "eq", value: true, rationale: "API 500 errors handled gracefully" },
+      ],
+      mutationTargets: [
+        { description: "No loading spinner during slow network (UX regression)", expectedKill: true },
+        { description: "Blank page on offline (no error UI)", expectedKill: true },
+        { description: "Error 500 swallowed silently (user sees frozen UI)", expectedKill: true },
+        { description: "Request timeout never recovers (no retry UI)", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "e2e_a11y_full") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-E2E_A11Y_FULL`,
+      description: `E2E Full WCAG 2.1 AA: ${b.title}`,
+      preconditions: ["Page rendered in headless browser", "@axe-core/playwright installed"],
+      assertions: [
+        { type: "field_value", target: "color_contrast_violations", operator: "eq", value: 0, rationale: "WCAG 1.4.3 — text color contrast ratio ≥ 4.5:1" },
+        { type: "field_value", target: "keyboard_nav_violations", operator: "eq", value: 0, rationale: "WCAG 2.1.1 — all interactive elements keyboard reachable" },
+        { type: "field_value", target: "form_label_violations", operator: "eq", value: 0, rationale: "WCAG 3.3.2 — every form input has label" },
+        { type: "field_value", target: "heading_structure_violations", operator: "eq", value: 0, rationale: "WCAG 1.3.1 — proper heading hierarchy h1→h2→h3" },
+        { type: "field_value", target: "aria_violations", operator: "eq", value: 0, rationale: "WCAG 4.1.2 — ARIA roles/states are valid" },
+      ],
+      mutationTargets: [
+        { description: "Text color changed to low-contrast variant (#aaa on white)", expectedKill: true },
+        { description: "Button replaced with <div onclick> (loses keyboard support)", expectedKill: true },
+        { description: "Form label removed (screen reader announces 'edit text')", expectedKill: true },
+        { description: "Heading skipped (h2 → h4) breaks document outline", expectedKill: true },
+        { description: "Invalid ARIA role (role='nav' instead of 'navigation')", expectedKill: true },
       ],
       endpoint,
       sideEffects,

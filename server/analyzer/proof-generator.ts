@@ -125,6 +125,9 @@ function getFilename(pt: ProofType): string {
     e2e_smart_form: "tests/e2e/smart-forms.spec.ts",
     e2e_user_journey: "tests/e2e/user-journeys.spec.ts",
     e2e_perf_budget: "tests/e2e/perf-budgets.spec.ts",
+    e2e_visual: "tests/e2e/visual-regression.spec.ts",
+    e2e_network: "tests/e2e/network-conditions.spec.ts",
+    e2e_a11y_full: "tests/e2e/wcag-full.spec.ts",
   };
   return map[pt];
 }
@@ -3582,6 +3585,9 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     e2e_smart_form: generateE2ESmartFormTest,
     e2e_user_journey: generateE2EUserJourneyTest,
     e2e_perf_budget: generateE2EPerfBudgetTest,
+    e2e_visual: generateE2EVisualTest,
+    e2e_network: generateE2ENetworkTest,
+    e2e_a11y_full: generateE2EAccessibilityFullTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -4779,4 +4785,355 @@ test.describe("${target.id} — Performance Budget (${pagePath})", () => {
 });
 `;
 }
+
+// ─── True E2E (Phase 2): Visual Regression ───────────────────────────────────
+
+/**
+ * Generates a Playwright visual regression test using `expect(page).toHaveScreenshot()`.
+ * Baselines are auto-created on first run (commit them to git). Subsequent runs
+ * compare the current screenshot against the baseline; fails if pixel diff > 1%.
+ *
+ * Generated tests:
+ *   V1: full-page screenshot of inferred page path
+ *   V2: above-the-fold screenshot (no scroll, viewport-sized)
+ *   V3: post-interaction screenshot (clicks first button, waits, captures)
+ */
+export function generateE2EVisualTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
+
+  // Resolve a representative page path
+  const ep = ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  );
+  const resourceName = ep?.name.split(".")[0] || "dashboard";
+  const pagePath = ep?.name.includes("list") ? `/${resourceName}` : "/";
+  const pageSlug = pagePath.replace(/\//g, "-").replace(/^-/, "") || "home";
+
+  return `import { test, expect } from "@playwright/test";
+import { loginAsRole, navigateTo } from "../../helpers/browser";
+
+// ${target.id} — Visual Regression: ${target.description}
+// Risk: ${target.riskLevel}
+// Page: ${pagePath}
+//
+// Strategy: capture screenshots, compare against baselines committed to git.
+// First run: baselines created in __screenshots__/ directory — commit them.
+// Subsequent runs: fail if any pixel diff exceeds 1% threshold.
+//
+// Update baselines after intentional UI change: npx playwright test --update-snapshots
+
+test.describe("${target.id} — Visual Regression (${pagePath})", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+    await navigateTo(page, ${JSON.stringify(pagePath)});
+    // Wait for fonts + lazy images to settle (reduces flakiness)
+    await page.waitForLoadState("networkidle");
+    await page.evaluate(() => document.fonts.ready);
+  });
+
+  test("${target.id}_V1 — full page screenshot matches baseline", async ({ page }) => {
+    // Mask dynamic content that shouldn't trigger diffs (timestamps, user avatars)
+    await expect(page).toHaveScreenshot(\`${pageSlug}-full.png\`, {
+      fullPage: true,
+      maxDiffPixelRatio: 0.01, // 1% pixel diff allowed (anti-aliasing tolerance)
+      mask: [
+        page.locator('[data-testid="timestamp"]'),
+        page.locator('[data-testid="user-avatar"]'),
+        page.locator('time'),
+      ],
+    });
+    // Kills: ${target.mutationTargets[0]?.description || "CSS regression breaks layout"}
+  });
+
+  test("${target.id}_V2 — viewport (above-fold) screenshot matches baseline", async ({ page }) => {
+    // Above-the-fold check is most user-visible — strict 0.5% threshold
+    await expect(page).toHaveScreenshot(\`${pageSlug}-viewport.png\`, {
+      fullPage: false,
+      maxDiffPixelRatio: 0.005,
+    });
+    // Kills: ${target.mutationTargets[1]?.description || "Hero/header visual regression above the fold"}
+  });
+
+  test("${target.id}_V3 — interaction state: click first button, capture", async ({ page }) => {
+    const firstButton = page.getByRole("button").first();
+    if (await firstButton.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await firstButton.click();
+      // Wait for any animations/state transitions to settle
+      await page.waitForTimeout(500);
+      await expect(page).toHaveScreenshot(\`${pageSlug}-after-click.png\`, {
+        fullPage: false,
+        maxDiffPixelRatio: 0.01,
+      });
+      // Kills: ${target.mutationTargets[2]?.description || "Button click state visually broken (no feedback)"}
+    } else {
+      test.skip(true, "No buttons on page to test interaction state");
+    }
+  });
+});
+`;
+}
+
+// ─── True E2E (Phase 2): Network Conditions ──────────────────────────────────
+
+/**
+ * Generates a Playwright test that exercises the app under adverse network
+ * conditions: slow 3G, offline, API 500 errors, and request timeouts.
+ *
+ * Generated tests:
+ *   N1: slow 3G — verify loading UI appears, page eventually loads
+ *   N2: offline — verify graceful degradation (error UI, not blank/spinner-forever)
+ *   N3: API 500 errors — verify error UI shown, not silent failure
+ *   N4: API timeout — verify timeout handled (retry button or error message)
+ */
+export function generateE2ENetworkTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
+
+  const ep = ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  );
+  const resourceName = ep?.name.split(".")[0] || "dashboard";
+  const pagePath = ep?.name.includes("list") ? `/${resourceName}` : "/";
+
+  return `import { test, expect } from "@playwright/test";
+import { loginAsRole } from "../../helpers/browser";
+
+// ${target.id} — Network Conditions: ${target.description}
+// Risk: ${target.riskLevel}
+// Page: ${pagePath}
+//
+// Strategy: use Playwright's page.route() and context.setOffline() to simulate
+// adverse conditions. Verifies app degrades gracefully — never blank, never frozen.
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+test.describe("${target.id} — Network Conditions (${pagePath})", () => {
+  test("${target.id}_N1 — slow 3G: loading UI appears, page eventually loads", async ({ page, context }) => {
+    // Throttle to slow 3G: ~50KB/s download, 500ms latency
+    const cdpSession = await context.newCDPSession(page);
+    await cdpSession.send("Network.enable");
+    await cdpSession.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 500,
+      downloadThroughput: 50 * 1024,
+      uploadThroughput: 25 * 1024,
+    });
+
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+    const navPromise = page.goto(\`\${BASE_URL}${pagePath}\`);
+
+    // Within first 2s of slow load, some loading indicator should appear
+    // (spinner, skeleton, progress bar — anything that's not blank)
+    const hasLoadingUI = await Promise.race([
+      page.locator('[role="progressbar"], .spinner, .skeleton, [data-loading="true"]')
+        .first().isVisible({ timeout: 3000 }).catch(() => false),
+      page.locator('text=/loading|laden/i').first().isVisible({ timeout: 3000 }).catch(() => false),
+    ]);
+
+    await navPromise; // Eventually completes
+    // Kills: ${target.mutationTargets[0]?.description || "No loading state during slow network"}
+    expect(hasLoadingUI, "No loading UI shown during slow 3G — user sees blank page").toBe(true);
+  });
+
+  test("${target.id}_N2 — offline: graceful error UI, not blank/frozen", async ({ page, context }) => {
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+    await page.goto(\`\${BASE_URL}${pagePath}\`);
+    await page.waitForLoadState("networkidle");
+
+    // Now go offline and try to navigate / re-fetch
+    await context.setOffline(true);
+    await page.reload({ waitUntil: "domcontentloaded" }).catch(() => null);
+    await page.waitForTimeout(2000);
+
+    // Should show some indication of offline state — not just blank page
+    const hasOfflineUI = await Promise.race([
+      page.locator('text=/offline|no internet|connection lost|verbindung/i').first()
+        .isVisible({ timeout: 3000 }).catch(() => false),
+      page.locator('[role="alert"]').first().isVisible({ timeout: 3000 }).catch(() => false),
+    ]);
+
+    await context.setOffline(false); // Restore for cleanup
+    // Kills: ${target.mutationTargets[1]?.description || "Blank page on offline (no error UI)"}
+    expect(hasOfflineUI, "No offline indicator shown — user has no idea what's wrong").toBe(true);
+  });
+
+  test("${target.id}_N3 — API 500 errors: error UI shown, not silent", async ({ page }) => {
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+
+    // Mock all API calls to return 500
+    await page.route(/\\/api\\//, route => route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Internal Server Error" }),
+    }));
+
+    await page.goto(\`\${BASE_URL}${pagePath}\`);
+    await page.waitForTimeout(3000);
+
+    // Page must show some indication that something went wrong
+    const hasErrorUI = await Promise.race([
+      page.locator('text=/error|failed|something went wrong|fehler/i').first()
+        .isVisible({ timeout: 3000 }).catch(() => false),
+      page.locator('[role="alert"]').first().isVisible({ timeout: 3000 }).catch(() => false),
+      page.getByRole("button", { name: /retry|try again|wiederholen/i }).first()
+        .isVisible({ timeout: 3000 }).catch(() => false),
+    ]);
+
+    // Kills: ${target.mutationTargets[2]?.description || "API 500 silently swallowed"}
+    expect(hasErrorUI, "API errors not surfaced to user — silent failure!").toBe(true);
+  });
+
+  test("${target.id}_N4 — API timeout: handled (retry UI or error message)", async ({ page }) => {
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+
+    // Mock API to delay 30s — simulates timeout
+    await page.route(/\\/api\\//, async route => {
+      await new Promise(resolve => setTimeout(resolve, 30_000));
+      await route.fulfill({ status: 200, body: "{}" });
+    });
+
+    await page.goto(\`\${BASE_URL}${pagePath}\`).catch(() => null);
+    // After 8s, app should show some signal that things aren't loading
+    await page.waitForTimeout(8000);
+
+    const stillLoadingForever = await page.locator('[role="progressbar"], .spinner').first()
+      .isVisible({ timeout: 1000 }).catch(() => false);
+    const hasTimeoutHandling = await Promise.race([
+      page.locator('text=/timeout|taking longer|slow|retry/i').first()
+        .isVisible({ timeout: 1000 }).catch(() => false),
+      page.getByRole("button", { name: /retry|cancel/i }).first()
+        .isVisible({ timeout: 1000 }).catch(() => false),
+    ]);
+
+    // Either: timeout handling shown, OR loading state has cleared (not stuck forever)
+    // Kills: ${target.mutationTargets[3]?.description || "Request timeout never recovers (no retry UI)"}
+    expect(hasTimeoutHandling || !stillLoadingForever,
+      "App stuck in loading state after 8s — no timeout handling").toBe(true);
+  });
+});
+`;
+}
+
+// ─── True E2E (Phase 2): Full WCAG 2.1 AA Audit ──────────────────────────────
+
+/**
+ * Generates 5 categorized accessibility tests, one per WCAG criterion category.
+ * Goes beyond a single axe.run() by separating concerns so failures point to
+ * specific WCAG criteria for faster debugging.
+ *
+ * Generated tests:
+ *   A1: Color contrast (WCAG 1.4.3)
+ *   A2: Keyboard navigation (WCAG 2.1.1, 2.1.2, 2.4.7)
+ *   A3: Form labels (WCAG 3.3.2, 4.1.2)
+ *   A4: Heading structure (WCAG 1.3.1, 2.4.6)
+ *   A5: ARIA correctness (WCAG 4.1.2)
+ */
+export function generateE2EAccessibilityFullTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
+
+  const ep = ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  );
+  const resourceName = ep?.name.split(".")[0] || "dashboard";
+  const pagePath = ep?.name.includes("list") ? `/${resourceName}` : "/";
+
+  return `import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { loginAsRole, navigateTo } from "../../helpers/browser";
+
+// ${target.id} — Full WCAG 2.1 AA Audit: ${target.description}
+// Risk: ${target.riskLevel}
+// Page: ${pagePath}
+//
+// Strategy: 5 separate axe runs, each scoped to one WCAG category.
+// Failures point to the specific criterion violated → faster fix.
+
+test.describe("${target.id} — Full WCAG 2.1 AA (${pagePath})", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+    await navigateTo(page, ${JSON.stringify(pagePath)});
+  });
+
+  test("${target.id}_A1 — color contrast (WCAG 1.4.3)", async ({ page }) => {
+    const results = await new AxeBuilder({ page })
+      .withRules(["color-contrast"])
+      .analyze();
+    const violations = results.violations;
+    if (violations.length > 0) {
+      const summary = violations.flatMap(v =>
+        v.nodes.map(n => \`  \${v.help}: \${n.html.slice(0, 100)}\`)
+      ).join("\\n");
+      console.log(\`Color contrast violations:\\n\${summary}\`);
+    }
+    // Kills: ${target.mutationTargets[0]?.description || "Text changed to low-contrast variant"}
+    expect(violations).toHaveLength(0);
+  });
+
+  test("${target.id}_A2 — keyboard navigation (WCAG 2.1.1)", async ({ page }) => {
+    const results = await new AxeBuilder({ page })
+      .withRules(["focusable-content", "tabindex", "focus-order-semantics"])
+      .analyze();
+    expect(results.violations).toHaveLength(0);
+
+    // Additional manual check: tab through the first 10 elements, ensure focus moves
+    const focusedTags: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      await page.keyboard.press("Tab");
+      const tag = await page.evaluate(() => document.activeElement?.tagName || "");
+      focusedTags.push(tag);
+    }
+    const uniqueFocused = new Set(focusedTags);
+    // Kills: ${target.mutationTargets[1]?.description || "Button replaced with div onclick (loses keyboard support)"}
+    expect(uniqueFocused.size, "Tab focus stuck on same element — keyboard trap!").toBeGreaterThan(1);
+  });
+
+  test("${target.id}_A3 — form labels (WCAG 3.3.2)", async ({ page }) => {
+    const results = await new AxeBuilder({ page })
+      .withRules(["label", "form-field-multiple-labels", "label-title-only"])
+      .analyze();
+    if (results.violations.length > 0) {
+      const summary = results.violations.flatMap(v =>
+        v.nodes.map(n => \`  \${v.help}: \${n.html.slice(0, 100)}\`)
+      ).join("\\n");
+      console.log(\`Form label violations:\\n\${summary}\`);
+    }
+    // Kills: ${target.mutationTargets[2]?.description || "Form label removed (screen reader announces 'edit text')"}
+    expect(results.violations).toHaveLength(0);
+  });
+
+  test("${target.id}_A4 — heading structure (WCAG 1.3.1)", async ({ page }) => {
+    const results = await new AxeBuilder({ page })
+      .withRules(["heading-order", "page-has-heading-one", "empty-heading"])
+      .analyze();
+    expect(results.violations).toHaveLength(0);
+
+    // Additional check: must have at least one h1
+    const h1Count = await page.locator("h1").count();
+    // Kills: ${target.mutationTargets[3]?.description || "Heading skipped (h2 → h4) breaks document outline"}
+    expect(h1Count, "Page must have exactly one h1 (WCAG 1.3.1)").toBe(1);
+  });
+
+  test("${target.id}_A5 — ARIA correctness (WCAG 4.1.2)", async ({ page }) => {
+    const results = await new AxeBuilder({ page })
+      .withRules([
+        "aria-valid-attr", "aria-valid-attr-value", "aria-roles",
+        "aria-required-attr", "aria-allowed-attr", "aria-required-children",
+        "aria-required-parent", "aria-hidden-focus",
+      ])
+      .analyze();
+    if (results.violations.length > 0) {
+      const summary = results.violations.flatMap(v =>
+        v.nodes.map(n => \`  \${v.help}: \${n.html.slice(0, 100)}\`)
+      ).join("\\n");
+      console.log(\`ARIA violations:\\n\${summary}\`);
+    }
+    // Kills: ${target.mutationTargets[4]?.description || "Invalid ARIA role (role='nav' instead of 'navigation')"}
+    expect(results.violations).toHaveLength(0);
+  });
+});
+`;
+}
+
 

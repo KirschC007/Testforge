@@ -300,6 +300,78 @@ describe("generateHelpers — stryker.config.json", () => {
   });
 });
 
+describe("generateHelpers — Phase 3 utilities", () => {
+  it("includes analyze-flakiness.mjs", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["analyze-flakiness.mjs"]).toBeDefined();
+    expect(helpers["analyze-flakiness.mjs"]).toContain("#!/usr/bin/env node");
+    expect(helpers["analyze-flakiness.mjs"]).toContain("FLAKINESS_THRESHOLD");
+  });
+
+  it("analyze-flakiness.mjs reads playwright-report/results.json by default", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["analyze-flakiness.mjs"]).toContain("playwright-report");
+    expect(helpers["analyze-flakiness.mjs"]).toContain("results.json");
+  });
+
+  it("analyze-flakiness.mjs detects retried tests as flaky", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["analyze-flakiness.mjs"]).toMatch(/attempts\.length\s*>\s*1/);
+  });
+
+  it("analyze-flakiness.mjs exits 1 when threshold exceeded", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["analyze-flakiness.mjs"]).toContain("process.exit(1)");
+  });
+
+  it("includes visual-diff-report.mjs", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["visual-diff-report.mjs"]).toBeDefined();
+    expect(helpers["visual-diff-report.mjs"]).toContain("#!/usr/bin/env node");
+  });
+
+  it("visual-diff-report.mjs walks test-results for diff PNGs", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["visual-diff-report.mjs"]).toContain("test-results");
+    expect(helpers["visual-diff-report.mjs"]).toContain("-diff.png");
+  });
+
+  it("visual-diff-report.mjs generates HTML output", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["visual-diff-report.mjs"]).toContain("<!DOCTYPE html>");
+  });
+
+  it("includes codegen-wrapper.mjs", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["codegen-wrapper.mjs"]).toBeDefined();
+    expect(helpers["codegen-wrapper.mjs"]).toContain("playwright");
+    expect(helpers["codegen-wrapper.mjs"]).toContain("codegen");
+  });
+
+  it("codegen-wrapper.mjs accepts URL via argv or BASE_URL env", () => {
+    const helpers = generateHelpers(makeAnalysis());
+    expect(helpers["codegen-wrapper.mjs"]).toContain("process.argv[2]");
+    expect(helpers["codegen-wrapper.mjs"]).toContain("BASE_URL");
+  });
+
+  it("package.json scripts include all Phase 3 utilities", () => {
+    const pkg = JSON.parse(generateHelpers(makeAnalysis())["package.json"]);
+    expect(pkg.scripts["analyze:flakiness"]).toBeDefined();
+    expect(pkg.scripts["report:visual-diff"]).toBeDefined();
+    expect(pkg.scripts.codegen).toBeDefined();
+  });
+});
+
+describe("generateHelpers — playwright debug artifacts", () => {
+  it("enables trace, screenshot, video on failure", () => {
+    const config = generateHelpers(makeAnalysis())["playwright.config.ts"];
+    expect(config).toContain("trace:");
+    expect(config).toContain("screenshot:");
+    expect(config).toContain("video:");
+    expect(config).toContain("retain-on-failure");
+  });
+});
+
 describe("generateHelpers — README.md", () => {
   it("documents Quick Start", () => {
     const readme = generateHelpers(makeAnalysis())["README.md"];

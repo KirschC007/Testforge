@@ -68,6 +68,25 @@
  *     playwright.config.ts has 5 projects: chromium, firefox, webkit,
  *     mobile-chrome, mobile-safari — all run the same e2e tests.
  *
+ * ── True E2E (Phase 2) ────────────────────────────────────────────────────────
+ *   e2e_visual        → proof-generator.ts (generateE2EVisualTest) ← NEW
+ *                       V1: full-page screenshot, V2: above-fold, V3: post-click
+ *                       Uses toHaveScreenshot with maxDiffPixelRatio thresholds
+ *
+ *   e2e_network       → proof-generator.ts (generateE2ENetworkTest) ← NEW
+ *                       N1: slow 3G (CDP throttling), N2: offline (setOffline),
+ *                       N3: API 500s (page.route mock), N4: API timeout (delay)
+ *
+ *   e2e_a11y_full     → proof-generator.ts (generateE2EAccessibilityFullTest) ← NEW
+ *                       5 categorized axe runs: A1 contrast, A2 keyboard,
+ *                       A3 form labels, A4 heading structure, A5 ARIA correctness
+ *
+ * ── Intelligence Utilities (Phase 3) ──────────────────────────────────────────
+ *   These are NOT ProofTypes — they are scripts in the generated package:
+ *     analyze-flakiness.mjs   — npm run analyze:flakiness  (reads results.json)
+ *     visual-diff-report.mjs  — npm run report:visual-diff (HTML diff report)
+ *     codegen-wrapper.mjs     — npm run codegen            (Playwright codegen wrap)
+ *
  * Adding a new ProofType:
  *   1. Add to PROOF_TYPES in types.ts
  *   2. Create proof-templates/<domain>.ts with the generator function

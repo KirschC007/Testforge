@@ -457,6 +457,53 @@ export const RISK_RULES: RiskRule[] = [
     priority: 14,
   },
 
+  // ─── True E2E (Phase 2): Visual Regression ────────────────────────────────────
+  // Triggers when behavior mentions UI/visual concerns. Captures screenshot per page,
+  // compares against baseline (auto-created on first run). Fails if >1% pixel diff.
+  {
+    proofType: "e2e_visual" as ProofType,
+    triggers: {
+      keywords: [
+        "visual", "screenshot", "layout", "design", "styling", "appearance",
+        "responsive design", "ui regression", "visual regression",
+      ],
+      tags: ["visual", "ui", "design", "screenshot"],
+    },
+    priority: 13,
+  },
+
+  // ─── True E2E (Phase 2): Network Conditions ───────────────────────────────────
+  // Tests app behavior under slow 3G, offline, API errors, timeouts.
+  // Triggers when behavior mentions reliability/error-handling/offline concerns.
+  {
+    proofType: "e2e_network" as ProofType,
+    triggers: {
+      keywords: [
+        "offline", "network error", "slow connection", "3g", "timeout",
+        "graceful degradation", "error boundary", "fallback ui", "retry",
+        "connection lost", "no internet", "loading state",
+      ],
+      tags: ["network", "offline", "reliability", "error-handling"],
+    },
+    priority: 12,
+  },
+
+  // ─── True E2E (Phase 2): Full WCAG 2.1 AA Audit ───────────────────────────────
+  // Categorized accessibility tests by WCAG criterion, not just one bulk axe scan.
+  // Triggers similar to accessibility but with deeper coverage scope.
+  {
+    proofType: "e2e_a11y_full" as ProofType,
+    triggers: {
+      keywords: [
+        "wcag 2.1", "wcag aa", "section 508", "ada compliance",
+        "assistive technology", "screen reader compatibility",
+        "color contrast", "keyboard navigation", "focus management",
+      ],
+      tags: ["wcag", "a11y-full", "accessibility-audit", "section-508"],
+    },
+    priority: 11,
+  },
+
   // ─── Property-Based Fuzz Testing ──────────────────────────────────────────────
   // Triggers for any endpoint that has typed input fields — fast-check generates
   // 50 random valid inputs and verifies invariants hold (no 500, consistent shape).

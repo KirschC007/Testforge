@@ -203,6 +203,8 @@ export const PROOF_TYPES = [
   "property_based",
   // True E2E (Phase 1): smart form discovery, multi-step journeys, perf budgets
   "e2e_smart_form", "e2e_user_journey", "e2e_perf_budget",
+  // True E2E (Phase 2): visual regression, network conditions, full WCAG audit
+  "e2e_visual", "e2e_network", "e2e_a11y_full",
 ] as const;
 
 export type ProofType = typeof PROOF_TYPES[number];
@@ -309,6 +311,9 @@ export interface GeneratedHelpers {
   ".env.example": string;
   "validate-payloads.mjs": string;
   "heal.mjs": string;
+  "analyze-flakiness.mjs": string;
+  "visual-diff-report.mjs": string;
+  "codegen-wrapper.mjs": string;
 }
 
 // ─── Flow / CronJob / FeatureGate ────────────────────────────────────────────
