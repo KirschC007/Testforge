@@ -41,6 +41,9 @@ export default defineConfig({
         "server/analyzer/code-builder.ts",
         "server/analyzer/output-normalizer.ts",
         "server/analyzer/active-scanner.ts",
+        "server/analyzer/compliance-packs.ts",
+        "server/analyzer/test-refiner.ts",
+        "server/analyzer/failure-analyzer.ts",
       ],
       exclude: [
         "**/*.test.ts",

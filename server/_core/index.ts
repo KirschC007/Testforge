@@ -404,6 +404,138 @@ async function startServer() {
     }
   });
 
+  // ─── WOW #1: Compliance Certification Report ───────────────────────────────
+  // GET /api/compliance/:framework/:analysisId
+  // Returns audit-ready Markdown report mapping the analysis's tests to
+  // SOC 2 / HIPAA / PCI-DSS / GDPR criteria with evidence per requirement.
+  // Authenticated. Authorization: must own the analysis.
+  app.get("/api/compliance/:framework/:analysisId", async (req: any, res: any) => {
+    try {
+      let user: import("../../drizzle/schema").User | null = null;
+      try { user = await sdk.authenticateRequest(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
+      if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+      const framework = req.params.framework as string;
+      const analysisId = parseInt(req.params.analysisId, 10);
+      if (!["soc2", "hipaa", "pci_dss", "gdpr"].includes(framework)) {
+        return res.status(400).json({ error: "framework must be one of: soc2, hipaa, pci_dss, gdpr" });
+      }
+      if (!Number.isFinite(analysisId)) {
+        return res.status(400).json({ error: "analysisId must be a number" });
+      }
+
+      const { getAnalysisById } = await import("../db");
+      const analysis = await getAnalysisById(analysisId);
+      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+      if (analysis.userId !== user.id && user.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const resultJson = analysis.resultJson as any;
+      const analysisResult = resultJson?.analysisResult;
+      const validatedSuite = resultJson?.validatedSuite;
+      if (!analysisResult || !validatedSuite) {
+        return res.status(400).json({ error: "Analysis incomplete — wait for it to finish" });
+      }
+
+      const { evaluateCompliance, renderComplianceReport } = await import("../analyzer/compliance-packs");
+      const report = evaluateCompliance(framework as any, validatedSuite);
+
+      // Format negotiation: ?format=markdown for raw Markdown, default JSON
+      if (req.query.format === "markdown") {
+        const md = renderComplianceReport(report, analysisResult);
+        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${framework}-compliance-${analysisId}.md"`);
+        return res.send(md);
+      }
+      res.json(report);
+    } catch (err: any) {
+      console.error("[compliance]", err);
+      res.status(500).json({ error: err.message || "Compliance evaluation failed" });
+    }
+  });
+
+  // ─── WOW #2: AI-Native Conversational Test Refinement ─────────────────────
+  // POST /api/refine-test
+  // Body: { testCode: string, refinementRequest: string, specSnippet?: string, proofType?: string }
+  // Returns: { refinedCode, diffSummary, changes[], warnings[] }
+  // Authenticated. Uses LLM with 30s timeout.
+  const refineRateLimit = createRateLimiter({ max: 30, windowMs: 60_000 }); // LLM calls — throttle
+  app.post("/api/refine-test", refineRateLimit, express.json({ limit: "150kb" }), async (req: any, res: any) => {
+    try {
+      let user: import("../../drizzle/schema").User | null = null;
+      try { user = await sdk.authenticateRequest(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
+      if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+      const body = req.body || {};
+      if (typeof body.testCode !== "string") return res.status(400).json({ error: "testCode (string) required" });
+      if (typeof body.refinementRequest !== "string") return res.status(400).json({ error: "refinementRequest (string) required" });
+
+      const { refineTest } = await import("../analyzer/test-refiner");
+      const result = await refineTest({
+        testCode: body.testCode,
+        refinementRequest: body.refinementRequest,
+        specSnippet: typeof body.specSnippet === "string" ? body.specSnippet : undefined,
+        proofType: typeof body.proofType === "string" ? body.proofType : undefined,
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[refine-test]", err);
+      res.status(err.message?.includes("required") || err.message?.includes("too large") ? 400 : 500)
+        .json({ error: err.message || "Refinement failed" });
+    }
+  });
+
+  // ─── WOW #3: Test Failure → Auto-Fix Suggester ────────────────────────────
+  // POST /api/analyze-failure
+  // Body: { testCode, failureLog, specSnippet?, expectedStatus?, actualStatus?, expectedBody?, actualBody? }
+  // Returns: { diagnosis, confidence, reasoning, suggestedFix, alternatives, isLikelyFlaky }
+  // Authenticated. Hybrid: deterministic heuristic first, LLM fallback for ambiguous cases.
+  app.post("/api/analyze-failure", refineRateLimit, express.json({ limit: "150kb" }), async (req: any, res: any) => {
+    try {
+      let user: import("../../drizzle/schema").User | null = null;
+      try { user = await sdk.authenticateRequest(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
+      if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+      const body = req.body || {};
+      if (typeof body.testCode !== "string") return res.status(400).json({ error: "testCode (string) required" });
+      if (typeof body.failureLog !== "string") return res.status(400).json({ error: "failureLog (string) required" });
+
+      const { analyzeFailure } = await import("../analyzer/failure-analyzer");
+      const result = await analyzeFailure({
+        testCode: body.testCode,
+        failureLog: body.failureLog,
+        specSnippet: typeof body.specSnippet === "string" ? body.specSnippet : undefined,
+        expectedStatus: typeof body.expectedStatus === "number" ? body.expectedStatus : undefined,
+        actualStatus: typeof body.actualStatus === "number" ? body.actualStatus : undefined,
+        expectedBody: body.expectedBody,
+        actualBody: body.actualBody,
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[analyze-failure]", err);
+      res.status(err.message?.includes("required") ? 400 : 500).json({ error: err.message || "Analysis failed" });
+    }
+  });
+
+  // GET /api/compliance/packs — list all available compliance packs (public, no auth)
+  app.get("/api/compliance/packs", async (_req: any, res: any) => {
+    try {
+      const { listPacks } = await import("../analyzer/compliance-packs");
+      res.json(listPacks().map(p => ({
+        framework: p.framework,
+        fullName: p.fullName,
+        version: p.version,
+        description: p.description,
+        url: p.url,
+        criteriaCount: p.criteria.length,
+        mustCount: p.criteria.filter(c => c.severity === "must").length,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── SSE: Test Run Live Stream ─────────────────────────────────────────────
   // GET /api/test-runs/:runId/stream
   // Opens a Server-Sent Events connection. Emits:
