@@ -103,7 +103,8 @@ function parseBody(entry: HAREntry): unknown {
 }
 
 function parseResponseBody(entry: HAREntry): unknown {
-  const text = entry.response.content.text;
+  // Guard: malformed HAR entries may have no content/text — don't crash
+  const text = entry.response?.content?.text;
   if (!text) return undefined;
   try {
     const parsed = JSON.parse(text);
@@ -148,6 +149,8 @@ export function parseHAR(har: HAR, options: { baseUrl?: string; filterPath?: Reg
   const grouped = new Map<string, HAREntry[]>();
 
   for (const entry of har.log.entries) {
+    // Guard: malformed entry may have no request — skip silently
+    if (!entry?.request?.url || !entry?.request?.method || !entry?.response) continue;
     const { path } = parseUrl(entry.request.url);
 
     // Filter: only API calls

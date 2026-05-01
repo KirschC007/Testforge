@@ -65,12 +65,17 @@ setImmediate(async () => {
         await updateAnalysis(job.id, {
           status: "failed",
           errorMessage: "Server restarted during job execution. Please re-run the analysis.",
-        }).catch(() => {});
+        }).catch(err => {
+          // Log instead of swallowing — silent DB failures here mean stale "running" jobs
+          // remain stale forever and operators have no signal that recovery is broken.
+          console.error(`[Recovery] Failed to mark job #${job.id} as failed:`, err);
+        });
         console.warn(`[Recovery] Job #${job.id} (${job.projectName}) marked as failed`);
       }
     }
-  } catch {
-    // Non-fatal: recovery is best-effort, don't crash the server
+  } catch (err) {
+    // Recovery is best-effort, but log so DB-down scenarios are observable.
+    console.error("[Recovery] Crash recovery failed:", err);
   }
 });
 
@@ -91,16 +96,30 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         await updateAnalysis(analysisId, {
           status: "failed",
           errorMessage: "Job timed out after 15 minutes. Please try again.",
-        }).catch(() => {});
+        }).catch(err => {
+          // Log: if DB write fails here, the job stays "running" in DB while the worker
+          // has already given up — operators need to know.
+          console.error(`[Job ${analysisId}] Failed to record timeout in DB:`, err);
+        });
         runningJobs.delete(analysisId);
       }
     }, JOB_TIMEOUT_MS);
 
     try {
       await updateAnalysis(analysisId, { status: "running", startedAt: new Date(), workerPid: process.pid });
-      // Fetch spec text from S3
+      // Fetch spec text from S3 (30s timeout — S3 must not hang the job)
       const { url } = await storageGet(specKey);
-      const resp = await fetch(url);
+      const s3Controller = new AbortController();
+      const s3Timeout = setTimeout(() => s3Controller.abort(), 30_000);
+      let resp: Response;
+      try {
+        resp = await fetch(url, { signal: s3Controller.signal });
+      } catch (err: any) {
+        if (err.name === "AbortError") throw new Error("S3 fetch timed out after 30s");
+        throw err;
+      } finally {
+        clearTimeout(s3Timeout);
+      }
       if (!resp.ok) throw new Error(`Failed to fetch spec from S3: ${resp.status}`);
       const specText = await resp.text();
 
@@ -357,6 +376,19 @@ export const appRouter = router({
         authToken: z.string().optional(),         // Optional: Auth token for discovery
       }))
       .mutation(async ({ ctx, input }) => {
+        // ─── SSRF Guard ───────────────────────────────────────────────────────────────
+        // baseUrl is used for live endpoint discovery — it MUST not point at private infra
+        if (input.baseUrl) {
+          const { checkURL } = await import("./_core/ssrf-guard");
+          const ssrf = checkURL(input.baseUrl);
+          if (!ssrf.allowed) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Invalid baseUrl: ${ssrf.reason}`,
+            });
+          }
+        }
+
         // ─── Plan-Based Rate Limit ────────────────────────────────────────────────────
         const PLAN_LIMITS: Record<string, number> = {
           free: 10,

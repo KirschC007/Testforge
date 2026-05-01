@@ -13,6 +13,25 @@
 import type { Analysis } from "../drizzle/schema";
 import type { SpecDiffResult } from "./analyzer/spec-diff";
 
+/**
+ * GitHub fetch wrapper with hard timeout (30s).
+ * Prevents hung requests from blocking workers indefinitely.
+ */
+async function githubFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`GitHub API timed out after 30s: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export interface PRCommentData {
   analysis: Analysis;
   reportUrl: string;
@@ -118,7 +137,7 @@ export async function postGitHubPRComment(
     const [, owner, repo, prNumber] = match;
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`;
 
-    const response = await fetch(apiUrl, {
+    const response = await githubFetch(apiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${githubToken}`,
@@ -204,7 +223,7 @@ export async function createPR(opts: CreatePROptions): Promise<CreatePRResult> {
 
   try {
     // Step 1: Get base branch SHA
-    const refResp = await fetch(`${apiBase}/git/refs/heads/${baseBranch}`, { headers });
+    const refResp = await githubFetch(`${apiBase}/git/refs/heads/${baseBranch}`, { headers });
     if (!refResp.ok) {
       const err = await refResp.text();
       return { success: false, error: `Failed to get base branch '${baseBranch}': ${err}` };
@@ -213,7 +232,7 @@ export async function createPR(opts: CreatePROptions): Promise<CreatePRResult> {
     const baseSha = refData.object.sha;
 
     // Step 2: Create new branch
-    const createBranchResp = await fetch(`${apiBase}/git/refs`, {
+    const createBranchResp = await githubFetch(`${apiBase}/git/refs`, {
       method: "POST",
       headers,
       body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha }),
@@ -231,7 +250,7 @@ export async function createPR(opts: CreatePROptions): Promise<CreatePRResult> {
     for (const [filePath, content] of Object.entries(files)) {
       // Get existing file SHA if it exists (needed for updates)
       let existingSha: string | undefined;
-      const existingResp = await fetch(`${apiBase}/contents/${filePath}?ref=${branchName}`, { headers });
+      const existingResp = await githubFetch(`${apiBase}/contents/${filePath}?ref=${branchName}`, { headers });
       if (existingResp.ok) {
         const existing = await existingResp.json() as { sha: string };
         existingSha = existing.sha;
@@ -247,7 +266,7 @@ export async function createPR(opts: CreatePROptions): Promise<CreatePRResult> {
       };
       if (existingSha) putBody.sha = existingSha;
 
-      const putResp = await fetch(`${apiBase}/contents/${filePath}`, {
+      const putResp = await githubFetch(`${apiBase}/contents/${filePath}`, {
         method: "PUT",
         headers,
         body: JSON.stringify(putBody),
@@ -267,7 +286,7 @@ export async function createPR(opts: CreatePROptions): Promise<CreatePRResult> {
     }
 
     // Step 4: Create PR
-    const prResp = await fetch(`${apiBase}/pulls`, {
+    const prResp = await githubFetch(`${apiBase}/pulls`, {
       method: "POST",
       headers,
       body: JSON.stringify({

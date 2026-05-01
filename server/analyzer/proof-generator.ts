@@ -4281,8 +4281,16 @@ export function generatePropertyTest(target: ProofTarget, analysis: AnalysisResu
   const fcOverrides = fcArbs.map(a => `            ${a.name},`).join("\n");
   const defaultPayload = fields.map(f => `        ${f.name}: ${getValidDefault(f, tenantConst)},`).join("\n");
   const firstStringField = fields.find(f => f.type === "string")?.name;
+  const firstNumberField = fields.find(f => f.type === "number")?.name;
 
   const hasArbs = fcArbs.length > 0;
+  // Build payload that overrides the first number field with the extreme value `n`
+  const extremeNumberPayload = firstNumberField
+    ? fields.map(f => f.name === firstNumberField
+        ? `        ${f.name}: n, // overridden by extreme value`
+        : `        ${f.name}: ${getValidDefault(f, tenantConst)},`
+      ).join("\n")
+    : "";
 
   return `import { test, expect } from "@playwright/test";
 import * as fc from "fast-check";
@@ -4382,8 +4390,8 @@ ${firstStringField ? `
     }
   });
 ` : ""}
-  test("P4: extreme numeric inputs never cause 500", async ({ request }) => {
-    // Arithmetic invariant: financial/counter fields must handle edge values gracefully.
+${firstNumberField ? `  test("P4: extreme numeric inputs never cause 500", async ({ request }) => {
+    // Arithmetic invariant: ${firstNumberField} field must handle edge values gracefully.
     // 400 is acceptable; 500 means unhandled overflow/underflow in business logic.
     const extremes = [
       Number.MAX_SAFE_INTEGER,   // 9007199254740991
@@ -4396,14 +4404,14 @@ ${firstStringField ? `
     for (const n of extremes) {
       const { status } = await trpcMutation(request, "${endpoint}", {
         ${tenantField}: ${tenantConst},
-${defaultPayload}
+${extremeNumberPayload}
       }, adminCookie);
-      // Kills: integer overflow in price/amount calculation → negative balance or 500
-      expect(status, \`Extreme value \${n} caused \${status}\`).not.toBe(500);
+      // Kills: integer overflow in ${firstNumberField} calculation → negative balance or 500
+      expect(status, \`Extreme value \${n} for ${firstNumberField} caused \${status}\`).not.toBe(500);
     }
   });
-
-  test("P5: concurrent identical requests produce idempotent or conflict result (no 500)", async ({ request }) => {
+` : ""}
+${fields.length > 0 ? `  test("P5: concurrent identical requests produce idempotent or conflict result (no 500)", async ({ request }) => {
     // Concurrency invariant: racing two identical creates must not corrupt state or crash.
     const payload = {
       ${tenantField}: ${tenantConst},
@@ -4423,7 +4431,7 @@ ${defaultPayload}
     expect([200, 201, 409, 422]).toContain(r1.status);
     expect([200, 201, 409, 422]).toContain(r2.status);
   });
-});
+` : ""}});
 `;
 }
 

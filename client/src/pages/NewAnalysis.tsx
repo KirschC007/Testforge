@@ -334,8 +334,12 @@ export default function NewAnalysis() {
       a.click();
       URL.revokeObjectURL(url);
       if (summary) {
-        const s = JSON.parse(summary);
-        toast.success(`Generated tests for ${s.uniqueEndpoints} endpoints (${s.authEndpoints} authenticated, avg ${s.averageResponseMs}ms)`);
+        try {
+          const s = JSON.parse(summary);
+          toast.success(`Generated tests for ${s.uniqueEndpoints} endpoints (${s.authEndpoints} authenticated, avg ${s.averageResponseMs}ms)`);
+        } catch {
+          toast.success("HAR analysis complete — tests downloaded!");
+        }
       } else {
         toast.success("HAR analysis complete — tests downloaded!");
       }

@@ -6,6 +6,7 @@ import {
   text,
   timestamp,
   varchar,
+  index,
 } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
@@ -75,7 +76,12 @@ export const analyses = mysqlTable("analyses", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   completedAt: timestamp("completedAt"),
-});
+}, (table) => ({
+  // Hot paths: dashboard list ("my analyses, newest first") and crash recovery scan
+  // (status="running" + startedAt < now-16min). Composite indexes avoid full scans.
+  userIdCreatedAtIdx: index("idx_analyses_userId_createdAt").on(table.userId, table.createdAt),
+  statusStartedAtIdx: index("idx_analyses_status_startedAt").on(table.status, table.startedAt),
+}));
 
 export type Analysis = typeof analyses.$inferSelect;
 
@@ -99,7 +105,13 @@ export const testRuns = mysqlTable("testRuns", {
   summary: text("summary"),
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
-});
+}, (table) => ({
+  // Hot paths: list test runs for an analysis (detail page) and per-user listing.
+  analysisIdStartedAtIdx: index("idx_testRuns_analysisId_startedAt").on(table.analysisId, table.startedAt),
+  userIdStartedAtIdx: index("idx_testRuns_userId_startedAt").on(table.userId, table.startedAt),
+  // Auth check on every test result fetch (runId is unique-ish but indexed to speed lookups)
+  runIdIdx: index("idx_testRuns_runId").on(table.runId),
+}));
 export type TestRun = typeof testRuns.$inferSelect;
 export type InsertTestRun = typeof testRuns.$inferInsert;
 export type InsertAnalysis = typeof analyses.$inferInsert;

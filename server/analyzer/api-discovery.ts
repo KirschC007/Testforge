@@ -31,6 +31,16 @@ async function probe(
   options: { method?: string; headers?: Record<string, string>; timeoutMs?: number } = {}
 ): Promise<{ status: number; body: string } | null> {
   const { method = "GET", headers = {}, timeoutMs = 5000 } = options;
+
+  // SSRF guard — api-discovery probes URLs derived from user-supplied baseUrl.
+  // Block private IPs / cloud metadata before making the request.
+  const { checkURL } = await import("../_core/ssrf-guard");
+  const ssrf = checkURL(url);
+  if (!ssrf.allowed) {
+    console.warn(`[api-discovery] Blocked SSRF attempt: ${url} → ${ssrf.reason}`);
+    return null;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

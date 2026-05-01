@@ -77,9 +77,71 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // ─── Security headers ──────────────────────────────────────────────────────
+  app.use((_req: any, res: any, next: any) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-XSS-Protection", "0"); // Modern browsers ignore this; CSP is the answer
+    next();
+  });
+
+  // ─── CORS ──────────────────────────────────────────────────────────────────
+  // Allow same-origin always; allow configured ALLOWED_ORIGINS; deny others.
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  app.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") return res.status(204).end();
+    next();
+  });
+
+  // ─── Rate Limiting (per IP) ────────────────────────────────────────────────
+  // Public upload endpoints are unauthenticated and accept large payloads;
+  // throttle aggressively to prevent S3 bandwidth abuse and DoS.
+  const { createRateLimiter } = await import("./rate-limit");
+  const uploadRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });    // 10/min for spec/code
+  const harRateLimit = createRateLimiter({ max: 5, windowMs: 60_000 });        // 5/min for HAR (heavier)
+
+  // ─── Health Check ──────────────────────────────────────────────────────────
+  // GET /health — used by Docker/k8s health probes. Returns 200 if process is up.
+  // For a deeper readiness check (DB connectivity), add /ready endpoint separately.
+  app.get("/health", (_req: any, res: any) => {
+    res.status(200).json({
+      status: "ok",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // GET /ready — checks DB connectivity for readiness probe
+  app.get("/ready", async (_req: any, res: any) => {
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.status(503).json({ status: "db_unavailable" });
+      // Lightweight ping using drizzle's sql template
+      const { sql } = await import("drizzle-orm");
+      await (db as any).execute(sql`SELECT 1`);
+      res.status(200).json({ status: "ready" });
+    } catch (err: any) {
+      res.status(503).json({ status: "not_ready", reason: err.message });
+    }
+  });
+
   // File upload endpoint for spec text extraction + S3 storage
   // Supports: .md, .txt, .pdf, .docx, .json (OpenAPI), .yaml/.yml (OpenAPI)
-  app.post("/api/upload-spec", upload.single("file"), async (req: any, res: any) => {
+  app.post("/api/upload-spec", uploadRateLimit, upload.single("file"), async (req: any, res: any) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file provided" });
       const originalname: string = req.file.originalname;
@@ -110,7 +172,7 @@ async function startServer() {
   });
 
   // Paste spec text endpoint - stores in S3, returns specKey
-  app.post("/api/upload-spec-text", express.json({ limit: "20mb" }), async (req: any, res: any) => {
+  app.post("/api/upload-spec-text", uploadRateLimit, express.json({ limit: "20mb" }), async (req: any, res: any) => {
     try {
       const { text, filename } = req.body || {};
       if (!text || text.trim().length < 100) {
@@ -133,7 +195,7 @@ async function startServer() {
   // Accepts a ZIP file (max 50MB), extracts code files in memory,
   // detects framework, and returns files + framework for code-scan analysis.
   const codeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-  app.post("/api/upload-code", codeUpload.single("file"), async (req: any, res: any) => {
+  app.post("/api/upload-code", uploadRateLimit, codeUpload.single("file"), async (req: any, res: any) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file provided" });
       const originalname: string = req.file.originalname;
@@ -204,9 +266,30 @@ async function startServer() {
   //   - tests/traffic/perf-baseline.spec.ts          — response time budgets
   // No LLM calls — fully deterministic, returns in <2s.
   const harUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-  app.post("/api/analyze-har", harUpload.single("file"), async (req: any, res: any) => {
+  app.post("/api/analyze-har", harRateLimit, harUpload.single("file"), async (req: any, res: any) => {
     try {
+      // ── Auth: require a valid session (HAR files may contain sensitive auth tokens) ──
+      let user: import("../../drizzle/schema").User | null = null;
+      try {
+        user = await sdk.authenticateRequest(req);
+      } catch {
+        return res.status(401).json({ error: "Unauthorized — sign in to analyze HAR files" });
+      }
+      if (!user) return res.status(401).json({ error: "Unauthorized — sign in to analyze HAR files" });
+
       if (!req.file) return res.status(400).json({ error: "No HAR file provided" });
+
+      // ── SSRF guard on optional baseUrl override ──
+      const rawBaseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : "";
+      let baseUrl: string | undefined;
+      if (rawBaseUrl) {
+        const { checkURL } = await import("./ssrf-guard");
+        const ssrf = checkURL(rawBaseUrl);
+        if (!ssrf.allowed) {
+          return res.status(400).json({ error: `Invalid baseUrl: ${ssrf.reason}` });
+        }
+        baseUrl = rawBaseUrl;
+      }
 
       // Parse HAR JSON
       let har: unknown;
@@ -224,9 +307,7 @@ async function startServer() {
       }
 
       // Parse and generate test files
-      const suite = parseHAR(har as any, {
-        baseUrl: req.body?.baseUrl || undefined,
-      });
+      const suite = parseHAR(har as any, { baseUrl });
 
       if (suite.endpoints.length === 0) {
         return res.status(422).json({
