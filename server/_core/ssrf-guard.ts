@@ -59,11 +59,9 @@ function isPrivateIPv6(host: string): boolean {
   if (lower.startsWith("fe80:") || lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb")) return true;
   // fc00::/7 unique-local
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
-  // ::ffff:127.0.0.1 IPv4-mapped loopback
-  if (lower.startsWith("::ffff:")) {
-    const ipv4 = lower.slice(7);
-    return isPrivateIPv4(ipv4);
-  }
+  // IPv4-mapped IPv6: ::ffff:a.b.c.d → after URL normalization becomes ::ffff:hex:hex
+  // Block ALL IPv4-mapped addresses defensively (they're typically used to bypass IPv4 filters)
+  if (lower.startsWith("::ffff:")) return true;
   return false;
 }
 

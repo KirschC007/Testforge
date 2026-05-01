@@ -1220,6 +1220,28 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
     };
   }
 
+  if (pt === "property_based") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-PROPERTY`,
+      description: `Property-based fuzz: ${b.title}`,
+      preconditions: ["Endpoint accepts typed input fields", "Authenticated session available"],
+      assertions: [
+        { type: "http_status", target: "response", operator: "not_contains", value: 500, rationale: "No valid input may cause server error" },
+        { type: "field_value", target: "response.id", operator: "not_null", value: null, rationale: "Successful create returns id" },
+      ],
+      mutationTargets: [
+        { description: "Unhandled exception on edge input shape", expectedKill: true },
+        { description: "SQL injection / template injection in string fields", expectedKill: true },
+        { description: "Integer overflow in numeric fields", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
   return null;
 }
 

@@ -501,10 +501,11 @@ describe("generateWebhookTest", () => {
     expect(code).toContain("PT_WEBHOOK_001");
   });
 
-  it("has exactly 3 test blocks", () => {
+  it("has exactly 4 test blocks (including delivery polling)", () => {
+    // a: valid payload, b: invalid sig 401, c: missing sig 401, d: pollUntil delivery template
     const code = generateWebhookTest(makeWebhookTarget(), makeAnalysis());
     const testCount = (code.match(/^test\(/gm) || []).length;
-    expect(testCount).toBe(3);
+    expect(testCount).toBe(4);
   });
 
   it("tests valid signature acceptance", () => {

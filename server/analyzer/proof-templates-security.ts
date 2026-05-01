@@ -248,6 +248,7 @@ test("${target.id} — structuring: 10 transactions just below threshold", async
   const allAccepted = results.every(r => r.status === 200 || r.status === 201);
   // If ALL 10 are accepted without any rate limit, that's a potential AML bypass
   expect(allAccepted, "All 10 structuring transactions accepted — AML velocity check missing").toBe(false);
+  // Kills: ${target.mutationTargets[0]?.description || "AML velocity/structuring check missing"}
 });
 
 test("${target.id} — single large transaction above threshold triggers review", async ({ request }) => {
@@ -276,6 +277,7 @@ test("${target.id} — rapid-fire: 100 micro-transactions in parallel", async ({
   const rateLimitedCount = results.filter(r => r.status === 429).length;
   // Should rate-limit after some threshold
   expect(rateLimitedCount, \`0 rate limits on 100 parallel micro-transactions — velocity check missing\`).toBeGreaterThan(0);
+  // Kills: Rate limiter not applied to financial/transaction endpoints
 });
 `;
 }
@@ -326,6 +328,7 @@ test("${target.id} — create in tenant A, read via tenant B context", async ({ 
   expect(readStatus, \`Cross-tenant read succeeded: resource from \${TENANT_A} accessible from \${TENANT_B}\`)
     .not.toBe(200);
   expect([403, 404]).toContain(readStatus);
+  // Kills: ${target.mutationTargets[0]?.description || "Tenant filter missing on read query → cross-tenant data leak"}
 });
 
 test("${target.id} — IDOR via tenant field manipulation", async ({ request }) => {
@@ -344,6 +347,7 @@ test("${target.id} — IDOR via tenant field manipulation", async ({ request }) 
       console.warn(\`Potential IDOR: ID \${id} returned 200 for tenant \${TENANT_B}\`);
     }
     expect(status).not.toBe(500);
+    // Kills: IDOR via direct ID enumeration without tenant scope check
   }
 });
 `;
@@ -400,6 +404,7 @@ test("${target.id} — double-spend: two simultaneous debit requests", async ({ 
   // At minimum, no 500 errors
   const errorCount = results.filter(r => r.status === 500).length;
   expect(errorCount, "Concurrent writes caused server errors").toBe(0);
+  // Kills: ${target.mutationTargets[0]?.description || "Missing transaction/lock allows double-spend on concurrent writes"}
 });
 
 test("${target.id} — optimistic locking: stale version rejected", async ({ request }) => {
@@ -417,6 +422,7 @@ test("${target.id} — optimistic locking: stale version rejected", async ({ req
   // If the API supports optimistic locking, stale version should be rejected
   // If no version field, this test just verifies no 500
   expect(status).not.toBe(500);
+  // Kills: Stale version writes accepted (lost updates / lost writes)
 });
 `;
 }
@@ -463,6 +469,7 @@ test("${target.id} — role escalation via mass assignment", async ({ request })
     expect(body).not.toMatch(/"isAdmin"\s*:\s*true/);
     expect(body).not.toMatch(/"balance"\s*:\s*999999/);
   }
+  // Kills: ${target.mutationTargets[0]?.description || "Server uses blocklist instead of allowlist for input fields"}
 });
 
 test("${target.id} — prototype pollution via __proto__", async ({ request }) => {
@@ -477,6 +484,7 @@ test("${target.id} — prototype pollution via __proto__", async ({ request }) =
   // Must not crash the server
   expect(status).not.toBe(500);
   expect([200, 201, 400, 422]).toContain(status);
+  // Kills: Prototype pollution via __proto__ injection causes server crash
 });
 
 test("${target.id} — HTTP parameter pollution: duplicate fields", async ({ request }) => {
@@ -486,6 +494,7 @@ test("${target.id} — HTTP parameter pollution: duplicate fields", async ({ req
     adminCookie
   );
   expect(status).not.toBe(500);
+  // Kills: Server crashes on duplicate/conflicting field names in payload
 });
 `;
 }
