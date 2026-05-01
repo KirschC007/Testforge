@@ -40,6 +40,7 @@ export default defineConfig({
         "server/analyzer/spec-regex-extractor.ts",
         "server/analyzer/code-builder.ts",
         "server/analyzer/output-normalizer.ts",
+        "server/analyzer/active-scanner.ts",
       ],
       exclude: [
         "**/*.test.ts",

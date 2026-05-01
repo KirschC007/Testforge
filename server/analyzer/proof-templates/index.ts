@@ -87,6 +87,20 @@
  *     visual-diff-report.mjs  — npm run report:visual-diff (HTML diff report)
  *     codegen-wrapper.mjs     — npm run codegen            (Playwright codegen wrap)
  *
+ * ── Phase A: Killer Features ──────────────────────────────────────────────────
+ *   stateful_sequence → proof-generator.ts (generateStatefulSequenceTest) ← NEW
+ *                       Full CRUD lifecycle: create → read → update → list → delete
+ *                       → read-after-delete. Catches silent rollback, stale cache,
+ *                       soft-delete leaks, list-cache invalidation bugs.
+ *                       (Schemathesis-style stateful API testing)
+ *
+ *   Backend modules + utilities (NOT ProofTypes):
+ *     server/analyzer/active-scanner.ts — runs probes against live URL (SSRF-safe)
+ *     POST /api/security-scan          — endpoint for active scanner (auth required)
+ *     mutation-sandbox.mjs              — npm run mutation:sandbox (real mutations)
+ *     mock-server.mjs                   — npm run mock (Express mock from spec)
+ *     .github/actions/testforge/        — composite action (PR comments)
+ *
  * Adding a new ProofType:
  *   1. Add to PROOF_TYPES in types.ts
  *   2. Create proof-templates/<domain>.ts with the generator function

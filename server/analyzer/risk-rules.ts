@@ -457,6 +457,30 @@ export const RISK_RULES: RiskRule[] = [
     priority: 14,
   },
 
+  // ─── Phase A — Stateful API Sequences (Schemathesis-killer) ──────────────────
+  // Triggers when a resource has BOTH create AND read endpoints — chains the full
+  // CRUD lifecycle in a single test to catch sequence-dependent bugs that single-call
+  // tests miss (orphaned records, stale caches, inconsistent state).
+  {
+    proofType: "stateful_sequence" as ProofType,
+    triggers: {
+      conditions: [
+        (_, ep) => {
+          if (!ep) return false;
+          const n = ep.name.toLowerCase();
+          // Trigger only on create endpoints — sequence builds outward from create
+          return n.includes("create") || n.includes("add") || n.includes("post");
+        },
+      ],
+      keywords: [
+        "lifecycle", "crud", "stateful", "data flow", "sequence",
+        "create then read", "create then update", "end to end data",
+      ],
+      tags: ["lifecycle", "crud", "sequence", "stateful"],
+    },
+    priority: 19, // High priority — catches integration bugs
+  },
+
   // ─── True E2E (Phase 2): Visual Regression ────────────────────────────────────
   // Triggers when behavior mentions UI/visual concerns. Captures screenshot per page,
   // compares against baseline (auto-created on first run). Fails if >1% pixel diff.

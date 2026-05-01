@@ -205,6 +205,8 @@ export const PROOF_TYPES = [
   "e2e_smart_form", "e2e_user_journey", "e2e_perf_budget",
   // True E2E (Phase 2): visual regression, network conditions, full WCAG audit
   "e2e_visual", "e2e_network", "e2e_a11y_full",
+  // Phase A — Killer features: stateful sequences (Schemathesis-killer)
+  "stateful_sequence",
 ] as const;
 
 export type ProofType = typeof PROOF_TYPES[number];
@@ -314,6 +316,8 @@ export interface GeneratedHelpers {
   "analyze-flakiness.mjs": string;
   "visual-diff-report.mjs": string;
   "codegen-wrapper.mjs": string;
+  "mutation-sandbox.mjs": string;
+  "mock-server.mjs": string;
 }
 
 // ─── Flow / CronJob / FeatureGate ────────────────────────────────────────────

@@ -128,6 +128,7 @@ function getFilename(pt: ProofType): string {
     e2e_visual: "tests/e2e/visual-regression.spec.ts",
     e2e_network: "tests/e2e/network-conditions.spec.ts",
     e2e_a11y_full: "tests/e2e/wcag-full.spec.ts",
+    stateful_sequence: "tests/integration/stateful-sequences.spec.ts",
   };
   return map[pt];
 }
@@ -3588,6 +3589,7 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     e2e_visual: generateE2EVisualTest,
     e2e_network: generateE2ENetworkTest,
     e2e_a11y_full: generateE2EAccessibilityFullTest,
+    stateful_sequence: generateStatefulSequenceTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -5132,6 +5134,189 @@ test.describe("${target.id} — Full WCAG 2.1 AA (${pagePath})", () => {
     // Kills: ${target.mutationTargets[4]?.description || "Invalid ARIA role (role='nav' instead of 'navigation')"}
     expect(results.violations).toHaveLength(0);
   });
+});
+`;
+}
+
+// ─── Phase A: Stateful API Sequence Generator (Schemathesis-killer) ──────────
+
+/**
+ * Generates a multi-step CRUD lifecycle test that chains:
+ *   1. Create resource (POST)
+ *   2. Read by ID (verify same data returned)
+ *   3. Update (verify change persisted)
+ *   4. List (verify resource appears)
+ *   5. Delete (verify removal)
+ *   6. Read after delete (verify 404 / not present)
+ *
+ * Catches sequence-dependent bugs that single-call tests miss:
+ *   - Silent rollback (create returns 200 but doesn't persist)
+ *   - Stale cache after update
+ *   - Soft delete leaks (delete succeeds but record still readable)
+ *   - List cache invalidation bugs
+ *
+ * Falls back to a partial sequence (just create + read) when full CRUD isn't available.
+ */
+export function generateStatefulSequenceTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
+
+  // Resolve the create endpoint (anchor of the sequence)
+  const createEp = ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  ) || ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
+
+  if (!createEp) {
+    return generateTODOStub(target, "No create endpoint detected — cannot build stateful sequence");
+  }
+
+  // Find the resource name (e.g. "users" from "users.create")
+  const resourceName = createEp.name.split(".")[0];
+
+  // Discover related endpoints by resource prefix
+  const relatedEndpoints = ir.apiEndpoints.filter(e => e.name.startsWith(resourceName + "."));
+  const readEp = relatedEndpoints.find(e => /\.(get|getById|find|read|fetch)/.test(e.name));
+  const listEp = relatedEndpoints.find(e => /\.(list|all|search|index)/.test(e.name));
+  const updateEp = relatedEndpoints.find(e => /\.(update|edit|patch|put)/.test(e.name));
+  const deleteEp = relatedEndpoints.find(e => /\.(delete|remove|destroy)/.test(e.name));
+
+  // Build create payload from input fields
+  const createFields = (createEp.inputFields || []).filter(f => !f.isTenantKey);
+  const createPayloadEntries = createFields.map(f =>
+    `      ${f.name}: ${getValidDefault(f, tenantConst)},`
+  ).join("\n");
+
+  // Identify a string field for unique markers (preferred for assertion)
+  const markerField = createFields.find(f => f.type === "string" && (f.name.toLowerCase().includes("name") || f.name.toLowerCase().includes("title")))
+    || createFields.find(f => f.type === "string");
+  const markerFieldName = markerField?.name;
+
+  // Build update payload (only modifies the marker field if present)
+  const updateFieldEntry = markerFieldName
+    ? `      ${markerFieldName}: \`updated-\${uniqueMarker}\`,`
+    : "";
+
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { ${tenantConst} } from "../../helpers/factories";
+
+// ${target.id} — Stateful Sequence: ${target.description}
+// Resource: ${resourceName}
+// Lifecycle: create${readEp ? " → read" : ""}${updateEp ? " → update" : ""}${listEp ? " → list" : ""}${deleteEp ? " → delete → read-after-delete" : ""}
+//
+// Strategy: chain related endpoints with data passing between steps.
+// Catches bugs that single-call tests miss: silent rollback, stale cache,
+// soft delete leaks, list cache invalidation.
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+test("${target.id} — full CRUD lifecycle: ${resourceName}", async ({ request }) => {
+  // Use unique marker so assertions can match exact data across steps
+  const uniqueMarker = \`stateful-\${Date.now()}-\${Math.floor(Math.random() * 10000)}\`;
+
+  // ── Step 1: CREATE ──────────────────────────────────────────────────────────
+  const createPayload = {
+    ${tenantField}: ${tenantConst},
+${createPayloadEntries}${markerFieldName ? `\n    ${markerFieldName}: uniqueMarker,` : ""}
+  };
+  const { status: createStatus, data: created } = await trpcMutation(
+    request, "${createEp.name}", createPayload, adminCookie
+  );
+
+  // Kills: Create returns 500 / unhandled exception
+  expect(createStatus, "Create failed").not.toBe(500);
+  expect([200, 201]).toContain(createStatus);
+  expect(created, "Create response is empty").toBeDefined();
+
+  // Extract created ID for next steps
+  const createdId = (created as Record<string, unknown>)?.id
+    ?? (created as Record<string, unknown>)?.data?.id
+    ?? null;
+  expect(createdId, "Create response missing id field").not.toBeNull();
+${readEp ? `
+  // ── Step 2: READ — verify create actually persisted ─────────────────────────
+  const { status: readStatus, data: read } = await trpcQuery(
+    request, "${readEp.name}",
+    { ${tenantField}: ${tenantConst}, id: createdId },
+    adminCookie
+  );
+  expect(readStatus, "Read failed after create").toBe(200);
+  expect(read, "Read returned empty after create").toBeDefined();
+  // Kills: Create returned 200 but data wasn't persisted (silent rollback)
+  ${markerFieldName ? `expect(
+    (read as Record<string, unknown>)?.${markerFieldName} ?? (read as Record<string, unknown>)?.data?.${markerFieldName},
+    "Created marker not found in read response — silent rollback?"
+  ).toBe(uniqueMarker);` : `expect(
+    (read as Record<string, unknown>)?.id ?? (read as Record<string, unknown>)?.data?.id,
+    "Read returned different ID than created"
+  ).toBe(createdId);`}
+` : ""}${updateEp ? `
+  // ── Step 3: UPDATE — verify change is persisted ─────────────────────────────
+  const { status: updateStatus, data: updated } = await trpcMutation(
+    request, "${updateEp.name}",
+    {
+      ${tenantField}: ${tenantConst},
+      id: createdId,
+${updateFieldEntry}
+    },
+    adminCookie
+  );
+  expect([200, 201, 204]).toContain(updateStatus);
+${markerFieldName ? `
+  // Re-read to verify update took effect (catches stale cache)
+  const { data: afterUpdate } = await trpcQuery(
+    request, "${readEp?.name || createEp.name}",
+    { ${tenantField}: ${tenantConst}, id: createdId },
+    adminCookie
+  );
+  // Kills: Update returns 200 but cache returns stale data
+  expect(
+    (afterUpdate as Record<string, unknown>)?.${markerFieldName} ?? (afterUpdate as Record<string, unknown>)?.data?.${markerFieldName},
+    "Update succeeded but read returned stale value — cache invalidation broken"
+  ).toBe(\`updated-\${uniqueMarker}\`);` : ""}
+` : ""}${listEp ? `
+  // ── Step 4: LIST — verify resource appears in list ──────────────────────────
+  const { status: listStatus, data: listData } = await trpcQuery(
+    request, "${listEp.name}",
+    { ${tenantField}: ${tenantConst} },
+    adminCookie
+  );
+  expect(listStatus).toBe(200);
+  const items = Array.isArray(listData)
+    ? listData
+    : (listData as Record<string, unknown>)?.data ?? (listData as Record<string, unknown>)?.items ?? [];
+  // Kills: List endpoint cache not invalidated after create — record missing
+  const found = (items as Array<Record<string, unknown>>).some(
+    item => item.id === createdId || item.id === String(createdId)
+  );
+  expect(found, \`Created \${${JSON.stringify(resourceName)}} (id=\${createdId}) not found in list — cache invalidation bug?\`).toBe(true);
+` : ""}${deleteEp ? `
+  // ── Step 5: DELETE ──────────────────────────────────────────────────────────
+  const { status: deleteStatus } = await trpcMutation(
+    request, "${deleteEp.name}",
+    { ${tenantField}: ${tenantConst}, id: createdId },
+    adminCookie
+  );
+  expect([200, 204]).toContain(deleteStatus);
+
+  // ── Step 6: READ-AFTER-DELETE — verify removal ──────────────────────────────
+  const { status: postDeleteStatus } = await trpcQuery(
+    request, "${readEp?.name || createEp.name}",
+    { ${tenantField}: ${tenantConst}, id: createdId },
+    adminCookie
+  );
+  // Kills: Delete returned 200 but resource is still readable (soft delete leak)
+  expect([404, 410, 204], "Resource still readable after delete — soft delete leak!")
+    .toContain(postDeleteStatus);
+` : ""}
 });
 `;
 }

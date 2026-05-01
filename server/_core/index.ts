@@ -350,6 +350,60 @@ async function startServer() {
     }
   });
 
+  // ─── Phase A: Active Security Scanner ──────────────────────────────────────
+  // POST /api/security-scan
+  // Body: { analysisId: number, targetUrl: string, authCookie?: string }
+  // Runs the analysis's security probes against the target URL with SSRF
+  // protection, time-bounding, and rate-limiting between probes. Authenticated.
+  const scanRateLimit = createRateLimiter({ max: 3, windowMs: 60_000 }); // active scans are heavy
+  app.post("/api/security-scan", scanRateLimit, express.json({ limit: "100kb" }), async (req: any, res: any) => {
+    try {
+      // Auth required — active scans hit a real server, must be opt-in
+      let user: import("../../drizzle/schema").User | null = null;
+      try {
+        user = await sdk.authenticateRequest(req);
+      } catch {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+      const { analysisId, targetUrl, authCookie, maxProbes, maxDurationMs } = req.body || {};
+      if (typeof analysisId !== "number") return res.status(400).json({ error: "analysisId (number) required" });
+      if (typeof targetUrl !== "string" || !targetUrl) return res.status(400).json({ error: "targetUrl (string) required" });
+
+      // SSRF guard — defense in depth (active-scanner also checks)
+      const { checkURL } = await import("./ssrf-guard");
+      const ssrf = checkURL(targetUrl);
+      if (!ssrf.allowed) return res.status(400).json({ error: `Invalid targetUrl: ${ssrf.reason}` });
+
+      // Load the analysis (authorize: must belong to caller)
+      const { getAnalysisById } = await import("../db");
+      const analysis = await getAnalysisById(analysisId);
+      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+      if (analysis.userId !== user.id && user.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const resultJson = analysis.resultJson as any;
+      const analysisResult = resultJson?.analysisResult;
+      if (!analysisResult) return res.status(400).json({ error: "Analysis has no completed analysisResult — wait for it to finish" });
+
+      // Run scan
+      const { runActiveScan } = await import("../analyzer/active-scanner");
+      const report = await runActiveScan(analysisResult, {
+        targetUrl,
+        authCookie: typeof authCookie === "string" ? authCookie : undefined,
+        maxProbes: typeof maxProbes === "number" ? Math.min(maxProbes, 200) : 100,
+        maxDurationMs: typeof maxDurationMs === "number" ? Math.min(maxDurationMs, 10 * 60 * 1000) : 5 * 60 * 1000,
+      });
+
+      res.json(report);
+    } catch (err: any) {
+      console.error("[security-scan]", err);
+      res.status(500).json({ error: err.message || "Active scan failed" });
+    }
+  });
+
   // ─── SSE: Test Run Live Stream ─────────────────────────────────────────────
   // GET /api/test-runs/:runId/stream
   // Opens a Server-Sent Events connection. Emits:

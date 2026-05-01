@@ -1,0 +1,169 @@
+name: 'TestForge'
+description: 'Generate API security/compliance tests from your spec on every PR. Comments delta vs main.'
+author: 'TestForge'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  spec-path:
+    description: 'Path to API spec file (Markdown, OpenAPI .json/.yaml)'
+    required: false
+    default: ''
+  spec-glob:
+    description: 'Glob to find spec files (e.g. "docs/api/*.md")'
+    required: false
+    default: 'docs/api.md,api.md,openapi.yaml,openapi.json'
+  testforge-url:
+    description: 'TestForge backend URL (or use your own self-hosted instance)'
+    required: false
+    default: 'https://api.testforge.dev'
+  testforge-token:
+    description: 'TestForge API token (set as GitHub secret)'
+    required: true
+  github-token:
+    description: 'GITHUB_TOKEN for posting PR comments'
+    required: true
+    default: ${{ github.token }}
+  fail-on-delta:
+    description: 'Fail the action if mutation score drops or coverage decreases'
+    required: false
+    default: 'false'
+
+outputs:
+  proof-count:
+    description: 'Total proofs generated'
+    value: ${{ steps.analyze.outputs.proof-count }}
+  mutation-score:
+    description: 'Average mutation score (0-100)'
+    value: ${{ steps.analyze.outputs.mutation-score }}
+  coverage-pct:
+    description: 'Behavior coverage percentage'
+    value: ${{ steps.analyze.outputs.coverage-pct }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Find spec file
+      id: find-spec
+      shell: bash
+      run: |
+        SPEC=""
+        if [ -n "${{ inputs.spec-path }}" ] && [ -f "${{ inputs.spec-path }}" ]; then
+          SPEC="${{ inputs.spec-path }}"
+        else
+          IFS=',' read -ra GLOBS <<< "${{ inputs.spec-glob }}"
+          for g in "${GLOBS[@]}"; do
+            for f in $g; do
+              if [ -f "$f" ]; then SPEC="$f"; break 2; fi
+            done
+          done
+        fi
+        if [ -z "$SPEC" ]; then
+          echo "::error::No spec file found. Set inputs.spec-path or update spec-glob."
+          exit 1
+        fi
+        echo "Found spec: $SPEC"
+        echo "spec=$SPEC" >> "$GITHUB_OUTPUT"
+
+    - name: Analyze with TestForge
+      id: analyze
+      shell: bash
+      run: |
+        SPEC="${{ steps.find-spec.outputs.spec }}"
+        echo "::group::Uploading spec to TestForge"
+        UPLOAD_RESP=$(curl -sf -X POST "${{ inputs.testforge-url }}/api/upload-spec" \
+          -H "Authorization: Bearer ${{ inputs.testforge-token }}" \
+          -F "file=@$SPEC")
+        SPEC_KEY=$(echo "$UPLOAD_RESP" | jq -r '.specKey')
+        if [ -z "$SPEC_KEY" ] || [ "$SPEC_KEY" = "null" ]; then
+          echo "::error::Failed to upload spec: $UPLOAD_RESP"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Running analysis"
+        ANALYSIS_RESP=$(curl -sf -X POST "${{ inputs.testforge-url }}/api/analyses" \
+          -H "Authorization: Bearer ${{ inputs.testforge-token }}" \
+          -H "Content-Type: application/json" \
+          -d "{\"specKey\":\"$SPEC_KEY\",\"projectName\":\"${{ github.repository }}#${{ github.event.pull_request.number }}\"}")
+        ANALYSIS_ID=$(echo "$ANALYSIS_RESP" | jq -r '.id')
+        echo "Analysis ID: $ANALYSIS_ID"
+
+        # Poll for completion (max 10 min)
+        for i in $(seq 1 60); do
+          STATUS=$(curl -sf "${{ inputs.testforge-url }}/api/analyses/$ANALYSIS_ID" \
+            -H "Authorization: Bearer ${{ inputs.testforge-token }}" | jq -r '.status')
+          echo "  Poll $i/60: status=$STATUS"
+          if [ "$STATUS" = "completed" ]; then break; fi
+          if [ "$STATUS" = "failed" ]; then
+            echo "::error::Analysis failed"
+            exit 1
+          fi
+          sleep 10
+        done
+
+        # Fetch results
+        RESULT=$(curl -sf "${{ inputs.testforge-url }}/api/analyses/$ANALYSIS_ID" \
+          -H "Authorization: Bearer ${{ inputs.testforge-token }}")
+        PROOF_COUNT=$(echo "$RESULT" | jq -r '.validatedProofCount // 0')
+        MUTATION_SCORE=$(echo "$RESULT" | jq -r '.verdictScore // 0')
+        COVERAGE_PCT=$(echo "$RESULT" | jq -r '.coveragePercent // 0')
+        DOWNLOAD_URL=$(echo "$RESULT" | jq -r '.outputZipUrl // ""')
+
+        echo "proof-count=$PROOF_COUNT" >> "$GITHUB_OUTPUT"
+        echo "mutation-score=$MUTATION_SCORE" >> "$GITHUB_OUTPUT"
+        echo "coverage-pct=$COVERAGE_PCT" >> "$GITHUB_OUTPUT"
+        echo "download-url=$DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
+        echo "analysis-id=$ANALYSIS_ID" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+    - name: Post PR comment with results
+      if: github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        COMMENT_BODY=$(cat <<EOF
+        ## 🛡️ TestForge — Quality Compiler
+
+        | Metric | Value |
+        |--------|-------|
+        | **Generated tests** | ${{ steps.analyze.outputs.proof-count }} proofs |
+        | **Mutation score** | ${{ steps.analyze.outputs.mutation-score }}/100 |
+        | **Behavior coverage** | ${{ steps.analyze.outputs.coverage-pct }}% |
+
+        [📥 Download generated test suite](${{ steps.analyze.outputs.download-url }}) · [📋 Full report](${{ inputs.testforge-url }}/analysis/${{ steps.analyze.outputs.analysis-id }})
+
+        ---
+        *🤖 Generated by [TestForge](https://testforge.dev) — turn any spec into a test suite.*
+        EOF
+        )
+
+        # Post or update existing TestForge comment
+        EXISTING_COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+          --jq '.[] | select(.body | contains("TestForge — Quality Compiler")) | .id' | head -1)
+
+        if [ -n "$EXISTING_COMMENT_ID" ]; then
+          gh api "repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID" \
+            -X PATCH -f body="$COMMENT_BODY"
+          echo "Updated existing PR comment"
+        else
+          gh pr comment ${{ github.event.pull_request.number }} --body "$COMMENT_BODY"
+          echo "Posted new PR comment"
+        fi
+
+    - name: Enforce delta thresholds
+      if: inputs.fail-on-delta == 'true'
+      shell: bash
+      run: |
+        SCORE="${{ steps.analyze.outputs.mutation-score }}"
+        COV="${{ steps.analyze.outputs.coverage-pct }}"
+        if [ "$SCORE" -lt 70 ]; then
+          echo "::error::Mutation score $SCORE below 70 threshold"
+          exit 1
+        fi
+        if [ "$COV" -lt 80 ]; then
+          echo "::error::Coverage $COV% below 80% threshold"
+          exit 1
+        fi

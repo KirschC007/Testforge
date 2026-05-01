@@ -567,6 +567,7 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     e2e_visual: ["list", "get", "dashboard", "view"],
     e2e_network: ["list", "get", "create", "update"],
     e2e_a11y_full: ["list", "get", "create", "update", "view"],
+    stateful_sequence: ["create", "add", "submit"],
   };
 
   const kws = keywords[proofType] || [];
@@ -1350,6 +1351,30 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
         { description: "Blank page on offline (no error UI)", expectedKill: true },
         { description: "Error 500 swallowed silently (user sees frozen UI)", expectedKill: true },
         { description: "Request timeout never recovers (no retry UI)", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "stateful_sequence") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-STATEFUL`,
+      description: `Stateful sequence: ${b.title}`,
+      preconditions: ["Create endpoint exists for the resource", "Authenticated session"],
+      assertions: [
+        { type: "http_status", target: "create_response", operator: "in", value: [200, 201], rationale: "Create succeeds" },
+        { type: "field_value", target: "read_after_create", operator: "eq", value: "created_data", rationale: "Read returns same data that was created" },
+        { type: "field_value", target: "list_includes_created", operator: "eq", value: true, rationale: "List includes newly created resource" },
+      ],
+      mutationTargets: [
+        { description: "Create returns success but doesn't persist (silent rollback)", expectedKill: true },
+        { description: "Read returns stale/cached data after update", expectedKill: true },
+        { description: "Delete returns success but resource still readable", expectedKill: true },
+        { description: "List doesn't reflect newly created records (cache invalidation bug)", expectedKill: true },
       ],
       endpoint,
       sideEffects,
