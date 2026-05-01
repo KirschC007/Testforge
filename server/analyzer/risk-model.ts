@@ -561,6 +561,9 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
     graphql: ["graphql", "query", "mutation"],
     accessibility: ["create", "update", "get", "list"],
     property_based: ["create", "update", "submit", "process"],
+    e2e_smart_form: ["create", "update", "edit", "submit", "register"],
+    e2e_user_journey: ["create", "submit", "checkout", "register", "book"],
+    e2e_perf_budget: ["list", "get", "search", "dashboard"],
   };
 
   const kws = keywords[proofType] || [];
@@ -1234,6 +1237,71 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
         { description: "Unhandled exception on edge input shape", expectedKill: true },
         { description: "SQL injection / template injection in string fields", expectedKill: true },
         { description: "Integer overflow in numeric fields", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "e2e_smart_form") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-E2E_FORM`,
+      description: `E2E Smart Form: ${b.title}`,
+      preconditions: ["UI page exists for endpoint", "User can authenticate via UI"],
+      assertions: [
+        { type: "http_status", target: "form_submit", operator: "in", value: [200, 201], rationale: "Submitting valid form succeeds" },
+        { type: "field_value", target: "page", operator: "matches", value: "success|created|saved", rationale: "Success indicator visible" },
+      ],
+      mutationTargets: [
+        { description: "Form submit handler not wired to backend (silent failure)", expectedKill: true },
+        { description: "Required field validation removed (form submits with empty data)", expectedKill: true },
+        { description: "Success toast/redirect missing after valid submit", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "e2e_user_journey") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-E2E_JOURNEY`,
+      description: `E2E User Journey: ${b.title}`,
+      preconditions: ["UI flow defined in IR.userFlows", "Test user can complete entire flow"],
+      assertions: [
+        { type: "field_value", target: "final_page", operator: "matches", value: "success|complete|done", rationale: "Journey reaches success state" },
+      ],
+      mutationTargets: [
+        { description: "Step transition broken (e.g. submit button disabled after first click)", expectedKill: true },
+        { description: "State lost between steps (user has to re-enter data)", expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+    };
+  }
+
+  if (pt === "e2e_perf_budget") {
+    return {
+      ...base,
+      id: `PROOF-${b.id}-E2E_PERF`,
+      description: `E2E Performance Budget: ${b.title}`,
+      preconditions: ["Page accessible", "Browser supports Performance API"],
+      assertions: [
+        { type: "field_value", target: "lcp_ms", operator: "lt", value: 2500, rationale: "LCP within Core Web Vitals 'good' threshold" },
+        { type: "field_value", target: "cls", operator: "lt", value: 0.1, rationale: "CLS within Core Web Vitals 'good' threshold" },
+        { type: "field_value", target: "ttfb_ms", operator: "lt", value: 800, rationale: "TTFB within Core Web Vitals 'good' threshold" },
+      ],
+      mutationTargets: [
+        { description: "Render-blocking script added to <head> (LCP regresses)", expectedKill: true },
+        { description: "Image without width/height attributes (CLS regresses)", expectedKill: true },
+        { description: "Synchronous DB query in page render path (TTFB regresses)", expectedKill: true },
       ],
       endpoint,
       sideEffects,

@@ -563,13 +563,51 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      // Layer 2: Browser E2E Tests (real Chromium browser)
+      // Layer 2: Browser E2E Tests — Chromium (default, fastest)
       name: "browser-e2e",
       testMatch: ["**/tests/e2e/**/*.ts"],
       use: {
         ...devices["Desktop Chrome"],
         headless: true,
         viewport: { width: 1280, height: 720 },
+      },
+    },
+    {
+      // Cross-browser: Firefox
+      // Run with: npx playwright test --project=firefox-e2e
+      name: "firefox-e2e",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: {
+        ...devices["Desktop Firefox"],
+        headless: true,
+      },
+    },
+    {
+      // Cross-browser: WebKit (Safari engine)
+      // Run with: npx playwright test --project=webkit-e2e
+      name: "webkit-e2e",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: {
+        ...devices["Desktop Safari"],
+        headless: true,
+      },
+    },
+    {
+      // Mobile responsive: Pixel 5 viewport
+      // Run with: npx playwright test --project=mobile-chrome
+      name: "mobile-chrome",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: {
+        ...devices["Pixel 5"],
+      },
+    },
+    {
+      // Mobile responsive: iPhone 13
+      // Run with: npx playwright test --project=mobile-safari
+      name: "mobile-safari",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: {
+        ...devices["iPhone 13"],
       },
     },
   ],
@@ -588,6 +626,11 @@ export default defineConfig({
       "test:compliance": "playwright test tests/compliance/",
       "test:business": "playwright test tests/business/",
       "test:property": "playwright test tests/property/",
+      "test:e2e": "playwright test --project=browser-e2e",
+      "test:e2e:firefox": "playwright test --project=firefox-e2e",
+      "test:e2e:webkit": "playwright test --project=webkit-e2e",
+      "test:e2e:mobile": "playwright test --project=mobile-chrome --project=mobile-safari",
+      "test:e2e:all-browsers": "playwright test --project=browser-e2e --project=firefox-e2e --project=webkit-e2e",
       "test:list": "playwright test --list",
       "test:dry-run": "playwright test --dry-run",
       "test:mutation": "stryker run",

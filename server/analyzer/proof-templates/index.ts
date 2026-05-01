@@ -52,6 +52,22 @@
  *                       P1: no 500, P2: shape consistent, P3: injection safe,
  *                       P4: numeric overflow safe, P5: concurrent idempotent
  *
+ * ── True E2E (Phase 1) ────────────────────────────────────────────────────────
+ *   e2e_smart_form    → proof-generator.ts (generateE2ESmartFormTest) ← NEW
+ *                       F1: happy path fill+submit, F2: validation, F3: persistence
+ *                       Uses smart selector fallbacks (label→placeholder→testid→name)
+ *
+ *   e2e_user_journey  → proof-generator.ts (generateE2EUserJourneyTest) ← NEW
+ *                       Multi-step flows from IR.userFlows mapped to navigate/fill/click/verify
+ *
+ *   e2e_perf_budget   → proof-generator.ts (generateE2EPerfBudgetTest) ← NEW
+ *                       Core Web Vitals: LCP<2.5s, CLS<0.1, TTFB<800ms
+ *                       Uses native PerformanceObserver — no external deps
+ *
+ *   Cross-browser/responsive matrix (config-level, not separate ProofType):
+ *     playwright.config.ts has 5 projects: chromium, firefox, webkit,
+ *     mobile-chrome, mobile-safari — all run the same e2e tests.
+ *
  * Adding a new ProofType:
  *   1. Add to PROOF_TYPES in types.ts
  *   2. Create proof-templates/<domain>.ts with the generator function

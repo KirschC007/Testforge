@@ -201,6 +201,8 @@ export const PROOF_TYPES = [
   "db_transaction", "audit_log", "graphql", "accessibility",
   // Tier-1 world-class: property-based fuzz testing
   "property_based",
+  // True E2E (Phase 1): smart form discovery, multi-step journeys, perf budgets
+  "e2e_smart_form", "e2e_user_journey", "e2e_perf_budget",
 ] as const;
 
 export type ProofType = typeof PROOF_TYPES[number];

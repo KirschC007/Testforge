@@ -258,6 +258,15 @@ describe("generateHelpers — playwright.config.ts", () => {
     expect(config).toContain('from "@playwright/test"');
     expect(config).toContain("defineConfig");
   });
+
+  it("includes 5 cross-browser/responsive projects", () => {
+    const config = generateHelpers(makeAnalysis())["playwright.config.ts"];
+    expect(config).toContain('name: "browser-e2e"');     // Chromium
+    expect(config).toContain('name: "firefox-e2e"');      // Firefox
+    expect(config).toContain('name: "webkit-e2e"');       // Safari engine
+    expect(config).toContain('name: "mobile-chrome"');    // Pixel 5
+    expect(config).toContain('name: "mobile-safari"');    // iPhone 13
+  });
 });
 
 describe("generateHelpers — heal.mjs", () => {

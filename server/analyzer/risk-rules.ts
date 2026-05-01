@@ -409,6 +409,54 @@ export const RISK_RULES: RiskRule[] = [
     priority: 22,
   },
 
+  // ─── True E2E (Phase 1): Smart Form Tests ─────────────────────────────────────
+  // Triggers for create/update endpoints — generates a UI test that fills the form,
+  // submits, and verifies success. Uses smart selector fallbacks (label/placeholder/testid).
+  {
+    proofType: "e2e_smart_form" as ProofType,
+    triggers: {
+      conditions: [
+        (_, ep) => {
+          if (!ep) return false;
+          const name = ep.name.toLowerCase();
+          // Only fire for write endpoints with input fields
+          const isWrite = name.includes("create") || name.includes("update") ||
+            name.includes("add") || name.includes("edit") || name.includes("submit");
+          return isWrite && (ep.inputFields || []).filter(f => !f.isTenantKey).length >= 1;
+        },
+      ],
+      keywords: ["form", "submit", "input", "create form", "update form", "edit form"],
+      tags: ["form", "ui", "e2e"],
+    },
+    priority: 17,
+  },
+
+  // ─── True E2E (Phase 1): Multi-Step User Journey ──────────────────────────────
+  // Triggers when the IR has userFlows. Each flow becomes a multi-step UI test.
+  {
+    proofType: "e2e_user_journey" as ProofType,
+    triggers: {
+      keywords: ["user journey", "user flow", "happy path", "end-to-end scenario", "funnel"],
+      tags: ["user-flow", "journey", "e2e", "scenario"],
+    },
+    priority: 16,
+  },
+
+  // ─── True E2E (Phase 1): Performance Budget (Core Web Vitals) ─────────────────
+  // Triggers when behavior mentions performance/speed/UX requirements.
+  // Generates a test that measures LCP, CLS, TTFB and asserts against budgets.
+  {
+    proofType: "e2e_perf_budget" as ProofType,
+    triggers: {
+      keywords: [
+        "performance", "page speed", "load time", "core web vitals",
+        "lcp", "cls", "fcp", "ttfb", "lighthouse", "web vitals",
+      ],
+      tags: ["performance", "perf", "speed", "web-vitals"],
+    },
+    priority: 14,
+  },
+
   // ─── Property-Based Fuzz Testing ──────────────────────────────────────────────
   // Triggers for any endpoint that has typed input fields — fast-check generates
   // 50 random valid inputs and verifies invariants hold (no 500, consistent shape).

@@ -122,6 +122,9 @@ function getFilename(pt: ProofType): string {
     graphql: "tests/security/graphql.spec.ts",
     accessibility: "tests/accessibility/wcag.spec.ts",
     property_based: "tests/property/fuzz.spec.ts",
+    e2e_smart_form: "tests/e2e/smart-forms.spec.ts",
+    e2e_user_journey: "tests/e2e/user-journeys.spec.ts",
+    e2e_perf_budget: "tests/e2e/perf-budgets.spec.ts",
   };
   return map[pt];
 }
@@ -3576,6 +3579,9 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     graphql: generateGraphQLTest,
     accessibility: generateAccessibilityTest,
     property_based: generatePropertyTest,
+    e2e_smart_form: generateE2ESmartFormTest,
+    e2e_user_journey: generateE2EUserJourneyTest,
+    e2e_perf_budget: generateE2EPerfBudgetTest,
   };
 
   const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
@@ -4432,6 +4438,345 @@ ${defaultPayload}
     expect([200, 201, 409, 422]).toContain(r2.status);
   });
 ` : ""}});
+`;
+}
+
+// ─── True E2E (Phase 1): Smart Form Generator ────────────────────────────────
+
+/**
+ * Generates a browser E2E test that auto-discovers and fills a form for a given
+ * create/update endpoint. Uses smart selector fallbacks (label → placeholder →
+ * data-testid → name attribute) so tests survive minor UI refactors.
+ *
+ * Tests generated:
+ *   F1: happy path — fill all required fields, submit, verify success indicator
+ *   F2: validation — submit empty form, verify error messages appear
+ *   F3: persistence — submitted data appears in subsequent list/detail page
+ */
+export function generateE2ESmartFormTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
+
+  // Resolve endpoint and path
+  const ep = ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  ) || ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
+  const endpointName = ep?.name || target.endpoint || "resource.create";
+
+  // Infer UI path from endpoint name (resource.create → /<resource>/new)
+  const resourceMatch = endpointName.match(/^([^.]+)\./);
+  const resourceName = resourceMatch?.[1] || "resource";
+  const isCreate = endpointName.toLowerCase().includes("create") || endpointName.toLowerCase().includes("add");
+  const uiPath = isCreate ? `/${resourceName}/new` : `/${resourceName}/edit`;
+  const listPath = `/${resourceName}`;
+
+  // Get required non-tenant fields, cap at 8 for readable tests
+  const fields = (ep?.inputFields || [])
+    .filter(f => !f.isTenantKey && f.required !== false)
+    .slice(0, 8);
+
+  // Build test value for each field — use semantic value when possible
+  const fillSteps = fields.map(f => {
+    let value: string;
+    const fl = f.name.toLowerCase();
+    switch (f.type) {
+      case "number":
+        value = String(f.min ?? 1);
+        break;
+      case "boolean":
+        return `    // ${f.name} (boolean): leave default state`;
+      case "enum":
+        if (f.enumValues?.length) {
+          return `    await smartSelect(page, ${JSON.stringify(f.name)}, ${JSON.stringify(f.enumValues[0])});`;
+        }
+        value = "active";
+        break;
+      case "date":
+        value = "2026-12-31";
+        break;
+      default:
+        if (fl.includes("email")) value = `e2e-test-\${Date.now()}@example.com`;
+        else if (fl.includes("phone")) value = `+49176\${Date.now().toString().slice(-8)}`;
+        else if (fl.includes("name") || fl.includes("title")) value = `E2E Test \${Date.now()}`;
+        else value = `e2e-${f.name}-\${Date.now()}`;
+    }
+    return `    await smartFill(page, ${JSON.stringify(f.name)}, \`${value}\`);`;
+  }).join("\n");
+
+  return `import { test, expect } from "@playwright/test";
+import { loginAsRole, navigateTo, smartFill, smartSelect, smartClick, expectVisible } from "../../helpers/browser";
+
+// ${target.id} — E2E Smart Form: ${target.description}
+// Risk: ${target.riskLevel}
+// Endpoint: ${endpointName}
+// Path discovered: ${uiPath}
+//
+// Strategy: smart selector fallbacks (label → placeholder → testid → name attr).
+// If a field can't be found by ANY strategy, the test FAILS LOUDLY (not silently).
+
+test.describe("${target.id} — Smart Form (${endpointName})", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, "${primaryRole}");
+    await navigateTo(page, "${uiPath}");
+  });
+
+  test("${target.id}_F1 — happy path: fill all required fields and submit", async ({ page }) => {
+    // Fill each required field using smart selector strategy
+${fillSteps || '    // No fields detected on this endpoint'}
+
+    // Submit
+    await smartClick(page, "submit|save|create|add|book");
+
+    // Verify success indicator appears within 10s (toast / redirect / new entity)
+    // Strategy: any of: success text, list page URL, or detail page URL
+    await Promise.race([
+      expectVisible(page, "success|created|saved|added|done").catch(() => null),
+      page.waitForURL(/\\/${resourceName}(\\/|$)/, { timeout: 10000 }).catch(() => null),
+    ]);
+
+    // Final assertion: we must not still be on the new/edit page (form would still show)
+    const url = page.url();
+    // Kills: ${target.mutationTargets[0]?.description || "Form submit handler not wired (silent failure)"}
+    expect(url, "Still on ${uiPath} after submit — form may not have submitted").not.toContain("${uiPath}");
+  });
+
+  test("${target.id}_F2 — validation: submit empty form shows error", async ({ page }) => {
+    // Don't fill anything — directly submit
+    await smartClick(page, "submit|save|create|add|book");
+
+    // Either: error message visible, OR form did not submit (still on same page)
+    // Both are acceptable signals that validation worked.
+    await page.waitForTimeout(500); // brief settle
+
+    const stillOnForm = page.url().includes("${uiPath}");
+    const hasErrorText = await page.getByText(/required|please fill|invalid|error|missing/i)
+      .first().isVisible({ timeout: 2000 }).catch(() => false);
+
+    // Kills: ${target.mutationTargets[1]?.description || "Required field validation removed"}
+    expect(stillOnForm || hasErrorText, "Empty form was accepted — validation missing!").toBe(true);
+  });
+${fields.length > 0 ? `
+  test("${target.id}_F3 — persistence: submitted data appears in list view", async ({ page }) => {
+    const uniqueMarker = \`e2e-marker-\${Date.now()}\`;
+    // Fill the first text field with a unique marker
+${(fields.find(f => f.type === "string") ? `    await smartFill(page, ${JSON.stringify(fields.find(f => f.type === "string")!.name)}, uniqueMarker);
+${fillSteps.split("\n").filter((_, i) => i > 0).join("\n")}` : "    // No string field to mark — skip persistence check\n    test.skip();")}
+    await smartClick(page, "submit|save|create|add|book");
+
+    // Wait for redirect (success), then navigate to list view
+    await page.waitForTimeout(1000);
+    await navigateTo(page, "${listPath}");
+
+    // Marker should appear in the list (with retry for eventual consistency)
+    await expect(page.getByText(uniqueMarker)).toBeVisible({ timeout: 10000 });
+    // Kills: ${target.mutationTargets[2]?.description || "Submitted data not persisted (write succeeded but DB rollback)"}
+  });
+` : ""}});
+`;
+}
+
+// ─── True E2E (Phase 1): Multi-Step User Journey Generator ───────────────────
+
+/**
+ * Generates a browser E2E test for a multi-step user journey defined in IR.userFlows.
+ * Each step is mapped to a smart UI action: navigate / fill / click / verify.
+ *
+ * Falls back to a stub test when the IR has no userFlows (the test is marked .skip
+ * with a clear message — does NOT fail the suite).
+ */
+export function generateE2EUserJourneyTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
+
+  // Find the most relevant user flow for this behavior
+  const flow = ir.userFlows?.find(f =>
+    f.id === target.behaviorId ||
+    f.relatedEndpoints?.some(ep => ep === target.endpoint) ||
+    f.name.toLowerCase().includes(target.description.toLowerCase().slice(0, 20))
+  ) || ir.userFlows?.[0];
+
+  // Translate a single flow step into Playwright code using smart helpers
+  function stepToCode(step: string, idx: number): string {
+    const s = step.toLowerCase();
+    const stepLabel = step.replace(/`/g, "'").slice(0, 80);
+
+    // Login step
+    if (s.includes("login") || s.includes("sign in") || s.includes("authenticate")) {
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await loginAsRole(page, ${JSON.stringify(primaryRole)});`;
+    }
+    // Navigation step
+    if (s.includes("navigate") || s.includes("open") || s.includes("go to") || s.includes("visit")) {
+      const pathMatch = step.match(/\/[\w\-/{}]+/);
+      const path = pathMatch ? pathMatch[0].replace(/\{[^}]+\}/g, "1") : "/";
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await navigateTo(page, ${JSON.stringify(path)});`;
+    }
+    // Fill step
+    if (s.includes("fill") || s.includes("enter") || s.includes("type") || s.includes("input")) {
+      const fieldMatch = step.match(/(?:fill|enter|type|input)\s+(?:in\s+)?(?:the\s+)?(\w+)/i);
+      const field = fieldMatch ? fieldMatch[1] : "field";
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await smartFill(page, ${JSON.stringify(field)}, \`e2e-\${Date.now()}\`);`;
+    }
+    // Select / dropdown
+    if (s.includes("select") || s.includes("choose") || s.includes("pick")) {
+      const fieldMatch = step.match(/(?:select|choose|pick)\s+(?:the\s+)?(\w+)/i);
+      const field = fieldMatch ? fieldMatch[1] : "option";
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await smartSelect(page, ${JSON.stringify(field)}, "first");`;
+    }
+    // Click / Submit
+    if (s.includes("click") || s.includes("submit") || s.includes("press") || s.includes("tap")) {
+      const btnMatch = step.match(/(?:click|submit|press|tap)\s+(?:the\s+)?(\w[\w ]*)/i);
+      const btn = btnMatch ? btnMatch[1].trim().toLowerCase() : "submit";
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await smartClick(page, ${JSON.stringify(btn)});`;
+    }
+    // Verify / assert
+    if (s.includes("verify") || s.includes("see") || s.includes("confirm") || s.includes("check") || s.includes("expect")) {
+      const expectedMatch = step.match(/(?:verify|see|confirm|check|expect)\s+(?:that\s+)?(.+)/i);
+      const expected = expectedMatch ? expectedMatch[1].slice(0, 50).replace(/[\\/[\]()]/g, "") : "success";
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await expectVisible(page, ${JSON.stringify(expected)});`;
+    }
+    // Wait
+    if (s.includes("wait")) {
+      const msMatch = step.match(/(\d+)\s*(?:ms|second|sec)/i);
+      const ms = msMatch ? parseInt(msMatch[1]) * (step.toLowerCase().includes("ms") ? 1 : 1000) : 1000;
+      return `    // Step ${idx + 1}: ${stepLabel}\n    await page.waitForTimeout(${ms});`;
+    }
+    // Generic fallback — record step but don't auto-implement (avoids false greens)
+    return `    // Step ${idx + 1}: ${stepLabel}\n    // TODO: implement this step manually — could not auto-translate`;
+  }
+
+  if (!flow || !flow.steps || flow.steps.length === 0) {
+    // No user flow — emit a skip stub with explanation
+    return `import { test, expect } from "@playwright/test";
+
+// ${target.id} — E2E User Journey: ${target.description}
+// SKIPPED: No userFlow found in IR. Add one to spec to enable this test.
+
+test.skip("${target.id} — TODO: Add userFlow to spec to generate this journey", async () => {
+  expect(true).toBe(true);
+});
+`;
+  }
+
+  const stepsCode = flow.steps.map((s: string, i: number) => stepToCode(s, i)).join("\n\n");
+  const successAssertions = (flow.successCriteria || []).slice(0, 3).map((criterion: string) => {
+    const expected = criterion.slice(0, 50).replace(/[\\/[\]()`]/g, "");
+    return `    await expectVisible(page, ${JSON.stringify(expected)});`;
+  }).join("\n");
+
+  return `import { test, expect } from "@playwright/test";
+import { loginAsRole, navigateTo, smartFill, smartSelect, smartClick, expectVisible } from "../../helpers/browser";
+
+// ${target.id} — E2E User Journey: ${flow.name}
+// Actor: ${flow.actor}
+// Risk: ${target.riskLevel}
+// Steps: ${flow.steps.length}
+
+test("${target.id} — ${flow.name.replace(/"/g, "'")}", async ({ page }) => {
+${stepsCode}
+
+${successAssertions ? `    // Success criteria from spec:\n${successAssertions}` : ""}
+    // Kills: ${target.mutationTargets[0]?.description || "Step transition broken (e.g. submit button disabled after click)"}
+});
+`;
+}
+
+// ─── True E2E (Phase 1): Performance Budget Generator (Core Web Vitals) ──────
+
+/**
+ * Generates a browser E2E test that measures Core Web Vitals on a page and
+ * asserts against budgets:
+ *   LCP  < 2.5s   (Largest Contentful Paint — perceived load speed)
+ *   CLS  < 0.1    (Cumulative Layout Shift — visual stability)
+ *   TTFB < 800ms  (Time To First Byte — backend response speed)
+ *
+ * Uses native Performance API + PerformanceObserver — no external deps.
+ */
+export function generateE2EPerfBudgetTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const ir = analysis.ir;
+  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
+
+  // Pick a representative page path from the endpoint
+  const ep = ir.apiEndpoints.find(e =>
+    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
+  );
+  const resourceName = ep?.name.split(".")[0] || "dashboard";
+  const pagePath = ep?.name.includes("list") || ep?.name.includes("dashboard")
+    ? `/${resourceName}`
+    : "/";
+
+  return `import { test, expect } from "@playwright/test";
+import { loginAsRole } from "../../helpers/browser";
+
+// ${target.id} — E2E Performance Budget: ${target.description}
+// Risk: ${target.riskLevel}
+// Page: ${pagePath}
+// Budgets: LCP < 2500ms, CLS < 0.1, TTFB < 800ms (Core Web Vitals "good" thresholds)
+
+test.describe("${target.id} — Performance Budget (${pagePath})", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRole(page, ${JSON.stringify(primaryRole)});
+  });
+
+  test("${target.id}_P1 — LCP < 2500ms (Largest Contentful Paint)", async ({ page }) => {
+    await page.goto(\`\${process.env.BASE_URL || "http://localhost:3000"}${pagePath}\`);
+    await page.waitForLoadState("networkidle");
+
+    // Use PerformanceObserver to capture LCP — runs in browser context
+    const lcpMs = await page.evaluate(() => new Promise<number>((resolve) => {
+      let lcp = 0;
+      const observer = new PerformanceObserver((entries) => {
+        for (const entry of entries.getEntries()) {
+          // Use renderTime if available, otherwise loadTime
+          lcp = (entry as any).renderTime || (entry as any).loadTime || entry.startTime;
+        }
+      });
+      observer.observe({ type: "largest-contentful-paint", buffered: true });
+      // Resolve after 3s to give LCP time to settle
+      setTimeout(() => { observer.disconnect(); resolve(lcp); }, 3000);
+    }));
+
+    console.log(\`LCP for ${pagePath}: \${lcpMs.toFixed(0)}ms\`);
+    // Kills: ${target.mutationTargets[0]?.description || "Render-blocking script in <head> regresses LCP"}
+    expect(lcpMs, \`LCP \${lcpMs.toFixed(0)}ms exceeds 2500ms budget\`).toBeLessThan(2500);
+  });
+
+  test("${target.id}_P2 — CLS < 0.1 (Cumulative Layout Shift)", async ({ page }) => {
+    await page.goto(\`\${process.env.BASE_URL || "http://localhost:3000"}${pagePath}\`);
+    await page.waitForLoadState("networkidle");
+
+    const cls = await page.evaluate(() => new Promise<number>((resolve) => {
+      let total = 0;
+      const observer = new PerformanceObserver((entries) => {
+        for (const entry of entries.getEntries() as any[]) {
+          // Don't count shifts during user input
+          if (!entry.hadRecentInput) total += entry.value;
+        }
+      });
+      observer.observe({ type: "layout-shift", buffered: true });
+      // 3s window to capture late shifts (lazy images, web fonts)
+      setTimeout(() => { observer.disconnect(); resolve(total); }, 3000);
+    }));
+
+    console.log(\`CLS for ${pagePath}: \${cls.toFixed(3)}\`);
+    // Kills: ${target.mutationTargets[1]?.description || "Image without width/height attrs causes layout shift"}
+    expect(cls, \`CLS \${cls.toFixed(3)} exceeds 0.1 budget\`).toBeLessThan(0.1);
+  });
+
+  test("${target.id}_P3 — TTFB < 800ms (Time To First Byte)", async ({ page }) => {
+    await page.goto(\`\${process.env.BASE_URL || "http://localhost:3000"}${pagePath}\`);
+
+    const ttfb = await page.evaluate(() => {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
+      return nav ? nav.responseStart - nav.requestStart : 0;
+    });
+
+    console.log(\`TTFB for ${pagePath}: \${ttfb.toFixed(0)}ms\`);
+    // Kills: ${target.mutationTargets[2]?.description || "Synchronous DB query in render path regresses TTFB"}
+    expect(ttfb, \`TTFB \${ttfb.toFixed(0)}ms exceeds 800ms budget\`).toBeLessThan(800);
+  });
+});
 `;
 }
 
