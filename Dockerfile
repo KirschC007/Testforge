@@ -24,9 +24,9 @@ RUN pnpm build
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check — uses the new GET /health endpoint (not /api/health which doesn't exist)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
-  CMD wget -qO- http://localhost:3000/api/health || exit 1
+  CMD wget -qO- http://localhost:3000/health || exit 1
 
 ENV NODE_ENV=production
 
