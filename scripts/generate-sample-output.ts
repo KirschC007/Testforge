@@ -149,22 +149,34 @@ const TARGETS: Array<{ proofType: ProofTarget["proofType"]; endpoint: string }> 
   { proofType: "property_based", endpoint: "reservations.create" },
 ];
 
+// Build target via the REAL pipeline (buildProofTarget) so mutation targets match
+// what production uses, not generic placeholders.
+import { buildProofTarget } from "../server/analyzer/risk-model";
+import type { ScoredBehavior } from "../server/analyzer/types";
+
 function makeTarget(proofType: ProofTarget["proofType"], endpoint: string): ProofTarget {
+  const sb: ScoredBehavior = {
+    behavior: REALISTIC_ANALYSIS.ir.behaviors[0],
+    riskLevel: "high",
+    proofTypes: [proofType],
+    priority: 0,
+    rationale: "test",
+  };
+  const real = buildProofTarget(sb, proofType, REALISTIC_ANALYSIS);
+  if (real) {
+    real.endpoint = endpoint;
+    return real;
+  }
+  // Fallback for proof types without buildProofTarget branch (security templates)
   return {
     id: `T_${proofType.toUpperCase()}_001`,
     behaviorId: "B001",
     proofType,
     riskLevel: "high",
-    description: `Sample ${proofType} for reservations`,
+    description: `Sample ${proofType}`,
     preconditions: [],
     assertions: [],
-    mutationTargets: [
-      { description: "Mutation A — endpoint missing tenant filter", expectedKill: true },
-      { description: "Mutation B — input validation removed", expectedKill: true },
-      { description: "Mutation C — auth check bypassed", expectedKill: true },
-      { description: "Mutation D — response shape changed", expectedKill: true },
-      { description: "Mutation E — error not propagated", expectedKill: true },
-    ],
+    mutationTargets: [{ description: "Generic mutation", expectedKill: true }],
     endpoint,
   };
 }

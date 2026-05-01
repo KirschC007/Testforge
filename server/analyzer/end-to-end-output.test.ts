@@ -203,3 +203,25 @@ describe("Phase 1+2+A end-to-end output: every generator produces USABLE code", 
     expect(code).toMatch(/import\s+\{[^}]*\btomorrowStr\b[^}]*\}\s+from\s+["']\.\.\/\.\.\/helpers\/api["']/);
   });
 });
+
+// ─── Mutation Sandbox patterns must match real generated source ────────────
+// Catches the bug where regex looks valid but doesn't match anything in production.
+describe("mutation-sandbox.mjs patterns actually match generated helpers/api.ts", () => {
+  it("all 6 mutation patterns find a target in the real generated source", async () => {
+    const { generateHelpers } = await import("./helpers-generator");
+    const apiSrc = generateHelpers(REALISTIC)["helpers/api.ts"];
+
+    const patterns = [
+      { name: "Remove auth header",                   regex: /headers\["Authorization"\]\s*=\s*cookieHeader;/ },
+      { name: "Always return status 200",             regex: /status:\s*response\.status\(\)/ },
+      { name: "Strip cookie from request",            regex: /headers\["Cookie"\]\s*=\s*cookieHeader;/ },
+      { name: "Skip ok() check on login",             regex: /if \(!response\.ok\(\)\)/ },
+      { name: "Return null instead of error data",    regex: /return\s*\{\s*response,\s*data,\s*error/ },
+      { name: "Always return Bearer prefix in cookie", regex: /return setCookie;/ },
+    ];
+
+    for (const { name, regex } of patterns) {
+      expect(regex.test(apiSrc), `Mutation "${name}" pattern doesn't match — sandbox would skip it silently`).toBe(true);
+    }
+  });
+});
