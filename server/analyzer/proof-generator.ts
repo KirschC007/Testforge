@@ -4306,9 +4306,20 @@ export function generatePropertyTest(target: ProofTarget, analysis: AnalysisResu
       ).join("\n")
     : "";
 
+  // Detect helpers used by getValidDefault so we import them (date → tomorrowStr, phone → randomPhone)
+  const usesTomorrowStr = fields.some(f =>
+    f.type === "date" || (f.type === "string" && (f.name.toLowerCase().includes("date") || f.name.toLowerCase().includes("datum")))
+  );
+  const usesRandomPhone = fields.some(f =>
+    f.type === "string" && f.name.toLowerCase().includes("phone")
+  );
+  const apiHelperImports = ["trpcMutation"];
+  if (usesTomorrowStr) apiHelperImports.push("tomorrowStr");
+  if (usesRandomPhone) apiHelperImports.push("randomPhone");
+
   return `import { test, expect } from "@playwright/test";
 import * as fc from "fast-check";
-import { trpcMutation } from "../../helpers/api";
+import { ${apiHelperImports.join(", ")} } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 
@@ -5185,14 +5196,29 @@ export function generateStatefulSequenceTest(target: ProofTarget, analysis: Anal
 
   // Build create payload from input fields
   const createFields = (createEp.inputFields || []).filter(f => !f.isTenantKey);
-  const createPayloadEntries = createFields.map(f =>
-    `      ${f.name}: ${getValidDefault(f, tenantConst)},`
-  ).join("\n");
 
   // Identify a string field for unique markers (preferred for assertion)
   const markerField = createFields.find(f => f.type === "string" && (f.name.toLowerCase().includes("name") || f.name.toLowerCase().includes("title")))
     || createFields.find(f => f.type === "string");
   const markerFieldName = markerField?.name;
+
+  // Build create payload — EXCLUDE marker field from defaults (marker overrides it later)
+  // This avoids the "duplicate property in object literal" TypeScript error.
+  const createPayloadEntries = createFields
+    .filter(f => f.name !== markerFieldName)
+    .map(f => `      ${f.name}: ${getValidDefault(f, tenantConst)},`)
+    .join("\n");
+
+  // Detect helpers used by getValidDefault (tomorrowStr / randomPhone) so we import them
+  const usesTomorrowStr = createFields.some(f =>
+    f.type === "date" || (f.type === "string" && (f.name.toLowerCase().includes("date") || f.name.toLowerCase().includes("datum")))
+  );
+  const usesRandomPhone = createFields.some(f =>
+    f.type === "string" && f.name.toLowerCase().includes("phone")
+  );
+  const apiHelperImports = ["trpcMutation", "trpcQuery"];
+  if (usesTomorrowStr) apiHelperImports.push("tomorrowStr");
+  if (usesRandomPhone) apiHelperImports.push("randomPhone");
 
   // Build update payload (only modifies the marker field if present)
   const updateFieldEntry = markerFieldName
@@ -5200,7 +5226,7 @@ export function generateStatefulSequenceTest(target: ProofTarget, analysis: Anal
     : "";
 
   return `import { test, expect } from "@playwright/test";
-import { trpcMutation, trpcQuery } from "../../helpers/api";
+import { ${apiHelperImports.join(", ")} } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 
