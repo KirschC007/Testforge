@@ -110,7 +110,7 @@ export async function trpcMutation(
   }
   // REST-path detection: if procedure contains "/", treat as REST endpoint
   // Handle "METHOD /path" format (e.g. "POST /api/auth/login" or "GET /api/users")
-  const verbMatch = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/.*)/i);
+  const verbMatch = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\\s+(\\/.*)/i);
   const isRestPath = procedure.includes("/");
   let restMethod = "POST";
   let restPath = procedure;
@@ -158,7 +158,7 @@ export async function trpcQuery(
   }
   // REST-path detection: if procedure contains "/", treat as REST endpoint
   // Handle "METHOD /path" format (e.g. "GET /api/users" or "POST /api/auth/login")
-  const verbMatchQ = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/.*)/i);
+  const verbMatchQ = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\\s+(\\/.*)/i);
   const isRestPath = procedure.includes("/");
   let restMethodQ = "GET";
   let restPathQ = procedure;
@@ -399,8 +399,9 @@ export async function getResourceByIdentifier(
 // Protect it with DEBUG_API_TOKEN env var and only enable in non-production
 
 import { BASE_URL } from "./api";
-
-export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
+// Import (don't re-export) tenant ID — single source of truth in factories.ts
+// avoids the duplicate-export error in helpers/index.ts barrel re-export
+import { TEST_${tenantEntity.toUpperCase()}_ID } from "./factories";
 
 export async function resetTestTenant(request: any): Promise<void> {
   const token = process.env.DEBUG_API_TOKEN;
@@ -652,8 +653,9 @@ export default defineConfig({
     devDependencies: {
       "@playwright/test": "^1.41.0",
       "@axe-core/playwright": "^4.8.0",
+      // Stryker for mutation testing — use the COMMAND runner (no playwright-runner exists).
+      // Tests are invoked via `npm test`, which runs Playwright. This works against any test runner.
       "@stryker-mutator/core": "^8.2.0",
-      "@stryker-mutator/playwright-runner": "^8.2.0",
       typescript: "^5.3.0",
     },
   }, null, 2);
@@ -871,12 +873,14 @@ ${roles.map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n  
       "Stryker will mutate your API code, restart the server, and run these Playwright tests.",
       "See: https://stryker-mutator.io/docs/stryker-js/configuration"
     ],
-    testRunner: "playwright",
+    testRunner: "command",
+    commandRunner: {
+      // `npm test` runs Playwright — works as a black-box test runner for Stryker.
+      // Slow but universal. For per-test mutation routing, use jest-runner with vitest tests.
+      command: "npm test",
+    },
     reporters: ["html", "clear-text", "progress"],
     coverageAnalysis: "off",
-    playwright: {
-      config: "../testforge-proofs/playwright.config.ts",
-    },
     mutate: [
       "src/**/*.ts",
       "!src/**/*.spec.ts",
@@ -1444,6 +1448,18 @@ function handleRequest(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie");
   if (method === "OPTIONS") { res.writeHead(204).end(); return; }
+
+  // Auth endpoint(s) — mock returns a fake session cookie so login flows work
+  // Matches any path containing "auth.login" or "/login" (REST or tRPC convention)
+  if (url.pathname.includes("auth.login") || url.pathname.endsWith("/login")) {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Set-Cookie", "mock-session=mock-token-" + Date.now() + "; Path=/; HttpOnly");
+    res.writeHead(200).end(JSON.stringify({
+      result: { data: { json: { id: 1, email: "mock@example.com", token: "mock-jwt-" + Date.now() } } },
+    }));
+    if (VERBOSE) logRequest(method, url.pathname, 200);
+    return;
+  }
 
   // Health endpoint
   if (url.pathname === "/health") {

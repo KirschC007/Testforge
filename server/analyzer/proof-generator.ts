@@ -3070,10 +3070,10 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
     expect([401, 403]).toContain(response.status);
     // Kills: ${killDesc} — verify no data leaked in error response
-    const body = response.data?.result?.data ?? response.data?.result?.error;
+    const body = (response.data as any)?.result?.data ?? (response.data as any)?.result?.error;
     expect(body).toBeFalsy();
     // Kills: ${killDesc} — verify error code is present
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    const errorCode = (response.data as any)?.error?.data?.code ?? (response.data as any)?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });`;
     } else {
@@ -3085,7 +3085,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
     expect([200, 201]).toContain(response.status);
     // Kills: ${killDesc} — verify response has expected structure (not empty/null)
-    const data = response.data?.result?.data;
+    const data = (response.data as any)?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });`;
@@ -3100,7 +3100,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), roleCookie);
     expect([401, 403]).toContain(response.status);
     // Must not leak any data in error response
-    const data = response.data?.result?.data;
+    const data = (response.data as any)?.result?.data;
     expect(data).toBeFalsy();
   });`;
   }).join("\n");
@@ -3123,17 +3123,17 @@ test.describe("Auth Matrix: ${behaviorTitle}", () => {
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
     expect([200, 201]).toContain(response.status);
     // Verify response has data (not empty)
-    const data = response.data?.result?.data;
+    const data = (response.data as any)?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), "");
     expect([401, 403]).toContain(response.status);
     // Must not leak data to unauthenticated callers
-    const data = response.data?.result?.data;
+    const data = (response.data as any)?.result?.data;
     expect(data).toBeFalsy();
     // Verify error code is UNAUTHORIZED
-    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
+    const errorCode = (response.data as any)?.error?.data?.code ?? (response.data as any)?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 ${nonAdminTests}
@@ -3146,7 +3146,7 @@ ${nonAdminTests}
     const response = await ${trpcFn}(request, "${endpoint}", crossTenantPayload, cookie);
     expect([401, 403, 404]).toContain(response.status);
     // Must not leak data from other tenant
-    const leakedData = response.data?.result?.data;
+    const leakedData = (response.data as any)?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 ${mutationKillTests}
@@ -4328,38 +4328,40 @@ import { ${tenantConst} } from "../../helpers/factories";
 // On failure: fast-check automatically shrinks to the minimal reproducing case.
 // Run with VERBOSE=1 to see all generated inputs: fc.assert(..., { verbose: true })
 
-let adminCookie: string;
-
-test.beforeAll(async ({ request }) => {
-  adminCookie = await ${roleFnName}(request);
-});
-
 test.describe("${target.id} — Property-Based: ${target.description}", () => {
+  // adminCookie + beforeAll inside describe — survives mergeProofsToFile() top-level stripping
+  let adminCookie: string;
+
+  test.beforeAll(async ({ request }) => {
+    adminCookie = await ${roleFnName}(request);
+  });
 
   test("P1: valid inputs never trigger 500 Internal Server Error", async ({ request }) => {
 ${hasArbs ? `    // fc.assert runs the property 50 times with random inputs (seed=42 for reproducibility).
     // If this fails, fast-check prints the minimal input that caused the failure.
+    // Note: response destructured as 'httpStatus' (not 'status') to avoid name clash
+    // with any user-defined field named 'status' in the fc.asyncProperty params.
     await fc.assert(
       fc.asyncProperty(
 ${arbLines},
         async (${paramNames}) => {
-          const { status } = await trpcMutation(request, "${endpoint}", {
+          const { status: httpStatus } = await trpcMutation(request, "${endpoint}", {
             ${tenantField}: ${tenantConst},
 ${fcOverrides}
           }, adminCookie);
           // Kills: unhandled exception on valid input shape → 500 leaks stack trace to attacker
-          expect(status, \`Server crashed with \${status} on: \${JSON.stringify({ ${paramNames} })}\`).not.toBe(500);
-          expect(status).not.toBe(503);
+          expect(httpStatus, \`Server crashed with \${httpStatus} on: \${JSON.stringify({ ${paramNames} })}\`).not.toBe(500);
+          expect(httpStatus).not.toBe(503);
           return true;
         }
       ),
       { numRuns: 50, verbose: false, seed: 42 }
     );` : `    // No typed input fields detected — test with default payload
-    const { status } = await trpcMutation(request, "${endpoint}", {
+    const { status: httpStatus } = await trpcMutation(request, "${endpoint}", {
       ${tenantField}: ${tenantConst},
     }, adminCookie);
     // Kills: unhandled exception → 500 leaks stack trace
-    expect(status).not.toBe(500);`}
+    expect(httpStatus).not.toBe(500);`}
   });
 
   test("P2: success responses always include required 'id' field", async ({ request }) => {
@@ -4367,11 +4369,11 @@ ${hasArbs ? `    await fc.assert(
       fc.asyncProperty(
 ${arbLines},
         async (${paramNames}) => {
-          const { data, status } = await trpcMutation(request, "${endpoint}", {
+          const { data, status: httpStatus } = await trpcMutation(request, "${endpoint}", {
             ${tenantField}: ${tenantConst},
 ${fcOverrides}
           }, adminCookie);
-          if (status === 200 || status === 201) {
+          if (httpStatus === 200 || httpStatus === 201) {
             // Kills: serializer omits 'id' on some code paths (conditional return shape)
             expect(data).toBeDefined();
             const d = data as Record<string, unknown>;
@@ -4383,10 +4385,10 @@ ${fcOverrides}
         }
       ),
       { numRuns: 50, verbose: false, seed: 42 }
-    );` : `    const { data, status } = await trpcMutation(request, "${endpoint}", {
+    );` : `    const { data, status: httpStatus } = await trpcMutation(request, "${endpoint}", {
       ${tenantField}: ${tenantConst},
     }, adminCookie);
-    if (status === 200 || status === 201) {
+    if (httpStatus === 200 || httpStatus === 201) {
       // Kills: serializer omits 'id' on some code paths
       expect((data as Record<string, unknown>)?.id).toBeDefined();
     }`}
@@ -5262,10 +5264,8 @@ ${createPayloadEntries}${markerFieldName ? `\n    ${markerFieldName}: uniqueMark
   expect([200, 201]).toContain(createStatus);
   expect(created, "Create response is empty").toBeDefined();
 
-  // Extract created ID for next steps
-  const createdId = (created as Record<string, unknown>)?.id
-    ?? (created as Record<string, unknown>)?.data?.id
-    ?? null;
+  // Extract created ID for next steps (cast as any for nested .data access — strict TS chains can't infer)
+  const createdId = (created as any)?.id ?? (created as any)?.data?.id ?? null;
   expect(createdId, "Create response missing id field").not.toBeNull();
 ${readEp ? `
   // ── Step 2: READ — verify create actually persisted ─────────────────────────
@@ -5278,10 +5278,10 @@ ${readEp ? `
   expect(read, "Read returned empty after create").toBeDefined();
   // Kills: Create returned 200 but data wasn't persisted (silent rollback)
   ${markerFieldName ? `expect(
-    (read as Record<string, unknown>)?.${markerFieldName} ?? (read as Record<string, unknown>)?.data?.${markerFieldName},
+    (read as any)?.${markerFieldName} ?? (read as any)?.data?.${markerFieldName},
     "Created marker not found in read response — silent rollback?"
   ).toBe(uniqueMarker);` : `expect(
-    (read as Record<string, unknown>)?.id ?? (read as Record<string, unknown>)?.data?.id,
+    (read as any)?.id ?? (read as any)?.data?.id,
     "Read returned different ID than created"
   ).toBe(createdId);`}
 ` : ""}${updateEp ? `
@@ -5305,7 +5305,7 @@ ${markerFieldName ? `
   );
   // Kills: Update returns 200 but cache returns stale data
   expect(
-    (afterUpdate as Record<string, unknown>)?.${markerFieldName} ?? (afterUpdate as Record<string, unknown>)?.data?.${markerFieldName},
+    (afterUpdate as any)?.${markerFieldName} ?? (afterUpdate as any)?.data?.${markerFieldName},
     "Update succeeded but read returned stale value — cache invalidation broken"
   ).toBe(\`updated-\${uniqueMarker}\`);` : ""}
 ` : ""}${listEp ? `

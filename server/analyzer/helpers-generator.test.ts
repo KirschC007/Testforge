@@ -292,9 +292,12 @@ describe("generateHelpers — stryker.config.json", () => {
     expect(() => JSON.parse(cfg)).not.toThrow();
   });
 
-  it("includes thresholds and Playwright runner", () => {
+  it("includes thresholds and command runner (stryker has no playwright-runner package)", () => {
     const cfg = JSON.parse(generateHelpers(makeAnalysis())["stryker.config.json"]);
-    expect(cfg.testRunner).toBe("playwright");
+    // Stryker's "command" runner invokes `npm test` — works with any test framework.
+    // We don't use "playwright" runner because @stryker-mutator/playwright-runner doesn't exist on npm.
+    expect(cfg.testRunner).toBe("command");
+    expect(cfg.commandRunner?.command).toBe("npm test");
     expect(cfg.thresholds).toBeDefined();
     expect(cfg.thresholds.high).toBeGreaterThan(0);
   });
