@@ -82,3 +82,23 @@ jobs:
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+
+  pipeline-e2e:
+    # MANDATORY: prevents shipping a generator that produces broken output.
+    # Catches the bug class unit tests miss: missing imports, template-escape
+    # issues, strict-TS errors in generated code, npm install failures.
+    name: Generated Package End-to-End
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: Run full pipeline (Layer 2-7) + npm install + tsc on generated package
+        run: pnpm run test:pipeline
+        env:
+          OAUTH_SERVER_URL: ""
