@@ -204,6 +204,48 @@ describe("Phase 1+2+A end-to-end output: every generator produces USABLE code", 
   });
 });
 
+// ─── Wow features end-to-end output (compliance reports + heuristic) ───────
+describe("Wow feature outputs are usable end-to-end", () => {
+  it("compliance report Markdown is structurally complete (header + verdict + footer)", async () => {
+    const { evaluateCompliance, renderComplianceReport, listPacks } = await import("./compliance-packs");
+    const { ValidatedProofSuite, ValidatedProof } = await import("./types");
+    const fakeProof = (id: string, proofType: any) => ({
+      id, behaviorId: "B", proofType, riskLevel: "high" as const,
+      filename: "x", code: "", mutationTargets: [], mutationScore: 0.85, validationNotes: [],
+    });
+    const suite = {
+      proofs: [fakeProof("T1", "auth_matrix"), fakeProof("T2", "idor"), fakeProof("T3", "audit_log")],
+      discardedProofs: [],
+      verdict: { passed: 3, failed: 0, score: 10, summary: "" },
+      coverage: { totalBehaviors: 3, coveredBehaviors: 3, coveragePercent: 100, uncoveredIds: [] },
+    };
+    for (const pack of listPacks()) {
+      const md = renderComplianceReport(evaluateCompliance(pack.framework, suite as any), REALISTIC);
+      // Must contain key sections
+      expect(md).toMatch(/# .* Compliance Report/);
+      expect(md, `${pack.framework}: missing Verdict section`).toContain("## Verdict");
+      expect(md, `${pack.framework}: missing Criteria Detail section`).toContain("## Criteria Detail");
+      expect(md, `${pack.framework}: missing Limitations footer`).toContain("## Limitations");
+      // Reference URL is present
+      expect(md, `${pack.framework}: missing reference URL`).toContain("Reference:");
+    }
+  });
+
+  it("failure analyzer heuristic correctly diagnoses 4 realistic failure scenarios", async () => {
+    const { quickHeuristic } = await import("./failure-analyzer");
+    const cases = [
+      { exp: 201, act: 500, log: "Internal Server Error\nCannot read properties", want: "code_wrong" },
+      { exp: 200, act: 422, log: "Validation failed", want: "spec_wrong" },
+      { exp: 200, act: 401, log: "Unauthorized", want: "test_wrong" },
+      { exp: 200, act: 200, log: "Test timeout of 30000ms exceeded\nAbortError", want: "flaky" },
+    ];
+    for (const c of cases) {
+      const r = quickHeuristic({ testCode: "test('x',()=>{})", failureLog: c.log, expectedStatus: c.exp, actualStatus: c.act });
+      expect(r.diagnosis, `${c.log.slice(0, 40)}...`).toBe(c.want);
+    }
+  });
+});
+
 // ─── Mutation Sandbox patterns must match real generated source ────────────
 // Catches the bug where regex looks valid but doesn't match anything in production.
 describe("mutation-sandbox.mjs patterns actually match generated helpers/api.ts", () => {
