@@ -69,9 +69,10 @@ jobs:
             grep -Eq '^ACME_EMAIL=.+@.+$' .env
             grep -Eq '^APP_BASE_URL=https://.+' .env
             grep -Eq '^TRUSTED_HOSTS=.+$' .env
-            docker compose -f docker-compose.hetzner.yml config >/dev/null
-            docker compose -f docker-compose.hetzner.yml up -d --build --remove-orphans
-            docker compose -f docker-compose.hetzner.yml ps
+            docker network inspect taco_internal >/dev/null
+            docker compose -f docker-compose.shared-proxy.yml config >/dev/null
+            docker compose -f docker-compose.shared-proxy.yml up -d --build --remove-orphans
+            docker compose -f docker-compose.shared-proxy.yml ps
           "
 
       - name: Smoke test deployment
