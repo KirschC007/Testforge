@@ -34,6 +34,18 @@ const ALL_PROOF_TYPES: ProofType[] = [
   "cross_tenant_chain",
   "concurrent_write",
   "mass_assignment",
+  "db_transaction",
+  "audit_log",
+  "graphql",
+  "accessibility",
+  "property_based",
+  "e2e_smart_form",
+  "e2e_user_journey",
+  "e2e_perf_budget",
+  "e2e_visual",
+  "e2e_network",
+  "e2e_a11y_full",
+  "stateful_sequence",
 ];
 
 const CONSERVATIVE_PROOF_TYPES: ProofType[] = [
@@ -51,6 +63,11 @@ const CONSERVATIVE_PROOF_TYPES: ProofType[] = [
   "hardcoded_secret",
   "negative_amount",
   "mass_assignment",
+  "audit_log",
+  "graphql",
+  "accessibility",
+  "property_based",
+  "stateful_sequence",
 ];
 
 const MINIMAL_PROOF_TYPES: ProofType[] = [

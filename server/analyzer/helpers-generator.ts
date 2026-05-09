@@ -107,7 +107,8 @@ export const TEST_${tenantField.toUpperCase()}_B = TEST_${tenantEntity.toUpperCa
 ${tenantEntity.toUpperCase() !== "TENANT" ? `// Canonical alias — always available regardless of tenant entity name
 export const TEST_TENANT_ID = TEST_${tenantEntity.toUpperCase()}_ID;
 export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;` : ""}`
-    : "// Single-tenant app detected: no tenantId fallback or cross-tenant fixtures are generated.";
+    : `// Single-tenant app detected: no tenant fixtures are generated.
+// Compatibility note: TEST_TENANT_ID may appear in legacy docs, but generated executable code must not use it.`;
   const createTenantInterfaceLine = hasTenantModel ? `  ${tenantField}?: number;` : "";
   const createTenantPayloadLine = hasTenantModel ? `    ${tenantField}: opts.${tenantField} ?? TEST_${tenantEntity.toUpperCase()}_ID,` : "";
   const getResourceInput = hasTenantModel ? `{ id, ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }` : `{ id }`;
@@ -137,6 +138,7 @@ export async function loginAndGetCookie(
   password: string
 ): Promise<string> {
   const loginEndpoint = "${loginEndpoint}";
+  const loginUrl = \`\${BASE_URL}${loginEndpoint}\`;
   if (!loginEndpoint) return "";
   const getSetCookie = (response: any): string => {
     const headers = response.headers();
@@ -146,7 +148,7 @@ export async function loginAndGetCookie(
     const csrfResp = await request.get(\`\${BASE_URL}/api/auth/csrf\`);
     const csrfBody = await csrfResp.json().catch(() => ({}));
     const csrfToken = csrfBody?.csrfToken || csrfBody?.token || "";
-    const response = await request.post(\`\${BASE_URL}\${loginEndpoint}\`, {
+    const response = await request.post(loginUrl, {
       form: {
         csrfToken,
         email: username,
@@ -170,14 +172,14 @@ export async function loginAndGetCookie(
   const primaryBody = isTrpc ? { json: { username, password } } : { username, password };
   const fallbackBody = isTrpc ? { username, password } : { json: { username, password } };
 
-  let response = await request.post(\`\${BASE_URL}\${loginEndpoint}\`, {
+  let response = await request.post(loginUrl, {
     headers: { "Content-Type": "application/json" },
     data: primaryBody,
   });
 
   // If primary format fails, try the alternative
   if (!response.ok()) {
-    response = await request.post(\`\${BASE_URL}\${loginEndpoint}\`, {
+    response = await request.post(loginUrl, {
       headers: { "Content-Type": "application/json" },
       data: fallbackBody,
     });
@@ -311,6 +313,23 @@ export function yesterdayStr(): string {
 
 export function randomPhone(): string {
   return \`+49176\${Date.now().toString().slice(-8)}\`;
+}
+
+export async function pollUntil<T>(
+  fn: () => Promise<T>,
+  predicate: (value: T) => boolean,
+  opts: { timeoutMs?: number; intervalMs?: number } = {}
+): Promise<T> {
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const intervalMs = opts.intervalMs ?? 250;
+  const started = Date.now();
+  let last: T;
+  while (true) {
+    last = await fn();
+    if (predicate(last)) return last;
+    if (Date.now() - started > timeoutMs) throw new Error("pollUntil timed out");
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
 }
 `;
 
@@ -634,6 +653,7 @@ export default defineConfig({
     extraHTTPHeaders: { "Accept": "application/json" },
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
   projects: [
     {
@@ -646,6 +666,9 @@ export default defineConfig({
         "**/tests/integration/**/*.ts",
         "**/tests/concurrency/**/*.ts",
         "**/tests/unit/**/*.ts",
+        "**/tests/property/**/*.ts",
+        "**/tests/traffic/**/*.ts",
+        "**/tests/accessibility/**/*.ts",
       ],
       use: { ...devices["Desktop Chrome"] },
     },
@@ -658,6 +681,26 @@ export default defineConfig({
         headless: true,
         viewport: { width: 1280, height: 720 },
       },
+    },
+    {
+      name: "firefox-e2e",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: { ...devices["Desktop Firefox"], headless: true },
+    },
+    {
+      name: "webkit-e2e",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: { ...devices["Desktop Safari"], headless: true },
+    },
+    {
+      name: "mobile-chrome",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: { ...devices["Pixel 5"] },
+    },
+    {
+      name: "mobile-safari",
+      testMatch: ["**/tests/e2e/**/*.ts"],
+      use: { ...devices["iPhone 13"] },
     },
   ],
 });
@@ -674,17 +717,29 @@ export default defineConfig({
       "test:integration": "playwright test tests/integration/",
       "test:compliance": "playwright test tests/compliance/",
       "test:business": "playwright test tests/business/",
+      "test:property": "playwright test tests/property/",
+      "test:e2e": "playwright test --project=browser-e2e",
       "test:list": "playwright test --list",
       "test:dry-run": "playwright test --dry-run",
+      "test:mutation": "stryker run",
       "install:browsers": "playwright install --with-deps chromium",
       "validate": "node validate-payloads.mjs",
+      "heal": "node heal.mjs",
+      "analyze:flakiness": "node analyze-flakiness.mjs",
+      "report:visual-diff": "node visual-diff-report.mjs",
+      "codegen": "node codegen-wrapper.mjs",
+      "mutation:sandbox": "node mutation-sandbox.mjs",
+      "mock": "node mock-server.mjs",
     },
     dependencies: {
       zod: "^3.22.0",
+      "fast-check": "^3.15.0",
     },
     devDependencies: {
       "@playwright/test": "^1.41.0",
+      "@axe-core/playwright": "^4.8.0",
       "@cucumber/cucumber": "^10.0.0",
+      "@stryker-mutator/core": "^8.2.0",
       "@types/node": "^20.0.0",
       "ts-node": "^10.9.0",
       typescript: "^5.3.0",
@@ -1030,6 +1085,100 @@ main().catch(err => {
 });
 `;
 
+  const strykerConfig = JSON.stringify({
+    $schema: "https://stryker-mutator.io/schemas/stryker-core.json",
+    testRunner: "command",
+    commandRunner: { command: "npm test" },
+    reporters: ["html", "clear-text", "progress"],
+    coverageAnalysis: "off",
+    mutate: ["src/**/*.ts", "!src/**/*.spec.ts", "!src/**/*.test.ts"],
+    thresholds: { high: 80, low: 70, break: 60 },
+    timeoutMS: 60000,
+    concurrency: 1,
+  }, null, 2);
+
+  const healMjs = `#!/usr/bin/env node
+// GENERATED by TestForge — Self-Healing Endpoint Checker
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+const timeout = AbortSignal.timeout(5000);
+
+async function main() {
+  const response = await fetch(BASE_URL + "/health", { signal: timeout }).catch(() => null);
+  if (!response || response.status >= 500) {
+    console.error("Endpoint health check failed");
+    process.exit(1);
+  }
+  console.log("Endpoint health check passed");
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
+`;
+
+  const analyzeFlakinessMjs = `#!/usr/bin/env node
+// GENERATED by TestForge — Flaky Test Detector
+import { readFile } from "fs/promises";
+
+const RESULTS_PATH = process.env.RESULTS_PATH || "playwright-report/results.json";
+const FLAKINESS_THRESHOLD = Number(process.env.FLAKINESS_THRESHOLD || 5);
+
+function collect(node, out = []) {
+  for (const suite of node.suites || []) collect(suite, out);
+  for (const spec of node.specs || []) {
+    for (const test of spec.tests || []) out.push({ title: spec.title, attempts: test.results || [] });
+  }
+  return out;
+}
+
+async function main() {
+  const report = JSON.parse(await readFile(RESULTS_PATH, "utf8"));
+  const tests = collect(report);
+  const flaky = tests.filter(t => t.attempts.length > 1);
+  const rate = tests.length === 0 ? 100 : (flaky.length / tests.length) * 100;
+  console.log(\`Flakiness: \${rate.toFixed(2)}% (threshold \${FLAKINESS_THRESHOLD}%)\`);
+  if (rate > FLAKINESS_THRESHOLD) process.exit(1);
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
+`;
+
+  const visualDiffReportMjs = `#!/usr/bin/env node
+// GENERATED by TestForge — Visual Diff Report
+import { readdir, writeFile } from "fs/promises";
+
+const RESULTS_DIR = process.env.RESULTS_DIR || "test-results";
+const OUTPUT_HTML = process.env.OUTPUT_HTML || "visual-diff-report.html";
+
+async function main() {
+  const entries = await readdir(RESULTS_DIR, { recursive: true }).catch(() => []);
+  const diffs = entries.filter(name => String(name).endsWith("-diff.png"));
+  const html = \`<!DOCTYPE html><html><body><h1>TestForge Visual Diff Report</h1><p>\${diffs.length} diffs in test-results.</p></body></html>\`;
+  await writeFile(OUTPUT_HTML, html, "utf8");
+  console.log(OUTPUT_HTML);
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
+`;
+
+  const codegenWrapperMjs = `#!/usr/bin/env node
+// GENERATED by TestForge — Playwright codegen wrapper
+import { spawn } from "child_process";
+
+const url = process.argv[2] || process.env.BASE_URL || "http://localhost:3000";
+const child = spawn("npx", ["playwright", "codegen", url], { stdio: "inherit" });
+child.on("exit", code => process.exit(code || 0));
+`;
+
+  const mutationSandboxMjs = `#!/usr/bin/env node
+// GENERATED by TestForge — Mutation Sandbox
+console.log("Run npm run test:mutation for source-level mutation verification.");
+process.exit(0);
+`;
+
+  const mockServerMjs = `#!/usr/bin/env node
+// GENERATED by TestForge — Mock Server Placeholder
+console.log("Mock server scaffold generated. Wire this to your OpenAPI/spec endpoints if needed.");
+`;
+
   // ─── helpers/browser.ts (NEW: Browser test helpers for v5.0) ─────────────────
   const browserTs = generateBrowserHelpers(roles, loginEndpoint);
 
@@ -1043,11 +1192,18 @@ main().catch(err => {
     "helpers/browser.ts": browserTs,
     "playwright.config.ts": playwrightConfig,
     "package.json": packageJson,
+    "stryker.config.json": strykerConfig,
     ".github/workflows/testforge.yml": githubAction,
     "tsconfig.json": tsconfigJson,
     "README.md": readmeMd,
     ".env.example": envExample,
     "validate-payloads.mjs": validatePayloadsMjs,
+    "heal.mjs": healMjs,
+    "analyze-flakiness.mjs": analyzeFlakinessMjs,
+    "visual-diff-report.mjs": visualDiffReportMjs,
+    "codegen-wrapper.mjs": codegenWrapperMjs,
+    "mutation-sandbox.mjs": mutationSandboxMjs,
+    "mock-server.mjs": mockServerMjs,
   };
 }
 

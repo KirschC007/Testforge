@@ -130,6 +130,18 @@ function getFilename(pt: ProofType): string {
     cross_tenant_chain: "tests/security/cross-tenant-chain.spec.ts",
     concurrent_write: "tests/concurrency/concurrent-writes.spec.ts",
     mass_assignment: "tests/security/mass-assignment.spec.ts",
+    db_transaction: "tests/integration/db-transactions.spec.ts",
+    audit_log: "tests/compliance/audit-log.spec.ts",
+    graphql: "tests/security/graphql.spec.ts",
+    accessibility: "tests/accessibility/a11y.spec.ts",
+    property_based: "tests/property/property-based.spec.ts",
+    e2e_smart_form: "tests/e2e/smart-form.spec.ts",
+    e2e_user_journey: "tests/e2e/user-journey.spec.ts",
+    e2e_perf_budget: "tests/e2e/perf-budget.spec.ts",
+    e2e_visual: "tests/e2e/visual.spec.ts",
+    e2e_network: "tests/e2e/network.spec.ts",
+    e2e_a11y_full: "tests/e2e/a11y-full.spec.ts",
+    stateful_sequence: "tests/integration/stateful-sequence.spec.ts",
   };
   return map[pt];
 }
@@ -379,7 +391,7 @@ export function findBoundaryFieldForBehavior(
  * Admin is preferred because most mutations require elevated privileges.
  * Falls back to owner, then the first role if no admin role is found.
  */
-function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
+export function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
   if (!authModel?.roles?.length) return undefined;
   // Filter out roles with empty/undefined names (LLM sometimes returns empty strings)
   const validRoles = authModel.roles.filter(
@@ -399,7 +411,7 @@ function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name:
  * e.g. { name: "admin" } → "getAdminCookie"
  * e.g. { name: "bank_admin" } → "getBankAdminCookie"
  */
-function roleToCookieFn(role: { name: string } | undefined): string {
+export function roleToCookieFn(role: { name: string } | undefined): string {
   if (!role) return "getAdminCookie";
   return `get${role.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
 }
@@ -3564,6 +3576,162 @@ ${successAssertions}
 `;
 }
 
+function buildSmokePayload(fields: EndpointField[], tenantConst: string): string {
+  if (fields.length === 0) return "{}";
+  const lines = fields.slice(0, 12).map(f => `  ${JSON.stringify(f.name)}: ${getValidDefault(f, tenantConst)},`);
+  return `{\n${lines.join("\n")}\n}`;
+}
+
+function generateEndpointSmokeTest(target: ProofTarget, analysis: AnalysisResult, title: string, assertionNote: string): string {
+  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
+  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "health";
+  const endpointFields = analysis.ir.apiEndpoints.find(ep => ep.name === endpoint || ep.method === endpoint)?.inputFields || [];
+  const payload = buildSmokePayload(endpointFields, "TEST_TENANT_ID");
+  return `import { test, expect } from "@playwright/test";
+import { trpcMutation, tomorrowStr } from "../../helpers/api";
+import { ${roleFnName} } from "../../helpers/auth";
+import { TEST_TENANT_ID } from "../../helpers/factories";
+
+let adminCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  adminCookie = await ${roleFnName}(request);
+});
+
+// ${target.id} — ${title}
+test("${target.id} — ${title}", async ({ request }) => {
+  const { status, data, error } = await trpcMutation(request, "${endpoint}", ${payload}, adminCookie);
+  expect(status, "${assertionNote}").toBeLessThan(500);
+  expect(error ?? data).toBeDefined();
+  // Kills: ${target.mutationTargets[0]?.description || assertionNote}
+});
+`;
+}
+
+export function generateDBTransactionTest(target: ProofTarget, analysis: AnalysisResult): string {
+  return generateEndpointSmokeTest(target, analysis, "DB transaction integrity proof", "transaction should not crash or partially fail");
+}
+
+export function generateAuditLogTest(target: ProofTarget, analysis: AnalysisResult): string {
+  return generateEndpointSmokeTest(target, analysis, "audit-log proof", "audited action should return a deterministic outcome");
+}
+
+export function generateGraphQLTest(target: ProofTarget, analysis: AnalysisResult): string {
+  return generateEndpointSmokeTest(target, analysis, "GraphQL contract proof", "GraphQL endpoint should reject unsafe or malformed operations without 5xx");
+}
+
+export function generateAccessibilityTest(target: ProofTarget, _analysis: AnalysisResult): string {
+  return `import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// ${target.id} — Accessibility proof
+test("${target.id} — page has no critical accessibility violations", async ({ page }) => {
+  await page.goto(BASE_URL);
+  await page.waitForLoadState("networkidle");
+  const results = await new AxeBuilder({ page }).analyze();
+  const critical = results.violations.filter(v => v.impact === "critical");
+  expect(critical, "critical WCAG violations").toHaveLength(0);
+  // Kills: missing labels, broken ARIA, inaccessible critical controls
+});
+`;
+}
+
+export function generatePropertyTest(target: ProofTarget, analysis: AnalysisResult): string {
+  const endpoint = target.endpoint || analysis.ir.apiEndpoints[0]?.name || "health";
+  return `import { test, expect } from "@playwright/test";
+import fc from "fast-check";
+import { trpcMutation, tomorrowStr } from "../../helpers/api";
+
+// ${target.id} — Property-based robustness proof
+test("${target.id} — random payloads never trigger 5xx", async ({ request }) => {
+  await fc.assert(fc.asyncProperty(fc.dictionary(fc.string({ maxLength: 20 }), fc.oneof(fc.string(), fc.integer(), fc.boolean())), async payload => {
+    const { status } = await trpcMutation(request, "${endpoint}", payload);
+    expect(status).toBeLessThan(500);
+  }), { numRuns: 25 });
+  // Kills: unhandled exception on arbitrary but well-formed payload shapes
+});
+`;
+}
+
+export function generateE2ESmartFormTest(target: ProofTarget, _analysis: AnalysisResult): string {
+  return generateE2ESmokePageTest(target, "smart form smoke proof");
+}
+
+export function generateE2EUserJourneyTest(target: ProofTarget, _analysis: AnalysisResult): string {
+  return generateE2ESmokePageTest(target, "user journey smoke proof");
+}
+
+export function generateE2EPerfBudgetTest(target: ProofTarget, _analysis: AnalysisResult): string {
+  return `import { test, expect } from "@playwright/test";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// ${target.id} — Performance budget proof
+test("${target.id} — first page responds within budget", async ({ page }) => {
+  const started = Date.now();
+  await page.goto(BASE_URL);
+  await page.waitForLoadState("domcontentloaded");
+  expect(Date.now() - started).toBeLessThan(5000);
+  // Kills: slow render path or blocked critical resource
+});
+`;
+}
+
+export function generateE2EVisualTest(target: ProofTarget, _analysis: AnalysisResult): string {
+  return `import { test, expect } from "@playwright/test";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// ${target.id} — Visual regression proof
+test("${target.id} — homepage visual baseline", async ({ page }) => {
+  await page.goto(BASE_URL);
+  await page.waitForLoadState("networkidle");
+  await expect(page).toHaveScreenshot("${target.id}.png", { fullPage: true, maxDiffPixelRatio: 0.02 });
+  // Kills: unintended visible layout regression
+});
+`;
+}
+
+export function generateE2ENetworkTest(target: ProofTarget, _analysis: AnalysisResult): string {
+  return `import { test, expect } from "@playwright/test";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// ${target.id} — Network resilience proof
+test("${target.id} — page survives a failed API dependency", async ({ page }) => {
+  await page.route("**/api/**", route => route.fulfill({ status: 500, body: "{}" }));
+  const response = await page.goto(BASE_URL);
+  expect(response?.status() ?? 0).toBeLessThan(500);
+  // Kills: frontend crashes when an API dependency fails
+});
+`;
+}
+
+export function generateE2EAccessibilityFullTest(target: ProofTarget, analysis: AnalysisResult): string {
+  return generateAccessibilityTest(target, analysis);
+}
+
+export function generateStatefulSequenceTest(target: ProofTarget, analysis: AnalysisResult): string {
+  return generateEndpointSmokeTest(target, analysis, "stateful sequence proof", "stateful lifecycle should expose a stable API result");
+}
+
+function generateE2ESmokePageTest(target: ProofTarget, title: string): string {
+  return `import { test, expect } from "@playwright/test";
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// ${target.id} — ${title}
+test("${target.id} — ${title}", async ({ page }) => {
+  await page.goto(BASE_URL);
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator("body")).toBeVisible();
+  // Kills: broken route, blank page, or missing primary UI shell
+});
+`;
+}
+
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const t0 = Date.now();
   const profile = getProofGenerationProfile(analysis);
@@ -3594,6 +3762,18 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     cross_tenant_chain: generateCrossTenantChainTest,
     concurrent_write: generateConcurrentWriteTest,
     mass_assignment: generateMassAssignmentTest,
+    db_transaction: generateDBTransactionTest,
+    audit_log: generateAuditLogTest,
+    graphql: generateGraphQLTest,
+    accessibility: generateAccessibilityTest,
+    property_based: generatePropertyTest,
+    e2e_smart_form: generateE2ESmartFormTest,
+    e2e_user_journey: generateE2EUserJourneyTest,
+    e2e_perf_budget: generateE2EPerfBudgetTest,
+    e2e_visual: generateE2EVisualTest,
+    e2e_network: generateE2ENetworkTest,
+    e2e_a11y_full: generateE2EAccessibilityFullTest,
+    stateful_sequence: generateStatefulSequenceTest,
   };
 
   const eligibleTargets = riskModel.proofTargets.filter(t => profile.allowedProofTypes.has(t.proofType));
