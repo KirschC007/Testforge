@@ -3646,7 +3646,7 @@ import { trpcMutation, tomorrowStr } from "../../helpers/api";
 
 // ${target.id} — Property-based robustness proof
 test("${target.id} — random payloads never trigger 5xx", async ({ request }) => {
-  await fc.assert(fc.asyncProperty(fc.dictionary(fc.string({ maxLength: 20 }), fc.oneof(fc.string(), fc.integer(), fc.boolean())), async payload => {
+  await fc.assert(fc.asyncProperty(fc.dictionary(fc.string({ maxLength: 20 }), fc.oneof(fc.string(), fc.integer(), fc.boolean())), async (payload: Record<string, unknown>) => {
     const { status } = await trpcMutation(request, "${endpoint}", payload);
     expect(status).toBeLessThan(500);
   }), { numRuns: 25 });

@@ -21,6 +21,29 @@ function toSafeIdentifier(raw: string, fallback = "Generated"): string {
   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(joined) ? joined : fallback;
 }
 
+function mergeEndpointFields(fields: EndpointField[]): EndpointField[] {
+  const byName = new Map<string, EndpointField>();
+  for (const field of fields) {
+    const existing = byName.get(field.name);
+    if (!existing) {
+      byName.set(field.name, { ...field });
+      continue;
+    }
+    byName.set(field.name, {
+      ...existing,
+      ...field,
+      required: existing.required || field.required,
+      min: existing.min === undefined ? field.min : field.min === undefined ? existing.min : Math.max(existing.min, field.min),
+      max: existing.max === undefined ? field.max : field.max === undefined ? existing.max : Math.min(existing.max, field.max),
+      enumValues: existing.enumValues?.length ? existing.enumValues : field.enumValues,
+      isTenantKey: existing.isTenantKey || field.isTenantKey,
+      isBoundaryField: existing.isBoundaryField || field.isBoundaryField,
+      validDefault: existing.validDefault || field.validDefault,
+    });
+  }
+  return Array.from(byName.values());
+}
+
 export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const ir = analysis.ir;
   const tenantField = ir.tenantModel?.tenantIdField || null;
@@ -599,8 +622,8 @@ export async function resetTestTenant(request: any): Promise<void> {
         { name: "createdAt", type: "number", required: false },
         { name: "updatedAt", type: "number", required: false },
       ];
-      const fieldLines = fields
-        .map(f => `  ${f.name}: ${generateZodField(f)}`)
+      const fieldLines = mergeEndpointFields(fields)
+        .map(f => `  ${JSON.stringify(f.name)}: ${generateZodField(f)}`)
         .join(",\n");
 
       return `// Response schema for ${resource.name}\nexport const ${schemaName} = z.object({\n${fieldLines},\n}).passthrough();\nexport type ${resourceName} = z.infer<typeof ${schemaName}>;`;
@@ -612,8 +635,8 @@ export async function resetTestTenant(request: any): Promise<void> {
       .map(ep => {
         const endpointIdentifier = toSafeIdentifier(ep.name, "endpoint");
         const schemaName = endpointIdentifier + "Schema";
-        const fields = (ep.inputFields || []).filter(f => !f.isTenantKey);
-        const fieldLines = fields.map(f => `  ${f.name}: ${generateZodField(f)}`).join(",\n");
+        const fields = mergeEndpointFields((ep.inputFields || []).filter(f => !f.isTenantKey));
+        const fieldLines = fields.map(f => `  ${JSON.stringify(f.name)}: ${generateZodField(f)}`).join(",\n");
         const outputFields = ep.outputFields || [];
         const responseFields = outputFields.length > 0
           ? outputFields.map(fname => `  ${fname}: z.unknown()`).join(",\n")
@@ -720,10 +743,10 @@ export default defineConfig({
       "test:property": "playwright test tests/property/",
       "test:e2e": "playwright test --project=browser-e2e",
       "test:list": "playwright test --list",
-      "test:dry-run": "playwright test --dry-run",
+      "test:dry-run": "playwright test --list",
       "test:mutation": "stryker run",
       "install:browsers": "playwright install --with-deps chromium",
-      "validate": "node validate-payloads.mjs",
+      "validate": "npm run test:list && node validate-payloads.mjs",
       "heal": "node heal.mjs",
       "analyze:flakiness": "node analyze-flakiness.mjs",
       "report:visual-diff": "node visual-diff-report.mjs",

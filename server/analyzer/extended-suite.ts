@@ -56,15 +56,24 @@ function endpointPath(endpoint: APIEndpoint | undefined, fallback: string): stri
   return match?.[2] ?? fallback;
 }
 
+function uniqueFieldsByName(fields: EndpointField[] | undefined): EndpointField[] {
+  const byName = new Map<string, EndpointField>();
+  for (const field of fields || []) {
+    if (!byName.has(field.name)) byName.set(field.name, field);
+  }
+  return Array.from(byName.values());
+}
+
 function inputObjectForFields(fields: EndpointField[] | undefined, tenantField: string | null, tenantConst: string): string {
-  const entries = (fields || []).slice(0, 8).map((field) => {
-    if (tenantField && field.name === tenantField) return `${field.name}: ${tenantConst}`;
-    if (field.type === "enum" && field.enumValues?.length) return `${field.name}: "${field.enumValues[0]}"`;
-    if (field.type === "number") return `${field.name}: ${field.min !== undefined ? Math.max(field.min, 1) : 1}`;
-    if (field.type === "boolean") return `${field.name}: true`;
-    if (field.type === "date") return `${field.name}: new Date().toISOString()`;
-    if (field.type === "array") return `${field.name}: []`;
-    return `${field.name}: "test-${field.name}"`;
+  const entries = uniqueFieldsByName(fields).slice(0, 8).map((field) => {
+    const name = JSON.stringify(field.name);
+    if (tenantField && field.name === tenantField) return `${name}: ${tenantConst}`;
+    if (field.type === "enum" && field.enumValues?.length) return `${name}: "${field.enumValues[0]}"`;
+    if (field.type === "number") return `${name}: ${field.min !== undefined ? Math.max(field.min, 1) : 1}`;
+    if (field.type === "boolean") return `${name}: true`;
+    if (field.type === "date") return `${name}: new Date().toISOString()`;
+    if (field.type === "array") return `${name}: []`;
+    return `${name}: "test-${field.name}"`;
   });
   return entries.length > 0 ? entries.join(",\n    ") : "sample: true";
 }
@@ -1972,12 +1981,13 @@ function generateExtendedPackageJson(_specType: string): string {
       // All layers
       "test:all": "npm run test:unit && npm run test:integration && npm run test:security && npm run test:e2e && npm run test:uat",
       "test:list": "playwright test --list",
-      "test:dry-run": "playwright test --dry-run",
-      "validate": "npm run test:list && npm run test:dry-run",
+      "test:dry-run": "playwright test --list",
+      "validate": "npm run test:list",
       "install:browsers": "playwright install --with-deps chromium",
     },
     dependencies: {
       zod: "^3.22.0",
+      "fast-check": "^3.15.0",
     },
     devDependencies: {
       // Layer 1+2: Unit + Integration

@@ -155,6 +155,7 @@ test("${target.id} — Error responses do not expose stack traces or internal pa
 export function generateNegativeAmountTest(target: ProofTarget, analysis: AnalysisResult): string {
   const { roleFnName, tenantConst, tenantField } = getRoleHelper(analysis);
   const endpoint = target.endpoint || "transactions.create";
+  const payloadConst = `NEGATIVE_AMOUNT_PAYLOADS_${target.id.replace(/[^A-Za-z0-9_]/g, "_")}`;
   const amountField = analysis.ir.apiEndpoints
     .find(ep => ep.name === endpoint)
     ?.inputFields?.find(f => ["amount", "price", "value", "sum", "total", "fee", "cost"].some(k => f.name.toLowerCase().includes(k)))?.name || "amount";
@@ -174,7 +175,7 @@ test.beforeAll(async ({ request }) => {
   adminCookie = await ${roleFnName}(request);
 });
 
-const NEGATIVE_AMOUNT_PAYLOADS = [
+const ${payloadConst} = [
   -1,
   -0.01,
   -999999,
@@ -183,7 +184,7 @@ const NEGATIVE_AMOUNT_PAYLOADS = [
   Number.MIN_SAFE_INTEGER,
 ];
 
-for (const amount of NEGATIVE_AMOUNT_PAYLOADS) {
+for (const amount of ${payloadConst}) {
   test(\`${target.id} — negative amount rejected: \${amount}\`, async ({ request }) => {
     const { status, error } = await trpcMutation(request, "${endpoint}",
       { ${tenantField}: ${tenantConst}, ${amountField}: amount }, adminCookie);

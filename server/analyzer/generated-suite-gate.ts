@@ -54,6 +54,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function exactLineAliasPattern(alias: string): RegExp {
+  return new RegExp(`Status Transition:[^\\n]*(?<![\\w/-])${escapeRegExp(alias)}(?![\\w/-])`, "i");
+}
+
 export function evaluateGeneratedSuiteQuality(
   analysis: AnalysisResult,
   files: ExtendedTestFile[],
@@ -88,10 +92,18 @@ export function evaluateGeneratedSuiteQuality(
     if (/function\s+api(?:Mutation|Query)\s*\(/.test(entry.content) && /endpoint\.includes\("\/"\)/.test(entry.content) && !/parseEndpoint\(/.test(entry.content)) {
       failures.push(`Local REST wrapper does not parse METHOD path endpoints in ${entry.filename}`);
     }
+    const negativeAmountDeclarations = entry.content.match(/\bconst\s+NEGATIVE_AMOUNT_PAYLOADS\b/g) || [];
+    if (negativeAmountDeclarations.length > 1) {
+      failures.push(`Duplicate NEGATIVE_AMOUNT_PAYLOADS declaration in ${entry.filename}`);
+    }
   }
 
   if (/Quality Score:\s*(?:[1-9]\d|100)(?:\.0)?\/10\.0/.test(report)) {
     failures.push("Report renders a 0-100 quality score on a /10 scale");
+  }
+
+  if (/playwright\s+test\s+--dry-run/.test(packageJson)) {
+    failures.push("package.json uses unsupported Playwright --dry-run option; use test:list for no-execution validation");
   }
 
   if (/from\s+["']\.\.\/\.\.\/helpers\/factories["']/.test(allContent)) {
@@ -118,6 +130,10 @@ export function evaluateGeneratedSuiteQuality(
 
   if (/from\s+["']@cucumber\/cucumber["']/.test(allContent) && packageJson && !/"@cucumber\/cucumber"\s*:/.test(packageJson)) {
     failures.push("Generated UAT step definitions import @cucumber/cucumber but package.json does not include it");
+  }
+
+  if (/from\s+["']fast-check["']/.test(allContent) && packageJson && !/"fast-check"\s*:/.test(packageJson)) {
+    failures.push("Generated property tests import fast-check but package.json does not include it");
   }
 
   const cookieHelperCount = (authHelper.match(/export\s+async\s+function\s+get[A-Za-z0-9_]+Cookie\b/g) || []).length;
@@ -171,7 +187,7 @@ export function evaluateGeneratedSuiteQuality(
     });
     for (const endpoint of nonWorkflowEndpoints) {
       const aliases = [endpoint.name, endpoint.method].filter(Boolean).map(escapeRegExp);
-      if (aliases.length && new RegExp(`Status Transition:[^\\n]*(?:${aliases.join("|")})`, "i").test(statusTransitionContent)) {
+      if (aliases.length && [endpoint.name, endpoint.method].filter(Boolean).some((alias) => exactLineAliasPattern(alias).test(statusTransitionContent))) {
         failures.push(`Generated status-transition proof without workflow evidence for ${endpoint.method || endpoint.name}`);
       }
     }
@@ -183,13 +199,18 @@ export function evaluateGeneratedSuiteQuality(
     .join("\n");
   if (boundaryContent) {
     const numericFields = new Set<string>();
-    const enumFields = new Set<string>();
+    const fieldTypes = new Map<string, Set<string>>();
     for (const endpoint of analysis.ir.apiEndpoints) {
       for (const field of endpoint.inputFields || []) {
+        const types = fieldTypes.get(field.name) || new Set<string>();
+        types.add(field.type);
+        fieldTypes.set(field.name, types);
         if (field.type === "number") numericFields.add(field.name);
-        if (field.type === "enum") enumFields.add(field.name);
       }
     }
+    const enumOnlyFields = Array.from(fieldTypes.entries())
+      .filter(([, types]) => types.has("enum") && types.size === 1)
+      .map(([name]) => name);
     for (const field of Array.from(numericFields)) {
       const name = escapeRegExp(field);
       if (new RegExp(`${name}=[^\\n]*(?:"A"\\.repeat|""|test-)`, "i").test(boundaryContent) ||
@@ -197,7 +218,7 @@ export function evaluateGeneratedSuiteQuality(
         failures.push(`Generated string boundary values for numeric field ${field}`);
       }
     }
-    for (const field of Array.from(enumFields)) {
+    for (const field of enumOnlyFields) {
       const name = escapeRegExp(field);
       if (new RegExp(`${name}=[^\\n]*\\b-?\\d+(?:\\.\\d+)?\\b`, "i").test(boundaryContent)) {
         failures.push(`Generated numeric boundary values for enum field ${field}`);
