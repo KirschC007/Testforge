@@ -53,16 +53,31 @@ function hasTenantScopedQuery(block: string): boolean {
   const predicateWithEq = new RegExp(`(?:where|and|or|eq)\\s*\\([^\\n]*${tenantField}`, "i");
   const nestedPredicate = new RegExp(`${tenantField}[^\\n]{0,80}(?:input\\.|ctx\\.|params\\.|query\\.|body\\.)`, "i");
   const drizzleObjectForm = new RegExp(`${tenantField}\\s*:\\s*(?:input\\.|ctx\\.|params\\.|query\\.|body\\.)`, "i");
+  const userScopedPredicate = /(?:where|and|or|eq)\s*\([^\n]*(?:userId|ownerId|createdBy)[^\n]*(?:ctx\.user\.id|input\.userId|req\.user\.id)/i;
   return (
     directWhereObject.test(block) ||
     predicateWithEq.test(block) ||
     nestedPredicate.test(block) ||
-    drizzleObjectForm.test(block)
+    drizzleObjectForm.test(block) ||
+    userScopedPredicate.test(block)
   );
 }
 
 function stripLineComment(line: string): string {
   return line.replace(/\/\/.*$/, "");
+}
+
+function shouldSkipStaticFile(pathname: string): boolean {
+  return (
+    /node_modules|\.test\.|\.spec\.|dist\/|build\/|coverage\/|\.next\/|\.d\.ts$/.test(pathname) ||
+    /(?:^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock|composer\.lock|Cargo\.lock)$/.test(pathname) ||
+    /(?:^|\/)(vitest|vite|eslint|prettier|tailwind|postcss|playwright)\.config\.[cm]?[tj]s$/.test(pathname) ||
+    /(?:^|\/)(\.manus|\.turbo|\.cache|\.github)\//.test(pathname) ||
+    /(?:^|\/)(client|public|docs|examples?)\//.test(pathname) ||
+    /(?:^|\/)(migrations?|drizzle)\//.test(pathname) ||
+    /(?:^|\/)scripts\//.test(pathname) ||
+    /\.(min\.js|map)$/.test(pathname)
+  );
 }
 
 // ─── 15 Rules ─────────────────────────────────────────────────────────────────
@@ -93,7 +108,11 @@ const RULES: Rule[] = [
       if (!file.path.includes("auth") && !file.path.includes("login")) return [];
       const hasRateLimit = lines.some(l => /rateLimit|rateLimiter|throttle|slowDown/i.test(l));
       if (hasRateLimit) return [];
-      const hasLoginEndpoint = lines.some(l => /login|signin|authenticate/i.test(l));
+      const hasLoginEndpoint = lines.some(l => /credentials|login\s*(?:\(|:)|signin\s*(?:\(|:)|authenticate|["']\/login["']/i.test(l));
+      const isOAuthOnly = lines.some(l => /oauth|google|microsoft|github/i.test(l)) && !lines.some(l => /password|credentials/i.test(l));
+      if (isOAuthOnly) return [];
+      const hasRequestHandling = lines.some(l => /req\.|request\.|body|\binput\b|credentials|password\s*[=:]/i.test(l));
+      if (!hasRequestHandling) return [];
       if (!hasLoginEndpoint) return [];
       return [{
         rule: "STATIC-002-NO-RATE-LIMIT",
@@ -118,6 +137,7 @@ const RULES: Rule[] = [
         const block = lines.slice(idx, idx + 5).map(stripLineComment).join("\n");
         const hasQueryCall = /(?:query|execute|raw|sql)\s*\(/i.test(cleanLine);
         if (!hasQueryCall) return;
+        if (/(?:query|execute|raw)\s*\([\s\S]*\?[\s\S]*,\s*\[[\s\S]*\]/i.test(block)) return;
         const hasTemplateInterpolation = /(?:query|execute|raw|sql)\s*\(\s*[`"'][\s\S]*\$\{/i.test(block);
         const hasUserControlledConcat = /(?:query|execute|raw|sql)\s*\([\s\S]*?(?:\+[\s\S]*?){2,}/i.test(block)
           && /req\.|request\.|body\.|params\.|query\.|input\.|args\./i.test(block);
@@ -207,19 +227,32 @@ const RULES: Rule[] = [
     },
   },
 
-  // RULE 7: Unhandled promise rejection
+  // RULE 7: Floating promise / missing await on side-effectful async call
   {
     id: "STATIC-007-UNHANDLED-PROMISE",
     severity: "MEDIUM",
-    description: "Async function without error handling",
-    check: (file, lines) => findLines(
-      lines,
-      /await\s+\w+\([^)]*\)(?!\s*\.catch|\s*;?\s*\/\/)/,
-      "STATIC-007-UNHANDLED-PROMISE",
-      "MEDIUM",
-      "Await without try/catch or .catch() — unhandled rejection possible",
-      file.path
-    ),
+    description: "Floating promise without await, return, void, or catch",
+    check: (file, lines) => {
+      const findings: StaticFinding[] = [];
+      lines.forEach((line, idx) => {
+        const cleanLine = stripLineComment(line).trim();
+        if (!cleanLine || /^[.*}):,\]]/.test(cleanLine)) return;
+        if (/^(await|return|void|throw|if|for|while|switch|const|let|var|import|export|function|async)\b/.test(cleanLine)) return;
+        if (/=>|process\.stdout\.write|console\.|\.catch\s*\(|\.then\s*\([^)]*,|Promise\.all(?:Settled)?\s*\(/.test(cleanLine)) return;
+        const unhandledThen = /\.then\s*\(/.test(cleanLine) && !/\.catch\s*\(/.test(cleanLine);
+        const explicitAsyncCall = /\b[A-Za-z_$][\w$]*(?:Async|Promise)\s*\([^)]*\)\s*;?$/.test(cleanLine);
+        if (!unhandledThen && !explicitAsyncCall) return;
+        findings.push({
+          rule: "STATIC-007-UNHANDLED-PROMISE",
+          severity: "MEDIUM",
+          file: file.path,
+          line: idx + 1,
+          message: "Potential floating promise — await, return, void, or attach .catch()",
+          snippet: cleanLine.slice(0, 120),
+        });
+      });
+      return findings;
+    },
   },
 
   // RULE 8: Missing tenant isolation check
@@ -233,6 +266,7 @@ const RULES: Rule[] = [
         const isDbQuery = /\.findMany\(|\.findFirst\(|\.findUnique\(|\.select\(\)\.from\(|db\.query\./.test(line);
         if (!isDbQuery) return;
         const queryBlock = collectQueryBlock(lines, idx);
+        if (/\b(?:platformSettings|systemSettings|featureFlags|plans|integrationTypes|emailTemplates)\b/.test(queryBlock)) return;
         const hasTenantSignalsNearby = /tenantId|organizationId|shopId|workspaceId|companyId/.test(queryBlock);
         const hasTenantScopedFilter = hasTenantScopedQuery(queryBlock);
         if (hasTenantSignalsNearby && hasTenantScopedFilter) return;
@@ -256,14 +290,24 @@ const RULES: Rule[] = [
     id: "STATIC-009-STACK-TRACE-LEAK",
     severity: "MEDIUM",
     description: "Stack trace exposed in error response",
-    check: (file, lines) => findLines(
-      lines,
-      /(?:message|error|details)\s*:\s*(?:err|error|e)\.(?:stack|message|toString)/i,
-      "STATIC-009-STACK-TRACE-LEAK",
-      "MEDIUM",
-      "Stack trace or error message exposed in response — sanitize error output",
-      file.path
-    ),
+    check: (file, lines) => {
+      const findings: StaticFinding[] = [];
+      lines.forEach((line, idx) => {
+        const context = lines.slice(Math.max(0, idx - 2), idx + 3).join("\n");
+        const exposesError = /(?:message|error|details)\s*:\s*(?:err|error|e)\.(?:stack|message|toString)|(?:res|reply)\.(?:json|send|status)[\s\S]*(?:err|error|e)\.(?:stack|message|toString)|Response\.json\s*\([\s\S]*(?:err|error|e)\.(?:stack|message|toString)/i.test(line);
+        const isOnlyLogging = /logger\.|console\.|captureException\(/i.test(line) && !/(?:res|reply)\.|Response\.json|return\s+\{/.test(context);
+        if (!exposesError || isOnlyLogging) return;
+        findings.push({
+          rule: "STATIC-009-STACK-TRACE-LEAK",
+          severity: "MEDIUM",
+          file: file.path,
+          line: idx + 1,
+          message: "Stack trace or error message exposed in response — sanitize error output",
+          snippet: line.trim().slice(0, 120),
+        });
+      });
+      return findings;
+    },
   },
 
   // RULE 10: Missing webhook signature validation
@@ -322,7 +366,8 @@ const RULES: Rule[] = [
       if (file.path.endsWith("package.json")) return [];
       const findings: StaticFinding[] = [];
       lines.forEach((line, idx) => {
-        if (/multer|formData|upload|file.*upload|multipart/i.test(line)) {
+        if (/buildUploadUrl|downloadUrl|Storage upload failed|uploadUrl/i.test(line)) return;
+        if (/\bmulter\s*\(|request\.formData\s*\(|req\.file|req\.files|multipart/i.test(line)) {
           const context = lines.slice(Math.max(0, idx - 2), idx + 10).join("\n");
           if (!/mimetype|contentType|fileSize|maxSize|limits/i.test(context)) {
             findings.push({
@@ -386,8 +431,9 @@ const RULES: Rule[] = [
     check: (file, lines) => {
       const findings: StaticFinding[] = [];
       lines.forEach((line, idx) => {
-        const isSensitive = /delete.*User|deleteAccount|banUser|promoteToAdmin|changeRole|resetPassword/i.test(line);
+        const isSensitive = /(?:delete.*User|deleteAccount|banUser|promoteToAdmin|changeRole|resetPassword)\s*(?:\(|:)/i.test(line);
         if (!isSensitive) return;
+        if (/^\s*import\b|^\s*export\s+\{/.test(line)) return;
         const context = lines.slice(Math.max(0, idx - 5), idx + 10).join("\n");
         const hasAuditLog = /auditLog|audit_log|logAction|createLog|activityLog/i.test(context);
         if (!hasAuditLog) {
@@ -438,12 +484,8 @@ export function runStaticAnalysis(files: CodeFile[]): StaticFinding[] {
   const allFindings: StaticFinding[] = [];
 
   for (const file of files) {
-    // Skip test files, node_modules, generated files
-    if (
-      /node_modules|\.test\.|\.spec\.|dist\/|build\/|coverage\/|\.next\/|\.d\.ts$/.test(file.path) ||
-      /(?:^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock|composer\.lock|Cargo\.lock)$/.test(file.path) ||
-      /\.(min\.js|map)$/.test(file.path)
-    ) continue;
+    // Skip generated, dependency, migration, config, and tool-artifact files.
+    if (shouldSkipStaticFile(file.path)) continue;
 
     const lines = file.content.split("\n");
 
