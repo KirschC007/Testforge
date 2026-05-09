@@ -212,18 +212,19 @@ class SDKServer {
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (
-        !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
-        !isNonEmptyString(name)
-      ) {
+      if (!isNonEmptyString(openId) || !isNonEmptyString(name)) {
         console.warn("[Auth] Session payload missing required fields");
+        return null;
+      }
+
+      if (!isNonEmptyString(appId) && !openId.startsWith("local:")) {
+        console.warn("[Auth] OAuth session payload missing appId");
         return null;
       }
 
       return {
         openId,
-        appId,
+        appId: isNonEmptyString(appId) ? appId : "",
         name,
       };
     } catch (error) {

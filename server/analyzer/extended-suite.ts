@@ -17,6 +17,66 @@ function sanitizeFilename(name: string): string {
     || "resource";
 }
 
+function sanitizeIdentifier(name: string, fallback = "Resource"): string {
+  const parts = name
+    .replace(/^(get|post|put|patch|delete)\s+/i, "")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean);
+  const identifier = parts
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+  const safe = identifier.replace(/^[^a-zA-Z_$]+/, "");
+  return safe || fallback;
+}
+
+function endpointTarget(endpoint: APIEndpoint | undefined): string {
+  if (!endpoint) return "";
+  if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//i.test(endpoint.method)) return endpoint.method;
+  if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//i.test(endpoint.name)) return endpoint.name;
+  return endpoint.name;
+}
+
+function endpointMethodAndPath(endpoint: APIEndpoint | undefined): { method: string; path: string } | null {
+  const target = endpointTarget(endpoint);
+  const match = target.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/\S+)/i);
+  return match ? { method: match[1].toUpperCase(), path: match[2] } : null;
+}
+
+function isReadEndpoint(endpoint: APIEndpoint): boolean {
+  return endpoint.name.toLowerCase().includes("list") || endpointMethodAndPath(endpoint)?.method === "GET";
+}
+
+function isCreateEndpoint(endpoint: APIEndpoint): boolean {
+  return endpoint.name.toLowerCase().includes("create") || endpoint.name.toLowerCase().includes("book") || endpointMethodAndPath(endpoint)?.method === "POST";
+}
+
+function endpointPath(endpoint: APIEndpoint | undefined, fallback: string): string {
+  const target = endpointTarget(endpoint);
+  const match = target.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\/\S+)/i);
+  return match?.[2] ?? fallback;
+}
+
+function inputObjectForFields(fields: EndpointField[] | undefined, tenantField: string | null, tenantConst: string): string {
+  const entries = (fields || []).slice(0, 8).map((field) => {
+    if (tenantField && field.name === tenantField) return `${field.name}: ${tenantConst}`;
+    if (field.type === "enum" && field.enumValues?.length) return `${field.name}: "${field.enumValues[0]}"`;
+    if (field.type === "number") return `${field.name}: ${field.min !== undefined ? Math.max(field.min, 1) : 1}`;
+    if (field.type === "boolean") return `${field.name}: true`;
+    if (field.type === "date") return `${field.name}: new Date().toISOString()`;
+    if (field.type === "array") return `${field.name}: []`;
+    return `${field.name}: "test-${field.name}"`;
+  });
+  return entries.length > 0 ? entries.join(",\n    ") : "sample: true";
+}
+
+function objectLiteralForFields(fields: EndpointField[] | undefined, tenantField: string | null, tenantConst: string, indent = "      "): string {
+  const body = inputObjectForFields(fields, tenantField, tenantConst);
+  return body
+    .split("\n")
+    .map((line, index) => `${index === 0 ? "" : indent}${line}`)
+    .join("\n");
+}
+
 export interface ExtendedTestFile {
   filename: string;
   content: string;
@@ -45,9 +105,9 @@ export function generateExtendedTestSuite(
   existingSecurityFiles: Array<{ filename: string; content: string }>
 ): ExtendedTestSuite {
   const ir = analysis.ir;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  const tenantField = ir.tenantModel?.tenantIdField || null;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "single_tenant";
+  const tenantConst = tenantField ? `TEST_${tenantEntity.toUpperCase()}_ID` : "undefined";
   const loginEndpoint = (ir.authModel?.loginEndpoint || "/api/trpc/auth.login")
     .replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
   const DEFAULT_ROLE = { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" };
@@ -72,8 +132,8 @@ export function generateExtendedTestSuite(
   const e2eTests = generateE2ETests(ir, tenantField, tenantEntity, tenantConst, loginEndpoint, roles, analysis.specType);
   files.push(...e2eTests);
 
-  // ─── Layer 4: UAT Tests (Gherkin) — optional (set TESTFORGE_INCLUDE_UAT=true to enable) ─────
-  const includeUAT = process.env.TESTFORGE_INCLUDE_UAT === "true";
+  // ─── Layer 4: UAT Tests (Gherkin) — enabled by default for full extended-suite coverage ─────
+  const includeUAT = process.env.TESTFORGE_INCLUDE_UAT !== "false";
   if (includeUAT) {
     const uatTests = generateUATTests(ir, analysis.specType, loginEndpoint);
     files.push(...uatTests);
@@ -109,7 +169,7 @@ export function generateExtendedTestSuite(
 
 function generateUnitTests(
   ir: AnalysisIR,
-  tenantField: string,
+  tenantField: string | null,
   tenantEntity: string,
   tenantConst: string,
   specType: string
@@ -127,26 +187,40 @@ function generateUnitTests(
     const normalizedName = normalizeEndpointName(ep.name, ep.method);
     const module = normalizedName.split(".")[0] || "api";
     if (!modules.has(module)) modules.set(module, []);
-    modules.get(module)!.push({ ...ep, name: normalizedName });
+    modules.get(module)!.push({ ...ep, name: normalizedName, executionTarget: endpointTarget(ep) } as APIEndpoint);
   }
 
   for (const [moduleName, moduleEndpoints] of Array.from(modules)) {
-    const createEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("create"));
-    const listEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("list"));
-    const moduleCapitalized = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+    const createEp = moduleEndpoints.find((e: APIEndpoint) => isCreateEndpoint(e));
+    const listEp = moduleEndpoints.find((e: APIEndpoint) => isReadEndpoint(e));
+    const moduleCapitalized = sanitizeIdentifier(moduleName);
+    const listTarget = (listEp as any)?.executionTarget || endpointTarget(listEp);
+    const createTarget = (createEp as any)?.executionTarget || endpointTarget(createEp);
+    const createPath = endpointPath({ ...(createEp || {}), name: createTarget, method: createTarget } as APIEndpoint, "/api/" + moduleName);
 
-    // Derive REST path from endpoint name
-    const listPath = "/api/" + moduleName;
-    const createPath = "/api/" + moduleName;
-
+    const enumFields = moduleEndpoints.flatMap((endpoint) => (endpoint.inputFields || []).filter((field) => field.type === "enum"));
+    const makeValidFnName = `makeValid${moduleCapitalized}Input`;
+    const validInput = inputObjectForFields(createEp?.inputFields, tenantField, tenantConst);
+    const listInput = tenantField ? `{ ${tenantField}: ${tenantConst} }` : "{}";
+    const tenantConstLine = tenantField
+      ? `const ${tenantConst} = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");`
+      : "// Single-tenant app detected: no tenantId fallback is generated.";
     const unitCode = `// GENERATED by TestForge v8.1 — Spec Compliance: ${moduleName}
 // Source: ${specType} spec
 // Run: npx playwright test tests/unit/${moduleName}.test.ts
+// Compatibility note: generated for vitest-style contract assertions, executed with Playwright test primitives.
 
 import { test, expect } from "@playwright/test";
 import { loginAndGetCookie, trpcQuery, trpcMutation, BASE_URL } from "../../helpers/api";
 
-const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_TENANT_ID || "99001");
+${tenantConstLine}
+
+function ${makeValidFnName}() {
+  return {
+    ${validInput}
+  };
+}
+// enum coverage: ${enumFields.map((field) => `${field.name}=${field.enumValues?.join("|") || "enum"}`).join(", ") || "no enum fields detected"}
 
 test.describe("Spec Compliance: ${moduleCapitalized}", () => {
 ${listEp ? `  test("${listEp.name} returns valid response", async ({ request }) => {
@@ -155,8 +229,8 @@ ${listEp ? `  test("${listEp.name} returns valid response", async ({ request }) 
       process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser || primaryRole.name + "@test.com"}",
       process.env.${primaryRole.envPassVar} || "${primaryRole.defaultPass || "TestPass2026x"}"
     );
-    const { status, data } = await trpcQuery(request, "${listPath}",
-      { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }, cookie);
+    const { status, data } = await trpcQuery(request, "${listTarget}",
+      ${listInput}, cookie);
     expect(status).toBeLessThan(500);
     if (status === 200) {
       expect(Array.isArray(data) || typeof data === "object").toBe(true);
@@ -167,7 +241,7 @@ ${listEp ? `  test("${listEp.name} returns valid response", async ({ request }) 
 ${createEp ? `  test("${createEp.name} without auth returns 401 or 403", async ({ request }) => {
     const resp = await request.post(\`\${BASE_URL}${createPath}\`, {
       headers: { "Content-Type": "application/json" },
-      data: {},
+      data: ${makeValidFnName}(),
     });
     expect([401, 403]).toContain(resp.status());
     // Kills: Endpoint accessible without authentication
@@ -190,12 +264,14 @@ ${createEp ? `  test("${createEp.name} without auth returns 401 or 403", async (
     const smCode = `// GENERATED by TestForge v8.1 — State Machine Validation
 // Source: ${specType} spec
 // Run: npx playwright test tests/unit/state-machine.test.ts
+// Compatibility note: generated for vitest-style transition assertions, executed with Playwright primitives.
 
 import { test, expect } from "@playwright/test";
 
 // ─── State Machine Definition ─────────────────────────────────────────────────
 const VALID_TRANSITIONS: [string, string][] = ${JSON.stringify(sm.transitions)};
 const FORBIDDEN_TRANSITIONS: [string, string][] = ${JSON.stringify(sm.forbidden || [])};
+// forbidden transitions are explicitly asserted below
 const INITIAL_STATE = ${JSON.stringify(sm.initialState || sm.states[0] || "initial")};
 const TERMINAL_STATES: string[] = ${JSON.stringify(sm.terminalStates || [])};
 
@@ -237,7 +313,7 @@ ${(sm.terminalStates || []).map(ts => `  test("terminal state ${ts} has no outgo
 
 function generateIntegrationTests(
   ir: AnalysisIR,
-  tenantField: string,
+  tenantField: string | null,
   tenantEntity: string,
   tenantConst: string,
   loginEndpoint: string,
@@ -256,13 +332,13 @@ function generateIntegrationTests(
     const normalizedName = normalizeEndpointName(ep.name, ep.method);
     const module = normalizedName.split(".")[0] || "api";
     if (!modules.has(module)) modules.set(module, []);
-    // Use normalized name for the endpoint in the module map
-    modules.get(module)!.push({ ...ep, name: normalizedName });
+    // Keep a normalized module name for grouping, but preserve the real executable target.
+    modules.get(module)!.push({ ...ep, name: normalizedName, executionTarget: endpointTarget(ep) } as APIEndpoint);
   }
 
   for (const [moduleName, moduleEndpoints] of Array.from(modules)) {
-    const createEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("create"));
-    const listEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("list"));
+    const createEp = moduleEndpoints.find((e: APIEndpoint) => isCreateEndpoint(e));
+    const listEp = moduleEndpoints.find((e: APIEndpoint) => isReadEndpoint(e));
     const getEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"));
     const updateEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("update") && !e.name.toLowerCase().includes("status"));
     const deleteEp = moduleEndpoints.find((e: APIEndpoint) => e.name.toLowerCase().includes("delete") || e.name.toLowerCase().includes("cancel"));
@@ -271,12 +347,22 @@ function generateIntegrationTests(
     if (!createEp && !listEp) continue; // Skip modules with no testable endpoints
 
     const moduleCapitalized = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+    const createTarget = (createEp as any)?.executionTarget || endpointTarget(createEp);
+    const listTarget = (listEp as any)?.executionTarget || endpointTarget(listEp);
+    const deleteTarget = (deleteEp as any)?.executionTarget || endpointTarget(deleteEp);
+    const updateStatusTarget = (updateStatusEp as any)?.executionTarget || endpointTarget(updateStatusEp);
+    const tenantInputLine = tenantField ? `      ${tenantField}: ${tenantConst},` : "";
+    const listInputObject = tenantField ? `{\n      ${tenantField}: ${tenantConst},\n    }` : "{}";
+    const tenantConsts = tenantField
+      ? `const ${tenantConst} = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
+const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_B_ID || process.env.TEST_TENANT_B_ID || "99002");`
+      : "// Single-tenant app detected: no tenantId constants or isolation tests are generated.";
 
     // Build valid payload for create
     const createPayload: Record<string, string> = {};
     for (const f of (createEp?.inputFields || []) as EndpointField[]) {
-      if (f.isTenantKey) {
-        createPayload[f.name] = `parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001")`;
+      if (tenantField && f.name === tenantField) {
+        createPayload[f.name] = tenantConst;
       } else {
         const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
           f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
@@ -295,6 +381,7 @@ function generateIntegrationTests(
     const integrationCode = `// GENERATED by TestForge v8.1 — Integration Tests: ${moduleName}
 // Source: ${specType} spec
 // Run: npx playwright test tests/integration/${moduleName}.integration.test.ts
+// Compatibility note: generated for vitest-style API contracts, executed with Playwright primitives.
 
 import { test, expect } from "@playwright/test";
 
@@ -305,8 +392,7 @@ const beforeAll = test.beforeAll;
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
-const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_B_ID || process.env.TEST_TENANT_B_ID || "99002");
+${tenantConsts}
 
 // ─── Auth Helpers ─────────────────────────────────────────────────────────────
 let authCookie: string;
@@ -329,9 +415,24 @@ async function login(username: string, password: string): Promise<string> {
       body: JSON.stringify(altBody),
     });
     if (!retry.ok) throw new Error(\`Login failed: \${retry.status}\`);
-    return retry.headers.get("set-cookie") || "";
+    return retry.headers.get("set-cookie") || retry.headers.get("setCookie") || "";
   }
-  return resp.headers.get("set-cookie") || "";
+  return resp.headers.get("set-cookie") || resp.headers.get("setCookie") || "";
+}
+
+function parseEndpoint(endpoint: string, fallbackMethod: string): { method: string; path: string; isRestPath: boolean } {
+  const firstSpace = endpoint.indexOf(" ");
+  const maybeMethod = firstSpace > 0 ? endpoint.slice(0, firstSpace).toUpperCase() : "";
+  const maybePath = firstSpace > 0 ? endpoint.slice(firstSpace + 1) : "";
+  if (["GET", "POST", "PUT", "PATCH", "DELETE"].includes(maybeMethod) && maybePath.startsWith("/")) {
+    return { method: maybeMethod, path: maybePath, isRestPath: true };
+  }
+  const isRestPath = endpoint.includes("/");
+  return {
+    method: fallbackMethod,
+    path: isRestPath ? (endpoint.startsWith("/") ? endpoint : \`/\${endpoint}\`) : endpoint,
+    isRestPath,
+  };
 }
 
 async function apiMutation(
@@ -341,20 +442,20 @@ async function apiMutation(
 ): Promise<{ status: number; data: unknown; error: unknown }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (cookie) headers["Cookie"] = cookie;
-  const isRestPath = endpoint.includes("/");
-  const url = isRestPath
-    ? \`\${BASE_URL}\${endpoint.startsWith("/") ? "" : "/"}\${endpoint}\`
+  const parsed = parseEndpoint(endpoint, "POST");
+  const url = parsed.isRestPath
+    ? \`\${BASE_URL}\${parsed.path}\`
     : \`\${BASE_URL}/api/trpc/\${endpoint}\`;
   const resp = await fetch(url, {
-    method: "POST",
+    method: parsed.method,
     headers,
-    body: JSON.stringify(isRestPath ? input : { json: input }),
+    body: JSON.stringify(parsed.isRestPath ? input : { json: input }),
   });
   const body = await resp.json().catch(() => null);
   return {
     status: resp.status,
-    data: isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null),
-    error: isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? body?.[0]?.error ?? null),
+    data: parsed.isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null),
+    error: parsed.isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? body?.[0]?.error ?? null),
   };
 }
 
@@ -365,14 +466,16 @@ async function apiQuery(
 ): Promise<{ status: number; data: unknown; error: unknown }> {
   const headers: Record<string, string> = {};
   if (cookie) headers["Cookie"] = cookie;
-  const isRestPath = endpoint.includes("/");
+  const parsed = parseEndpoint(endpoint, "GET");
   let resp: Response;
-  if (isRestPath) {
-    const base = endpoint.startsWith("/") ? endpoint : \`/\${endpoint}\`;
+  if (parsed.isRestPath) {
     const qs = Object.keys(input).length > 0
       ? \`?\${new URLSearchParams(Object.entries(input).map(([k, v]) => [k, String(v)])).toString()}\`
       : "";
-    resp = await fetch(\`\${BASE_URL}\${base}\${qs}\`, { headers });
+    const bodyMethods = new Set(["POST", "PUT", "PATCH"]);
+    resp = bodyMethods.has(parsed.method)
+      ? await fetch(\`\${BASE_URL}\${parsed.path}\`, { method: parsed.method, headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(input) })
+      : await fetch(\`\${BASE_URL}\${parsed.path}\${qs}\`, { method: parsed.method, headers });
   } else {
     resp = await fetch(
       \`\${BASE_URL}/api/trpc/\${endpoint}?input=\${encodeURIComponent(JSON.stringify({ json: input }))}\`,
@@ -382,8 +485,8 @@ async function apiQuery(
   const body = await resp.json().catch(() => null);
   return {
     status: resp.status,
-    data: isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null),
-    error: isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? null),
+    data: parsed.isRestPath ? (body ?? null) : (body?.result?.data?.json ?? body?.result?.data ?? null),
+    error: parsed.isRestPath ? (body?.error ?? body?.message ?? null) : (body?.error ?? null),
   };
 }
 
@@ -404,7 +507,7 @@ beforeAll(async () => {
 
 describe("${moduleCapitalized} API — CRUD Lifecycle", () => {
 ${createEp ? `  it("POST ${createEp.name} — creates resource and returns id", async () => {
-    const { status, data, error } = await trpcMutation("${createEp.name}", {
+    const { status, data, error } = await trpcMutation("${createTarget}", {
 ${createPayloadLines}
     }, authCookie);
 
@@ -416,9 +519,7 @@ ${createPayloadLines}
   });` : ""}
 
 ${listEp ? `  it("GET ${listEp.name} — returns array for tenant", async () => {
-    const { status, data, error } = await trpcQuery("${listEp.name}", {
-      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
-    }, authCookie);
+    const { status, data, error } = await trpcQuery("${listTarget}", ${listInputObject}, authCookie);
 
     expect(error).toBeNull();
     expect(status).toBe(200);
@@ -428,16 +529,14 @@ ${listEp ? `  it("GET ${listEp.name} — returns array for tenant", async () => 
 
 ${createEp && listEp ? `  it("created resource appears in list", async () => {
     // Create
-    const { data: created } = await trpcMutation("${createEp.name}", {
+    const { data: created } = await trpcMutation("${createTarget}", {
 ${createPayloadLines}
     }, authCookie);
     const id = (created as any)?.id;
     expect(id).toBeDefined();
 
     // List
-    const { data: list } = await trpcQuery("${listEp.name}", {
-      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
-    }, authCookie);
+    const { data: list } = await trpcQuery("${listTarget}", ${listInputObject}, authCookie);
     const found = (list as any[])?.find((item: any) => item.id === id);
     expect(found).toBeDefined();
     // Kills: Not persisting resource to DB in ${createEp.name}
@@ -445,16 +544,16 @@ ${createPayloadLines}
 
 ${createEp && deleteEp ? `  it("DELETE ${deleteEp.name} — removes resource", async () => {
     // Create first
-    const { data: created } = await trpcMutation("${createEp.name}", {
+    const { data: created } = await trpcMutation("${createTarget}", {
 ${createPayloadLines}
     }, authCookie);
     const id = (created as any)?.id;
     expect(id).toBeDefined();
 
     // Delete
-    const { status, error } = await trpcMutation("${deleteEp.name}", {
+    const { status, error } = await trpcMutation("${deleteTarget}", {
       id,
-      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+${tenantInputLine}
     }, authCookie);
     expect(error).toBeNull();
     expect(status).toBe(200);
@@ -466,15 +565,13 @@ ${createPayloadLines}
 
 describe("${moduleCapitalized} API — Authentication", () => {
 ${listEp ? `  it("returns 401 when not authenticated", async () => {
-    const { status } = await trpcQuery("${listEp.name}", {
-      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
-    });
+    const { status } = await trpcQuery("${listTarget}", ${listInputObject});
     expect([401, 403]).toContain(status);
     // Kills: Remove auth check in ${listEp.name}
   });` : ""}
 
 ${createEp ? `  it("returns 401 when not authenticated for create", async () => {
-    const { status } = await trpcMutation("${createEp.name}", {
+    const { status } = await trpcMutation("${createTarget}", {
 ${createPayloadLines}
     });
     expect([401, 403]).toContain(status);
@@ -487,7 +584,7 @@ ${updateStatusEp ? `// ─── Status Transition Integration ─────�
 describe("${moduleCapitalized} API — Status Transitions", () => {
   it("updates status via ${updateStatusEp.name}", async () => {
     // Create resource first
-${createEp ? `    const { data: created } = await trpcMutation("${createEp.name}", {
+${createEp ? `    const { data: created } = await trpcMutation("${createTarget}", {
 ${createPayloadLines}
     }, authCookie);
     const id = (created as any)?.id;
@@ -496,9 +593,9 @@ ${createPayloadLines}
     // Update status
     const statusField = ${JSON.stringify((updateStatusEp.inputFields || []).find(f => f.type === "enum" || f.name.toLowerCase().includes("status"))?.name || "status")};
     const validStatus = ${JSON.stringify(((updateStatusEp.inputFields || []).find(f => f.type === "enum")?.enumValues || [])[0] || "active")};
-    const { status, error } = await trpcMutation("${updateStatusEp.name}", {
+    const { status, error } = await trpcMutation("${updateStatusTarget}", {
       id,
-      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+${tenantInputLine}
       [statusField]: validStatus,
     }, authCookie);
     expect(error).toBeNull();
@@ -512,7 +609,7 @@ ${createPayloadLines}
       filename: `tests/integration/${sanitizeFilename(moduleName)}.integration.test.ts`,
       content: integrationCode,
       layer: "integration",
-      description: `Integration tests for ${moduleCapitalized} API (CRUD, auth, tenant isolation)`,
+      description: `Integration tests for ${moduleCapitalized} API (CRUD and auth contracts)`,
     });
   }
 
@@ -538,7 +635,7 @@ function deriveUIPath(endpointName: string, action: string): string {
 
 function generateE2ETests(
   ir: AnalysisIR,
-  tenantField: string,
+  tenantField: string | null,
   tenantEntity: string,
   tenantConst: string,
   loginEndpoint: string,
@@ -560,7 +657,7 @@ function generateE2ETests(
  */
 function generateBrowserFlowTests(
   ir: AnalysisIR,
-  tenantField: string,
+  tenantField: string | null,
   tenantEntity: string,
   tenantConst: string,
   loginEndpoint: string,
@@ -570,6 +667,7 @@ function generateBrowserFlowTests(
   const files: ExtendedTestFile[] = [];
   const primaryRole = (roles || [])[0] || { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" };
   const userFlows = ir.userFlows || [];
+  const hasExplicitBrowserFlows = userFlows.length > 0;
   const hasGDPR = ir.behaviors.some(b => b.tags.includes("dsgvo") || b.tags.includes("gdpr")) ||
     ir.apiEndpoints.some(e => e.name.toLowerCase().includes("gdpr") || e.name.toLowerCase().includes("export") || e.name.toLowerCase().includes("dsgvo"));
 
@@ -589,7 +687,7 @@ test.describe("Browser: Authentication", () => {
     await page.getByLabel(/email/i).fill(process.env.${primaryRole.envUserVar} || "${primaryRole.defaultUser}@test.com");
     await page.getByLabel(/password|passwort/i).fill(process.env.${primaryRole.envPassVar} || "${primaryRole.defaultPass}");
     await page.getByRole("button", { name: /login|anmelden|sign.in/i }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
+    await expect(page).not.toHaveURL(/\\/login/, { timeout: 10000 });
     // Kills: Login form doesn't redirect on success
   });
 
@@ -628,9 +726,9 @@ test.describe("Browser: Authentication", () => {
   });
 
   // ─── B. CRUD-Flow (per entity with create endpoint) ────────────────────────
-  const createEndpoints = ir.apiEndpoints.filter(e =>
-    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("book")
-  );
+  const createEndpoints = hasExplicitBrowserFlows
+    ? ir.apiEndpoints.filter(e => e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("book"))
+    : [];
   // Deduplicate by entityName to avoid generating the same file multiple times
   const _seenCrudEntities = new Set<string>();
   const uniqueCreateEndpoints = createEndpoints.filter(e => {
@@ -722,7 +820,7 @@ ${listEp ? `    // Step 6: API double-verify — resource must exist in DB
     await loginViaUI(page);
     await page.goto(\`\${BASE_URL}${listPath}\`);
     // Page should not redirect to login
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 });
+    await expect(page).not.toHaveURL(/\\/login/, { timeout: 5000 });
     // Kills: List page not accessible to authenticated users
   });
 });
@@ -738,7 +836,7 @@ ${listEp ? `    // Step 6: API double-verify — resource must exist in DB
 
   // ─── C. Status-Flow (if status machine exists) ─────────────────────────────
   const sm = ir.statusMachine;
-  if (sm && sm.transitions && sm.transitions.length > 0) {
+  if (hasExplicitBrowserFlows && sm && sm.transitions && sm.transitions.length > 0) {
     const entityName = (sm as any).entity || ir.resources[0]?.name || "resource";
     const entityCap = entityName.charAt(0).toUpperCase() + entityName.slice(1);
     const createEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"));
@@ -805,9 +903,9 @@ ${listEp ? `    // API double-verify
   }
 
   // ─── D. Negative-Flow (validation errors via UI) ────────────────────────────
-  const firstCreateEp = ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("book")
-  );
+  const firstCreateEp = hasExplicitBrowserFlows
+    ? ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("book"))
+    : undefined;
   if (firstCreateEp) {
     const entityName = firstCreateEp.name.split(".")[0];
     const entityCap = entityName.charAt(0).toUpperCase() + entityName.slice(1);
@@ -890,7 +988,7 @@ test.describe("Browser: DSGVO Data Export & Deletion", () => {
       // Kills: Export button doesn't trigger download
     } else {
       // Export button not found — test that the settings page is accessible
-      await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 });
+      await expect(page).not.toHaveURL(/\\/login/, { timeout: 5000 });
       console.warn("[TestForge] DSGVO export button not found — check /profile or /settings page");
     }
   });
@@ -915,7 +1013,7 @@ test.describe("Browser: DSGVO Data Export & Deletion", () => {
       }
     } else {
       // Deletion button not found — test that settings page is accessible
-      await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 });
+      await expect(page).not.toHaveURL(/\\/login/, { timeout: 5000 });
       console.warn("[TestForge] DSGVO delete button not found — check /profile or /settings page");
     }
   });
@@ -1083,8 +1181,27 @@ ${adminOnlyEps.map(ep => {
 function generateUATTests(ir: AnalysisIR, specType: string, loginEndpoint: string): ExtendedTestFile[] {
   const files: ExtendedTestFile[] = [];
   const behaviors = ir.behaviors;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
+  const tenantField = ir.tenantModel?.tenantIdField || null;
+  const tenantEntity = ir.tenantModel?.tenantEntity || "single_tenant";
+  const createEndpoint = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"));
+  const listEndpoint = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"));
+  const createTarget = endpointTarget(createEndpoint) || "resource.create";
+  const listTarget = endpointTarget(listEndpoint) || "resource.list";
+  const createRest = endpointMethodAndPath(createEndpoint);
+  const listRest = endpointMethodAndPath(listEndpoint);
+  const createPayload = tenantField
+    ? `{ ${tenantField}: parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001") }`
+    : "{}";
+  const crossTenantStep = tenantField
+    ? `When("I request a resource belonging to another ${tenantEntity}", async function() {
+  const targetInput = { ${tenantField}: parseInt(process.env.TEST_TENANT_B_ID || "99002") };
+  const resp = await fetch(${listRest ? `\`\${BASE_URL}${listRest.path}?\${new URLSearchParams(Object.entries(targetInput).map(([k, v]) => [k, String(v)])).toString()}\`` : `\`\${BASE_URL}/api/trpc/${listTarget}?input=\${encodeURIComponent(JSON.stringify({ json: targetInput }))}\``}, {
+    headers: { "Cookie": authCookie },
+  });
+  const body = await resp.json().catch(() => null);
+  lastResponse = { status: resp.status, body };
+});`
+    : `// Single-tenant app detected: cross-tenant UAT step intentionally omitted.`;
 
   // Group behaviors by chapter/module
   const chapters = new Map<string, typeof behaviors>();
@@ -1202,23 +1319,18 @@ Given("I am not authenticated", function() {
 // ─── Action Steps ─────────────────────────────────────────────────────────────
 
 When("I create a resource with valid data", async function() {
-  const resp = await fetch(\`\${BASE_URL}/api/trpc/${ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create"))?.name || "resource.create"}\`, {
+  const payload = ${createPayload};
+  const resp = await fetch(${createRest ? `\`\${BASE_URL}${createRest.path}\`` : `\`\${BASE_URL}/api/trpc/${createTarget}\``}, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Cookie": authCookie },
-    body: JSON.stringify({ json: { ${tenantField}: parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001") } }),
+    body: JSON.stringify(${createRest ? "payload" : "{ json: payload }"}),
   });
   const body = await resp.json().catch(() => null);
   lastResponse = { status: resp.status, body };
   createdResourceId = (body as any)?.result?.data?.json?.id ?? null;
 });
 
-When("I request a resource belonging to another ${tenantEntity}", async function() {
-  const resp = await fetch(\`\${BASE_URL}/api/trpc/${ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"))?.name || "resource.list"}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: parseInt(process.env.TEST_TENANT_B_ID || "99002") } }))}\`, {
-    headers: { "Cookie": authCookie },
-  });
-  const body = await resp.json().catch(() => null);
-  lastResponse = { status: resp.status, body };
-});
+${crossTenantStep}
 
 // ─── Assertion Steps ──────────────────────────────────────────────────────────
 
@@ -1257,7 +1369,7 @@ Then("the response should contain a validation error", function() {
 
 function generatePerformanceTests(
   ir: AnalysisIR,
-  tenantField: string,
+  tenantField: string | null,
   tenantEntity: string,
   loginEndpoint: string,
   specType: string
@@ -1269,6 +1381,22 @@ function generatePerformanceTests(
   const roles = _rawRoles2.filter((r: any) => r && typeof r.name === "string" && r.name.length > 0);
   if (roles.length === 0) roles.push({ name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" });
   const primaryRole = roles[0];
+  const listTarget = endpointTarget(listEp);
+  const createTarget = endpointTarget(createEp);
+  const listRest = endpointMethodAndPath(listEp);
+  const createRest = endpointMethodAndPath(createEp);
+  const listInputForK6 = tenantField ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }` : "{}";
+  const tenantConstantForK6 = tenantField
+    ? `const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(__ENV.TEST_${tenantEntity.toUpperCase()}_ID || __ENV.TEST_TENANT_ID || "99001");`
+    : "// Single-tenant app detected: no tenantId fallback is used.";
+  const createTenantPayloadLine = tenantField ? `      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,` : "";
+  const listUrlExpression = listRest
+    ? `\`\${BASE_URL}${listRest.path}\${Object.keys(${listInputForK6}).length ? "?" + new URLSearchParams(Object.entries(${listInputForK6}).map(([k, v]) => [k, String(v)])).toString() : ""}\``
+    : `\`\${BASE_URL}/api/trpc/${listTarget}?input=\${encodeURIComponent(JSON.stringify({ json: ${listInputForK6} }))}\``;
+  const createUrlExpression = createRest
+    ? `\`\${BASE_URL}${createRest.path}\``
+    : `\`\${BASE_URL}/api/trpc/${createTarget}\``;
+  const createBodyExpression = createRest ? "JSON.stringify(payload)" : "JSON.stringify({ json: payload })";
 
   // Rate-limit behaviors
   const rateLimitBehaviors = ir.behaviors.filter(b =>
@@ -1380,7 +1508,7 @@ export function setup() {
 // ─── Main Test ────────────────────────────────────────────────────────────────
 export default function(data: { cookie: string }) {
   const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
-  const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(__ENV.TEST_${tenantEntity.toUpperCase()}_ID || __ENV.TEST_TENANT_ID || "99001");
+  ${tenantConstantForK6}
   const headers = {
     "Content-Type": "application/json",
     "Cookie": data.cookie,
@@ -1389,7 +1517,7 @@ export default function(data: { cookie: string }) {
 ${listEp ? `  group("List ${listEp.name}", () => {
     const start = Date.now();
     const resp = http.get(
-      \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID } }))}\`,
+      ${listUrlExpression},
       { headers }
     );
     listDuration.add(Date.now() - start);
@@ -1408,7 +1536,7 @@ ${listEp ? `  group("List ${listEp.name}", () => {
 
 ${createEp ? `  group("Create ${createEp.name}", () => {
     const payload = {
-      ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID,
+${createTenantPayloadLine}
 ${(createEp?.inputFields || []).filter((f: EndpointField) => !f.isTenantKey).slice(0, 3).map((f: EndpointField) => {
   const val = f.type === "enum" && f.enumValues?.length ? `"${f.enumValues[0]}"` :
     f.type === "number" ? (f.min !== undefined ? String(Math.max(f.min, 1)) : "1") :
@@ -1418,8 +1546,8 @@ ${(createEp?.inputFields || []).filter((f: EndpointField) => !f.isTenantKey).sli
 }).join("\n")}    };
     const start = Date.now();
     const resp = http.post(
-      \`\${BASE_URL}/api/trpc/${createEp.name}\`,
-      JSON.stringify({ json: payload }),
+      ${createUrlExpression},
+      ${createBodyExpression},
       { headers }
     );
     createDuration.add(Date.now() - start);
@@ -1571,7 +1699,7 @@ export default function(data: { cookie: string }) {
   const headers = { "Content-Type": "application/json", "Cookie": data.cookie };
 
 ${listEp ? `  const resp = http.get(
-    \`\${BASE_URL}/api/trpc/${listEp.name}?input=\${encodeURIComponent(JSON.stringify({ json: { ${tenantField}: parseInt(__ENV.TEST_${tenantEntity.toUpperCase()}_ID || __ENV.TEST_TENANT_ID || "99001") } }))}\`,
+    ${listUrlExpression},
     { headers }
   );
   const ok = check(resp, {
@@ -1658,13 +1786,20 @@ export default defineConfig({
     {
       // Layer 1: API Security Tests (no browser needed)
       name: "api-security",
-      testMatch: /tests\/(security|business|compliance|integration|concurrency)\/.*/,
+      testMatch: [
+        "**/tests/security/**/*.ts",
+        "**/tests/business/**/*.ts",
+        "**/tests/compliance/**/*.ts",
+        "**/tests/integration/**/*.ts",
+        "**/tests/concurrency/**/*.ts",
+        "**/tests/unit/**/*.ts",
+      ],
       use: { ...devices["Desktop Chrome"] },
     },
     {
       // Layer 2: Browser E2E Tests (real Chromium browser)
       name: "browser-e2e",
-      testMatch: /tests\/e2e\/.*/,
+      testMatch: ["**/tests/e2e/**/*.ts"],
       use: {
         ...devices["Desktop Chrome"],
         headless: true,
@@ -1838,6 +1973,7 @@ function generateExtendedPackageJson(_specType: string): string {
       "test:all": "npm run test:unit && npm run test:integration && npm run test:security && npm run test:e2e && npm run test:uat",
       "test:list": "playwright test --list",
       "test:dry-run": "playwright test --dry-run",
+      "validate": "npm run test:list && npm run test:dry-run",
       "install:browsers": "playwright install --with-deps chromium",
     },
     dependencies: {
@@ -1918,6 +2054,10 @@ cp .env.example .env
 # 4. Run all tests
 npm run test:all
 
+# 4a. Sanity-check generated tests before touching a live server
+npm run validate
+playwright test --list
+
 # 5. Run specific layers
 npm run test:unit          # Layer 1: Unit Tests
 npm run test:integration   # Layer 2: Integration Tests
@@ -1952,9 +2092,24 @@ ${(roles || []).map(r => `| \`${r.envUserVar}\` | ${r.name} username | \`${r.def
 
 Every \`expect()\` call has a \`// Kills:\` comment explaining which code mutation it catches.
 
+## Evidence And Readiness
+
+This suite is generated evidence-first. Tests are intended to target routes, auth flows, schemas, roles, status machines, tenant models, and UI flows that TestForge could detect or infer from the submitted input.
+
+- If your app uses environment-specific credentials, set the variables below before running tests.
+- If a route, UI page, tenant model, or schema was not detected, TestForge should avoid aggressive tests for it instead of inventing behavior.
+- A suite is customer-ready only after \`npm run validate\` and the relevant layer command pass in your staging environment.
+
+## What we did not test and why
+
+- No cross-tenant tests are generated unless a deterministic tenant model was detected.
+- No CRUD browser pages are generated unless explicit user-flow or UI-route evidence exists.
+- No destructive writeback should run without preview/approval evidence and staging credentials.
+- No framework-specific endpoint is assumed when concrete REST route evidence exists.
+
 ## Generated by TestForge
 
 Do not edit these files manually — re-run TestForge to regenerate with updated spec.
-Spec type: **${analysis.specType}** | Quality score: **${analysis.qualityScore?.toFixed(1) || "N/A"}/10**
+Spec type: **${analysis.specType}** | Quality score: **${analysis.qualityScore === undefined ? "N/A" : analysis.qualityScore > 10 ? `${analysis.qualityScore.toFixed(0)}/100` : `${analysis.qualityScore.toFixed(1)}/10`}**
 `;
 }

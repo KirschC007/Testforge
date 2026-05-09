@@ -6,13 +6,14 @@
  * Cloud (Manus): Set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY
  */
 import { ENV } from './_core/env';
+import { normalizeStorageKey } from "./_core/storage-keys";
 
 function isS3Mode(): boolean {
   return !!(process.env.S3_ENDPOINT && process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY);
 }
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
+  return normalizeStorageKey(relKey);
 }
 
 function ensureTrailingSlash(value: string): string {
@@ -156,4 +157,21 @@ export async function storageGet(
   _expiresIn?: number
 ): Promise<{ key: string; url: string }> {
   return isS3Mode() ? s3Get(relKey) : manusProxyGet(relKey);
+}
+
+export async function storageRead(
+  relKey: string
+): Promise<{ key: string; data: Buffer; contentType: string | null }> {
+  const { key, url } = await storageGet(relKey);
+  const response = await fetch(url);
+  if (!response.ok) {
+    const message = await response.text().catch(() => response.statusText);
+    throw new Error(`Storage download failed (${response.status}): ${message}`);
+  }
+
+  return {
+    key,
+    data: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type"),
+  };
 }

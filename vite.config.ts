@@ -150,7 +150,14 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const isProduction = process.env.NODE_ENV === "production";
+const plugins = [
+  react(),
+  tailwindcss(),
+  !isProduction && jsxLocPlugin(),
+  !isProduction && vitePluginManusRuntime(),
+  !isProduction && vitePluginManusDebugCollector(),
+].filter((plugin): plugin is Plugin => Boolean(plugin));
 
 export default defineConfig({
   plugins,
@@ -167,6 +174,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 900,
   },
   server: {
     host: true,

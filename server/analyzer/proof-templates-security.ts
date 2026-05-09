@@ -191,6 +191,7 @@ for (const amount of NEGATIVE_AMOUNT_PAYLOADS) {
     expect(status, \`Amount \${amount} was accepted — financial bypass possible\`).not.toBe(200);
     expect([400, 422, 403]).toContain(status);
     // Kills: ${target.mutationTargets[0]?.description || "Negative amount not validated"}
+    // Kills: ${target.mutationTargets[1]?.description || "Negative amount creates unsafe balance side effects"}
   });
 }
 
@@ -465,9 +466,10 @@ test("${target.id} — role escalation via mass assignment", async ({ request })
   if (status === 200 || status === 201) {
     const body = JSON.stringify(data || "");
     // Response must not confirm role escalation
-    expect(body).not.toMatch(/"role"\s*:\s*"admin"/);
-    expect(body).not.toMatch(/"isAdmin"\s*:\s*true/);
-    expect(body).not.toMatch(/"balance"\s*:\s*999999/);
+    expect(body).not.toMatch(/"role"\\s*:\\s*"admin"/);
+    expect(body).not.toMatch(/"isAdmin"\\s*:\\s*true/);
+    expect(body).not.toMatch(/"balance"\\s*:\\s*999999/);
+    // Kills: ${target.mutationTargets[0]?.description || "Mass assignment of protected fields"}
   }
   // Kills: ${target.mutationTargets[0]?.description || "Server uses blocklist instead of allowlist for input fields"}
 });

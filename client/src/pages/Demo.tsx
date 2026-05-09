@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,8 @@ import {
   Database, Star, Package, GitBranch, Zap, Activity, Search,
   Scale, CheckCircle2, FileText, ArrowLeft, Download
 } from "lucide-react";
-import { Streamdown } from "streamdown";
+
+const MarkdownRenderer = lazy(() => import("@/components/MarkdownRenderer"));
 
 // ─── Proof type registry (same as AnalysisDetail) ────────────────────────────
 const PROOF_CATEGORIES: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -291,7 +292,9 @@ export default function Demo() {
         {activeTab === "report" && (
           <div className="bg-card border border-border rounded-lg p-6">
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              <Streamdown>{demo.report}</Streamdown>
+              <Suspense fallback={<div className="text-sm text-muted-foreground">Loading report renderer...</div>}>
+                <MarkdownRenderer>{demo.report}</MarkdownRenderer>
+              </Suspense>
             </div>
           </div>
         )}

@@ -1,8 +1,6 @@
-import { invokeLLM } from "../_core/llm";
-import { logger } from "../_core/logger";
+import { isLLMConfigured } from "../_core/llm";
 import { generateProofs } from "./proof-generator";
-import { autoDetectIndustryPack } from "./proof-pack-generator";
-import type { AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
+import type { AnalysisOperationalNotice, AnalysisResult, RiskModel, ValidatedProof, AnalysisJobResult } from "./types";
 import { parseSpec, withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import { parseSpecSmart, semanticDedup } from "./smart-parser";
 import { parseSpecDecomposed } from "./spec-decomposed-parser";
@@ -19,6 +17,9 @@ import { sanitizeIR } from "./llm-sanitizer";
 import { normalizeOutputFiles, normalizeOutputConfigs } from "./output-normalizer";
 import { extractRoles } from "./spec-regex-extractor";
 import { runStaticAnalysis, type StaticFinding } from "./static-analyzer";
+import { assessSupportedScopeForSpec } from "./supported-scope";
+import { buildExecutionProfile } from "./execution-profile";
+import { evaluateGeneratedSuiteQuality } from "./generated-suite-gate";
 
 // ─── Main Job Runner ───────────────────────────────────────────────────────────
 
@@ -41,15 +42,24 @@ export async function runAnalysisJob(
 ): Promise<AnalysisJobResult> {
   const jobStart = Date.now();
   const isCodeScan = !!(options?.codeFiles && options.codeFiles.length > 0);
-  logger.info(
-    { layer: 0, specChars: specText.length, fileCount: options?.codeFiles?.length ?? 0 },
-    `Job START — ${isCodeScan ? `Code-Scan (${options!.codeFiles!.length} files)` : `${specText.length} chars`}, project: ${projectName}`
-  );
+  const operationalNotices: AnalysisOperationalNotice[] = [];
+  console.log(`[TestForge] Job START v3.1 — ${isCodeScan ? `Code-Scan (${options!.codeFiles!.length} files)` : `${specText.length} chars`}, project: ${projectName}`);
 
   const progress = async (layer: number, message: string, data?: Parameters<ProgressCallback>[2]) => {
-    logger.info({ layer }, message);
+    console.log(`[TestForge] Progress Layer ${layer}: ${message}`);
     if (onProgress) {
-      try { await onProgress(layer, message, data); } catch (e) { logger.error({ layer }, `Progress callback error: ${e}`); }
+      try {
+        await onProgress(layer, message, data);
+      } catch (e) {
+        console.error("[TestForge] Progress callback error:", e);
+        operationalNotices.push({
+          component: "progress_callback",
+          severity: "error",
+          message: e instanceof Error ? e.message : String(e),
+          impact: "The analysis cannot safely continue because progress persistence or cancellation handling failed.",
+        });
+        throw e;
+      }
     }
   };
 
@@ -58,6 +68,7 @@ export async function runAnalysisJob(
   const t1 = Date.now();
   let analysisResult: AnalysisResult;
   let llmCheckerStats: { approved: number; flagged: number; rejected: number; avgConfidence: number };
+  let staticFindings: StaticFinding[] = [];
 
   if (isCodeScan) {
     const hasSpec = specText && specText.length > 100;
@@ -80,6 +91,7 @@ export async function runAnalysisJob(
         ir: mergedIR,
         qualityScore: codeResult.qualityScore,
         specType: `hybrid:${codeResult.specType}`,
+        supportedScope: codeResult.supportedScope,
       };
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
       console.log(`[TestForge] Hybrid-Modus done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
@@ -92,24 +104,49 @@ export async function runAnalysisJob(
         ir: codeResult.ir,
         qualityScore: codeResult.qualityScore,
         specType: codeResult.specType,
+        supportedScope: codeResult.supportedScope,
       };
       // Block 8: Static Analysis
-      const staticFindings: StaticFinding[] = runStaticAnalysis(options!.codeFiles!);
+      staticFindings = runStaticAnalysis(options!.codeFiles!);
       console.log(`[TestForge] Static Analysis: ${staticFindings.length} findings`);
       (analysisResult as any).staticFindings = staticFindings;
-      // Block 9: LLM-Code-Pass — extract behaviors from code via LLM
-      try {
-        const codeText = options!.codeFiles!.map(f => `// File: ${f.path}\n${f.content}`).join("\n\n");
-        const truncatedCode = codeText.slice(0, 50000);
-        const llmCodeIR = await withTimeout(parseSpec(truncatedCode), LLM_TIMEOUT_MS, null);
-        if (llmCodeIR && llmCodeIR.ir?.behaviors && llmCodeIR.ir.behaviors.length > 0) {
-          const existing = new Set(analysisResult.ir.behaviors.map((b: { title?: string }) => b.title?.toLowerCase()));
-          const newBehaviors = llmCodeIR.ir.behaviors.filter((b: { title?: string }) => !existing.has(b.title?.toLowerCase()));
-          analysisResult.ir.behaviors = [...analysisResult.ir.behaviors, ...newBehaviors];
-          console.log(`[TestForge] LLM-Code-Pass: +${newBehaviors.length} behaviors (total: ${analysisResult.ir.behaviors.length})`);
+      // Block 9: LLM-Code-Pass — optional semantic extraction from code via LLM
+      if (!isLLMConfigured()) {
+        console.log("[TestForge] LLM-Code-Pass skipped: OPENAI_API_KEY is not configured");
+        operationalNotices.push({
+          component: "llm_code_pass",
+          severity: "warning",
+          message: "OPENAI_API_KEY is not configured",
+          impact: "Code-derived deterministic findings were still produced, but extra semantic behavior extraction was skipped.",
+        });
+      } else {
+        try {
+          const codeText = options!.codeFiles!.map(f => `// File: ${f.path}\n${f.content}`).join("\n\n");
+          const truncatedCode = codeText.slice(0, 50000);
+          const llmCodeIR = await withTimeout(parseSpec(truncatedCode), LLM_TIMEOUT_MS, null);
+          if (llmCodeIR && llmCodeIR.ir?.behaviors && llmCodeIR.ir.behaviors.length > 0) {
+            const existing = new Set(analysisResult.ir.behaviors.map((b: { title?: string }) => b.title?.toLowerCase()));
+            const newBehaviors = llmCodeIR.ir.behaviors.filter((b: { title?: string }) => !existing.has(b.title?.toLowerCase()));
+            analysisResult.ir.behaviors = [...analysisResult.ir.behaviors, ...newBehaviors];
+            console.log(`[TestForge] LLM-Code-Pass: +${newBehaviors.length} behaviors (total: ${analysisResult.ir.behaviors.length})`);
+          } else {
+            operationalNotices.push({
+              component: "llm_code_pass",
+              severity: "warning",
+              message: "LLM code pass returned no semantic extraction result.",
+              impact: "Code-derived deterministic findings were still produced, but extra semantic behavior extraction was skipped.",
+            });
+          }
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.log(`[TestForge] LLM-Code-Pass skipped: ${message}`);
+          operationalNotices.push({
+            component: "llm_code_pass",
+            severity: "warning",
+            message,
+            impact: "Code-derived deterministic findings were still produced, but extra semantic behavior extraction was skipped.",
+          });
         }
-      } catch (e) {
-        console.log(`[TestForge] LLM-Code-Pass skipped: ${e}`);
       }
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
       console.log(`[TestForge] Code-Scan done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
@@ -121,6 +158,7 @@ export async function runAnalysisJob(
       console.log(`[TestForge] OpenAPI detected — using deterministic parser (no LLM)`);
       await progress(1, "OpenAPI erkannt — deterministischer Parser (kein LLM-Call)...");
       analysisResult = parseOpenAPI(specText);
+      analysisResult.supportedScope = assessSupportedScopeForSpec(specText, "openapi");
       // LLM Checker is skipped for OpenAPI — all behaviors are structurally derived
       llmCheckerStats = { approved: analysisResult.ir.behaviors.length, flagged: 0, rejected: 0, avgConfidence: 1.0 };
       console.log(`[TestForge] Schicht 1 (OpenAPI) done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
@@ -133,6 +171,7 @@ export async function runAnalysisJob(
         console.log(`[TestForge] Large spec (${specText.length} chars) — using Smart Parser v2.0 (3-pass)`);
         await progress(1, `Große Spec erkannt (${Math.round(specText.length / 1024)}KB) — Smart Parser v2.0 (3-Pass-Architektur)...`);
         analysisResult = await parseSpecSmart(specText);
+        analysisResult.supportedScope = assessSupportedScopeForSpec(specText, "spec");
         // Smart Parser already does structural validation — LLM Checker adds value for anchor verification
         await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
         const t_checker = Date.now();
@@ -149,6 +188,7 @@ export async function runAnalysisJob(
         console.log(`[TestForge] Medium spec (${specText.length} chars) — using Decomposed Parser v1.0 (7-block)`);
         await progress(1, `Spec erkannt (${Math.round(specText.length / 1024)}KB) — Decomposed Parser v1.0 (7 parallele Blöcke)...`);
         analysisResult = await parseSpecDecomposed(specText);
+        analysisResult.supportedScope = assessSupportedScopeForSpec(specText, "spec");
         console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
         // LLM Checker: verify all behaviors (parallel)
         await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
@@ -164,6 +204,7 @@ export async function runAnalysisJob(
       } else {
         // Standard 1-pass chunked parser for small specs (<8KB)
         analysisResult = await parseSpec(specText);
+        analysisResult.supportedScope = assessSupportedScopeForSpec(specText, "spec");
         console.log(`[TestForge] Schicht 1 done in ${Date.now() - t1}ms — ${analysisResult.ir.behaviors.length} behaviors, ${analysisResult.ir.apiEndpoints.length} endpoints`);
         // LLM Checker: verify all behaviors (parallel)
         await progress(2, "LLM Checker: Verifiziere Behaviors gegen Spec...");
@@ -217,7 +258,14 @@ export async function runAnalysisJob(
         analysisResult.ir.authModel.csrfEndpoint = discovery.csrfEndpoint;
       }
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       console.warn(`[TestForge] API Discovery failed (non-fatal):`, e);
+      operationalNotices.push({
+        component: "api_discovery",
+        severity: "warning",
+        message,
+        impact: "Live endpoint probing failed, so generated tests may rely on parsed or inferred endpoint paths.",
+      });
     }
   }
 
@@ -245,7 +293,14 @@ export async function runAnalysisJob(
     analysisResult.ir = sanitizedIR;
     console.log(`[TestForge] Sanitizer: ${sanitizeReport.fieldsFixed} deterministic fixes, ${sanitizeReport.llmRepairCalls} LLM repairs`);
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
     console.warn(`[TestForge] Sanitizer failed (non-fatal):`, e);
+    operationalNotices.push({
+      component: "sanitizer",
+      severity: "warning",
+      message,
+      impact: "LLM output could not be deterministically normalized; downstream validation may discard more proofs.",
+    });
   }
 
   // Fix 2: Filter empty/undefined role names from IR (LLM sometimes returns empty strings)
@@ -292,25 +347,15 @@ export async function runAnalysisJob(
   // Schicht 2: Risk model
   const t2 = Date.now();
   const riskModel = buildRiskModel(analysisResult);
-  logger.timed({ layer: 2, proofCount: riskModel.proofTargets.length }, `Schicht 2 done — ${riskModel.proofTargets.length} proof targets`, t2);
+  console.log(`[TestForge] Schicht 2 done in ${Date.now() - t2}ms — ${riskModel.proofTargets.length} proof targets`);
 
   await progress(2, `Layer 2 fertig: ${riskModel.proofTargets.length} Proof-Targets, ${riskModel.idorVectors} IDOR-Vektoren`, { analysisResult, riskModel });
 
-  // Auto-detect industry pack if none was manually provided
-  const resolvedPack = industryPack ?? (() => {
-    const detected = autoDetectIndustryPack(analysisResult);
-    if (detected.pack) {
-      logger.info({ layer: 2 }, `Auto-detected industry pack: ${detected.pack} — ${detected.reason}`);
-    }
-    return detected.pack ?? undefined;
-  })();
-
   // Industry Pack: inject domain-specific proof types and risk hints
-  if (resolvedPack) {
-    const industryPackResolved = resolvedPack;
+  if (industryPack) {
     // Get current proof types from all targets
     const currentProofTypes = Array.from(new Set(riskModel.proofTargets.map(t => t.proofType)));
-    const packResult = applyProofPack(industryPackResolved, currentProofTypes);
+    const packResult = applyProofPack(industryPack, currentProofTypes);
     const addedTypes = packResult.proofTypes.filter(pt => !currentProofTypes.includes(pt as any));
     // For each added proof type, create a new proof target from the highest-priority behavior
     const topBehavior = riskModel.proofTargets[0];
@@ -319,25 +364,25 @@ export async function runAnalysisJob(
         ...topBehavior,
         id: `${topBehavior.id}_pack_${pt}`,
         proofType: pt as import("./types").ProofType,
-        description: `[${industryPackResolved.toUpperCase()} Pack] ${pt} compliance test — ${packResult.complianceFrameworks.join(", ")}`,
+        description: `[${industryPack.toUpperCase()} Pack] ${pt} compliance test — ${packResult.complianceFrameworks.join(", ")}`,
         preconditions: topBehavior.preconditions,
         assertions: topBehavior.assertions,
         mutationTargets: topBehavior.mutationTargets,
       }));
       riskModel.proofTargets = [...riskModel.proofTargets, ...newTargets];
     }
-    logger.info({ layer: 2 }, `Industry Pack '${industryPackResolved}' applied — +${addedTypes.length} proof types, frameworks: ${packResult.complianceFrameworks.join(", ")}`);
-    await progress(2, `Industry Pack '${industryPackResolved}' angewendet: +${addedTypes.length} Proof-Typen (${packResult.complianceFrameworks.join(", ")})`);
+    console.log(`[TestForge] Industry Pack '${industryPack}' applied — +${addedTypes.length} proof types, frameworks: ${packResult.complianceFrameworks.join(", ")}`);
+    await progress(2, `Industry Pack '${industryPack}' angewendet: +${addedTypes.length} Proof-Typen (${packResult.complianceFrameworks.join(", ")})`);
   }
   // Helpers Generator
   const helpers = generateHelpers(analysisResult);
-  logger.info({ layer: 3 }, `Helpers generated — ${Object.keys(helpers).length} files`);
+  console.log(`[TestForge] Helpers generated — ${Object.keys(helpers).length} files`);
 
   // Schicht 3: Proof generation (ALL parallel)
   await progress(3, "Layer 3: Generiere Tests (alle parallel)...");
   const t3 = Date.now();
   const rawProofs = await generateProofs(riskModel, analysisResult);
-  logger.timed({ layer: 3, proofCount: rawProofs.length }, `Schicht 3 done — ${rawProofs.length} raw proofs`, t3);
+  console.log(`[TestForge] Schicht 3 done in ${Date.now() - t3}ms — ${rawProofs.length} raw proofs`);
 
   await progress(3, `Layer 3 fertig: ${rawProofs.length} Tests generiert`, { proofCount: rawProofs.length });
 
@@ -345,7 +390,7 @@ export async function runAnalysisJob(
   await progress(4, `Layer 4: Independent Checker prüft ${rawProofs.length} Tests...`);
   const t5 = Date.now();
   const { checkedProofs } = await runIndependentChecker(rawProofs, analysisResult);
-  logger.timed({ layer: 5, proofCount: checkedProofs.length }, `Schicht 5 done — ${checkedProofs.length} proofs after independent check`, t5);
+  console.log(`[TestForge] Schicht 5 done in ${Date.now() - t5}ms — ${checkedProofs.length} proofs after independent check`);
 
   await progress(4, `Layer 4 fertig: ${checkedProofs.length} Tests nach Independent Check`);
 
@@ -353,14 +398,22 @@ export async function runAnalysisJob(
   const t4 = Date.now();
   const behaviorIds = analysisResult.ir.behaviors.map(b => b.id);
   const validatedSuite = validateProofs(checkedProofs, behaviorIds);
-  logger.timed({ layer: 4, proofCount: validatedSuite.proofs.length }, `Schicht 4 done — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`, t4);
+  console.log(`[TestForge] Schicht 4 done in ${Date.now() - t4}ms — ${validatedSuite.proofs.length} validated, ${validatedSuite.discardedProofs.length} discarded`);
+  analysisResult.executionProfile = buildExecutionProfile(analysisResult, riskModel, validatedSuite);
+  analysisResult.operationalStatus = {
+    mode: operationalNotices.length > 0 ? "degraded" : "complete",
+    notices: operationalNotices,
+    summary: operationalNotices.length > 0
+      ? `${operationalNotices.length} non-fatal pipeline notice(s). Results are usable, but confidence is reduced until these are resolved.`
+      : "All pipeline stages completed without non-fatal degradation notices.",
+  };
 
   await progress(5, `Layer 5 fertig: ${validatedSuite.proofs.length} validierte Tests, ${validatedSuite.discardedProofs.length} verworfen`);
 
   // Report
-  const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats);
+  const report = generateReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats, staticFindings);
   // HTML Dashboard
-  const htmlReport = generateHTMLReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats, analysisResult.specHealth);
+  const htmlReport = generateHTMLReport(analysisResult, riskModel, validatedSuite, projectName, llmCheckerStats, analysisResult.specHealth, staticFindings);
 
   // Test files (deduplicated by filename, properly structured)
   // Bug 5 Fix: deduplicate imports and shared let-declarations per file
@@ -405,12 +458,13 @@ export async function runAnalysisJob(
 
   // ─── v8.1: Post-Generation Syntax Validation ───────────────────────────────
   // Sanitize all generated TypeScript files to fix common escaping issues
-  const sanitizedTestFiles = sanitizeGeneratedFiles(testFiles);
+  const sanitizedTestFiles = removeUnsupportedAssumptionFiles(sanitizeGeneratedFiles(testFiles), analysisResult);
   // Preserve layer/description fields from original ExtendedTestFile objects
-  const sanitizedExtendedFiles: import("./types").ExtendedTestFile[] = extendedSuite.files.map((orig) => {
+  const sanitizedExtendedFilesRaw: import("./types").ExtendedTestFile[] = extendedSuite.files.map((orig) => {
     const sanitized = sanitizeGeneratedFiles([{ filename: orig.filename, content: orig.content }])[0];
     return { ...orig, content: sanitized.content };
   });
+  const sanitizedExtendedFiles = removeUnsupportedAssumptionFiles(sanitizedExtendedFilesRaw, analysisResult) as import("./types").ExtendedTestFile[];
   const helperEntries = Object.entries(helpers).map(([name, content]) => ({ filename: name, content: content as string }));
   const sanitizedHelperEntries = sanitizeGeneratedFiles(helperEntries);
   const sanitizedHelpers: Record<string, string> = {};
@@ -421,15 +475,37 @@ export async function runAnalysisJob(
   const totalOriginal = testFiles.length + extendedSuite.files.length + helperEntries.length;
   const totalSanitized = sanitizedTestFiles.length + sanitizedExtendedFiles.length + sanitizedHelperEntries.length;
   if (totalOriginal !== totalSanitized) {
-    logger.warn({ layer: 6 }, `Syntax sanitizer: ${totalOriginal - totalSanitized} files repaired`);
+    console.log(`[TestForge] ⚠ Syntax sanitizer: ${totalOriginal - totalSanitized} files repaired`);
   }
-  logger.info({ layer: 6 }, `Output validated: ${sanitizedTestFiles.length} core + ${sanitizedExtendedFiles.length} extended + ${sanitizedHelperEntries.length} helpers`);
-
-  logger.timed(
-    { layer: 6, proofCount: validatedSuite.proofs.length, fileCount: sanitizedTestFiles.length },
-    `Job DONE — ${sanitizedTestFiles.length} test files, ${validatedSuite.proofs.length} proofs`,
-    jobStart
+  const outputQualityGateHelpers: Partial<import("./types").GeneratedHelpers> & Record<string, string> = {
+    ...sanitizedHelpers,
+    ...extendedSuite.configs,
+    "README.md": extendedSuite.readme,
+    "package.json": extendedSuite.packageJson,
+    "testforge-report.md": report,
+  };
+  const outputQualityGate = evaluateGeneratedSuiteQuality(
+    analysisResult,
+    [
+      ...sanitizedTestFiles.map((file) => ({
+        filename: file.filename,
+        content: file.content,
+        layer: "security" as const,
+        description: "Core proof",
+      })),
+      ...sanitizedExtendedFiles,
+    ],
+    outputQualityGateHelpers,
+    options?.codeFiles || []
   );
+  if (!outputQualityGate.passed) {
+    const details = outputQualityGate.failures.slice(0, 8).join("; ");
+    console.error(`[TestForge] Output quality gate failed: ${details}`);
+    throw new Error(`Generated test suite failed output quality gate: ${details}`);
+  }
+  console.log(`[TestForge] Output validated: ${sanitizedTestFiles.length} core + ${sanitizedExtendedFiles.length} extended + ${sanitizedHelperEntries.length} helpers`);
+
+  console.log(`[TestForge] Job DONE in ${Date.now() - jobStart}ms — ${sanitizedTestFiles.length} test files, ${validatedSuite.proofs.length} proofs`);
 
   return {
     analysisResult, riskModel, validatedSuite, report, htmlReport,
@@ -533,7 +609,7 @@ function sanitizeGeneratedFiles(
     // getSuper-AdminCookie → getSuperAdminCookie
     const before4 = content;
     content = content.replace(
-      /\b(get|set|is|has)([A-Za-z]*)-([A-Za-z])/g,
+      /(?<!["'])\b(get|set|is|has)([A-Za-z]*)-([A-Za-z])/g,
       (_, prefix, mid, afterHyphen) => `${prefix}${mid}${afterHyphen.toUpperCase()}`
     );
     if (content !== before4) fixes++;
@@ -586,8 +662,9 @@ function sanitizeGeneratedFiles(
 
     // ── Fix 13b: Double-slash regex (//login/) → /\/login/ ──
     // When Fix 1 or old sanitizer stripped backslash from /\/login/ producing //login/
-    content = content.replace(/\.toHaveURL\(\/\/([a-zA-Z_|]+)\//g, '.toHaveURL(/\\/$1/');
+    content = content.replace(/\.toHaveURL\(\/\/([^/\n]+)\//g, '.toHaveURL(/\\/$1/');
     // ── Fix 14: Unescaped double quotes in test titles ──
+    content = content.replace(/(test\s*\("[^"\n]*→ error )"([^"\n]+)"/g, "$1'$2'");
     content = content.replace(/^(\s*(?:test|it)\s*\(\s*")(.+?)(",\s*async)/gm, (match, prefix, title, suffix) => {
       const fixedTitle = title.replace(/(?<!\\)"/g, '\\"');
       return prefix + fixedTitle + suffix;
@@ -699,6 +776,15 @@ function sanitizeGeneratedFiles(
       if (content !== before22) fixes++;
     }
 
+    // ── Fix 23: Preserve lower-case set-cookie header checks ──
+    // Fix 4 intentionally camel-cases hyphenated identifiers, but quoted HTTP headers must remain literal.
+    {
+      const before23 = content;
+      content = content.replace(/headers\["setCookie"\]\s*\|\|\s*headers\["setCookie"\]/g, 'headers["set-cookie"] || headers["setCookie"]');
+      content = content.replace(/headers\.get\("setCookie"\)\s*\|\|\s*headers\.get\("setCookie"\)/g, 'headers.get("set-cookie") || headers.get("setCookie")');
+      if (content !== before23) fixes++;
+    }
+
     if (fixes > 0) {
       console.log(`[TestForge] Sanitizer: ${file.filename} — ${fixes} fixes applied`);
       totalFixes += fixes;
@@ -712,4 +798,26 @@ function sanitizeGeneratedFiles(
   }
 
   return result;
+}
+
+function removeUnsupportedAssumptionFiles<T extends { filename: string; content: string }>(
+  files: T[],
+  analysis: AnalysisResult
+): T[] {
+  return files.filter((file) => {
+    if (!/\.(ts|tsx|js|mjs)$/.test(file.filename)) return true;
+
+    if (!analysis.ir.authModel && /\/api\/auth\/login|\/api\/auth\/callback\/credentials/.test(file.content)) {
+      console.log(`[TestForge] Auth guard: filtered ${file.filename} (auth flow without auth model)`);
+      return false;
+    }
+
+    if (analysis.ir.tenantModel) return true;
+    const hasExecutableTenantFixture = /\{\s*tenantId\s*:|TEST_TENANT_ID\s*[,:=]|\bTEST_TENANT_B_ID\b/.test(file.content);
+    if (hasExecutableTenantFixture) {
+      console.log(`[TestForge] Single-tenant guard: filtered ${file.filename} (tenant fixture without tenant model)`);
+      return false;
+    }
+    return true;
+  });
 }

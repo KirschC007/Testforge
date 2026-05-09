@@ -198,11 +198,15 @@ export async function sanitizeIR(
     }
   }
 
-  // 1g. Remove duplicate endpoints by name
+  // 1g. Remove duplicate endpoints by executable target.
+  // REST routes can share a normalized resource name across GET/POST; do not collapse methods.
   const seenEndpoints = new Set<string>();
   ir.apiEndpoints = ir.apiEndpoints.filter(ep => {
-    if (seenEndpoints.has(ep.name)) return false;
-    seenEndpoints.add(ep.name);
+    const key = /^(GET|POST|PUT|PATCH|DELETE)\s+\//i.test(ep.method)
+      ? ep.method
+      : `${ep.method}:${ep.name}`;
+    if (seenEndpoints.has(key)) return false;
+    seenEndpoints.add(key);
     return true;
   });
 
@@ -216,8 +220,9 @@ export async function sanitizeIR(
     const method = restMatch[1].toUpperCase();
     const path = restMatch[2];
     const normalizedName = normalizeEndpointName(path, method);
-    if (!seenEndpoints.has(normalizedName)) {
-      seenEndpoints.add(normalizedName);
+    const endpointKey = `${method} ${path}`;
+    if (!seenEndpoints.has(endpointKey)) {
+      seenEndpoints.add(endpointKey);
       ir.apiEndpoints.push({
         name: normalizedName,
         method: method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',

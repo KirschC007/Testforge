@@ -32,56 +32,59 @@ import { sdk } from "./_core/sdk";
 import { eq } from "drizzle-orm";
 import { storagePut, storageGet } from "./storage";
 import { getAllSettings, upsertSetting, resetSetting } from "./settings-db";
+import { buildAnalysisUrl, getConfiguredAppUrl, getRequestAppUrl } from "./_core/app-url";
+import { assertPublicHttpUrl } from "./_core/url-safety";
+import { assertUserSpecKey } from "./_core/storage-keys";
+import { buildEmptyMarketValidationSnapshot } from "./_core/customer-validation";
+import {
+  PLAN_LIMITS,
+  PLAN_PRICES_USD,
+  assertWithinUsageLimit,
+  buildArtifactManifest,
+  buildAuditEvent,
+  buildMarketEvidenceDeck,
+  buildObservabilitySnapshot,
+  buildProductReadinessScorecard,
+  buildQueueSnapshot,
+  buildSandboxPolicy,
+  buildWebhookPayload,
+  getDailyAnalysisLimit,
+  normalizePlan,
+} from "./_core/product-readiness";
+
+const loginFailures = new Map<string, { count: number; resetAt: number }>();
+
+function assertLoginAllowed(email: string) {
+  const now = Date.now();
+  const key = email.toLowerCase();
+  const bucket = loginFailures.get(key);
+  if (!bucket || bucket.resetAt <= now) return;
+  if (bucket.count >= 8) {
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many login attempts. Please wait and try again." });
+  }
+}
+
+function recordLoginFailure(email: string) {
+  const now = Date.now();
+  const key = email.toLowerCase();
+  const bucket = loginFailures.get(key);
+  const next = bucket && bucket.resetAt > now ? bucket : { count: 0, resetAt: now + 10 * 60 * 1000 };
+  next.count += 1;
+  loginFailures.set(key, next);
+}
+
+function clearLoginFailures(email: string) {
+  loginFailures.delete(email.toLowerCase());
+}
 
 // ─── In-memory job queue (simple, no Redis needed for MVP) ────────────────────
 const runningJobs = new Set<number>();
 const cancelledJobs = new Set<number>(); // Jobs that should stop at next checkpoint
 
-/**
- * Crash recovery: on server start, find any analyses stuck in "running" state
- * from a previous process and mark them as failed.
- * Runs once in setImmediate so it doesn't block server startup.
- */
-setImmediate(async () => {
-  try {
-    const db = await getDb();
-    if (!db) return; // DB not configured (e.g. dev without DATABASE_URL)
-    const staleThreshold = new Date(Date.now() - 16 * 60 * 1000); // 16 min ago
-    const { analyses } = await import("../drizzle/schema");
-    const { and, lt, isNotNull } = await import("drizzle-orm");
-    const staleJobs = await db
-      .select({ id: analyses.id, projectName: analyses.projectName })
-      .from(analyses)
-      .where(
-        and(
-          eq(analyses.status, "running"),
-          isNotNull(analyses.startedAt),
-          lt(analyses.startedAt, staleThreshold)
-        )
-      );
-    if (staleJobs.length > 0) {
-      console.warn(`[Recovery] Found ${staleJobs.length} stale job(s) from previous process — marking as failed`);
-      for (const job of staleJobs) {
-        await updateAnalysis(job.id, {
-          status: "failed",
-          errorMessage: "Server restarted during job execution. Please re-run the analysis.",
-        }).catch(err => {
-          // Log instead of swallowing — silent DB failures here mean stale "running" jobs
-          // remain stale forever and operators have no signal that recovery is broken.
-          console.error(`[Recovery] Failed to mark job #${job.id} as failed:`, err);
-        });
-        console.warn(`[Recovery] Job #${job.id} (${job.projectName}) marked as failed`);
-      }
-    }
-  } catch (err) {
-    // Recovery is best-effort, but log so DB-down scenarios are observable.
-    console.error("[Recovery] Crash recovery failed:", err);
-  }
-});
-
-async function startAnalysisJobFromKey(analysisId: number, specKey: string, projectName: string, industryPack?: IndustryPack, baseUrl?: string, authToken?: string) {
+async function startAnalysisJobFromKey(analysisId: number, userId: number, specKey: string, projectName: string, industryPack?: IndustryPack, baseUrl?: string, authToken?: string) {
   if (runningJobs.has(analysisId)) return;
   runningJobs.add(analysisId);
+  const jobStartedAt = new Date();
 
   // Goldstandard: 15-minute job timeout — prevents permanently stuck jobs after server restarts
   const JOB_TIMEOUT_MS = 15 * 60 * 1000;
@@ -96,30 +99,16 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         await updateAnalysis(analysisId, {
           status: "failed",
           errorMessage: "Job timed out after 15 minutes. Please try again.",
-        }).catch(err => {
-          // Log: if DB write fails here, the job stays "running" in DB while the worker
-          // has already given up — operators need to know.
-          console.error(`[Job ${analysisId}] Failed to record timeout in DB:`, err);
-        });
+        }).catch(() => {});
         runningJobs.delete(analysisId);
       }
     }, JOB_TIMEOUT_MS);
 
     try {
-      await updateAnalysis(analysisId, { status: "running", startedAt: new Date(), workerPid: process.pid });
-      // Fetch spec text from S3 (30s timeout — S3 must not hang the job)
+      await updateAnalysis(analysisId, { status: "running" });
+      // Fetch spec text from S3
       const { url } = await storageGet(specKey);
-      const s3Controller = new AbortController();
-      const s3Timeout = setTimeout(() => s3Controller.abort(), 30_000);
-      let resp: Response;
-      try {
-        resp = await fetch(url, { signal: s3Controller.signal });
-      } catch (err: any) {
-        if (err.name === "AbortError") throw new Error("S3 fetch timed out after 30s");
-        throw err;
-      } finally {
-        clearTimeout(s3Timeout);
-      }
+      const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Failed to fetch spec from S3: ${resp.status}`);
       const specText = await resp.text();
 
@@ -148,6 +137,9 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       // Store report and test files in S3
       const reportKey = `analyses/${analysisId}/testforge-report.md`;
       const { url: reportUrl } = await storagePut(reportKey, Buffer.from(result.report), "text/markdown");
+      const auditTrail = [
+        buildAuditEvent({ actorUserId: userId, action: "analysis.report_stored", analysisId, metadata: { reportKey } }),
+      ];
 
       // Pre-save resultJson so data is available even if ZIP upload fails
       const suite = result.validatedSuite;
@@ -218,7 +210,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       // Add extended README (overwrites helpers README with full 6-layer version)
       archive.append(extended.readme, { name: "README.md" });
       // Add Playwright feedback CI workflow (S5-3) — posts results back to TestForge
-      const feedbackCI = generateCIWorkflow(analysisId, "https://testforge.dev");
+      const feedbackCI = generateCIWorkflow(analysisId, getConfiguredAppUrl());
       archive.append(feedbackCI, { name: ".github/workflows/testforge-feedback.yml" });
       // Wait for both finalize and stream finish
       await Promise.all([
@@ -233,6 +225,22 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
       const zipBuffer = Buffer.concat(chunks);
       const zipKey = `analyses/${analysisId}/testforge-output.zip`;
       const { url: zipUrl } = await storagePut(zipKey, zipBuffer, "application/zip");
+      const completedAt = new Date();
+      const artifactManifest = buildArtifactManifest({ analysisId, reportKey, zipKey });
+      const observability = buildObservabilitySnapshot({
+        analysisId,
+        projectName,
+        startedAt: jobStartedAt,
+        completedAt,
+        llmCalls: result.llmCheckerStats.flagged + result.llmCheckerStats.approved + result.llmCheckerStats.rejected > 0 ? 1 : 0,
+      });
+      auditTrail.push(buildAuditEvent({ actorUserId: userId, action: "analysis.completed", analysisId, metadata: { zipKey, validatedProofs: suite.verdict.passed } }));
+      const webhookEvent = buildWebhookPayload({
+        event: "analysis.completed",
+        analysisId,
+        userId,
+        data: { projectName, validatedProofs: suite.verdict.passed, coveragePercent: suite.coverage.coveragePercent },
+      });
 
       await updateAnalysis(analysisId, {
         status: "completed",
@@ -248,6 +256,11 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
           llmCheckerStats: result.llmCheckerStats,
           // H4: Store industryPack for UI badge display
           industryPack: industryPack ?? null,
+          artifactManifest,
+          observability,
+          auditTrail,
+          webhookEvents: [webhookEvent],
+          sandboxPolicy: buildSandboxPolicy(),
         } as any,
         outputZipUrl: zipUrl,
         outputZipKey: zipKey,
@@ -256,7 +269,7 @@ async function startAnalysisJobFromKey(analysisId: number, specKey: string, proj
         validatedProofCount: suite.verdict.passed,
         discardedProofCount: suite.verdict.failed,
         behaviorCount: result.analysisResult.ir.behaviors.length,
-        completedAt: new Date(),
+        completedAt,
       });
     } catch (err: any) {
       console.error(`[Job ${analysisId}] Failed:`, err);
@@ -332,16 +345,21 @@ export const appRouter = router({
         name: z.string().min(1).max(100),
       }))
       .mutation(async ({ ctx, input }) => {
-        const existing = await getUserByEmail(input.email);
+        const email = input.email.trim().toLowerCase();
+        const existing = await getUserByEmail(email);
         if (existing) throw new TRPCError({ code: "CONFLICT", message: "Email already registered" });
-        const passwordHash = await bcrypt.hash(input.password, 12);
         // First registered user becomes admin
         const { getDb } = await import("./db");
         const db = await getDb();
         const userCount = db ? (await db.select({ count: sql`COUNT(*)` }).from(users))[0]?.count ?? 0 : 1;
-        const role = Number(userCount) === 0 ? "admin" : "user";
-        await createUserWithPassword(input.email, input.name, passwordHash, role as "user" | "admin");
-        const sessionToken = await sdk.createSessionToken(`local:${input.email}`, { name: input.name });
+        const existingUsers = Number(userCount);
+        if (existingUsers > 0 && process.env.ALLOW_PUBLIC_REGISTRATION !== "1") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Public registration is disabled" });
+        }
+        const role = existingUsers === 0 ? "admin" : "user";
+        const passwordHash = await bcrypt.hash(input.password, 12);
+        await createUserWithPassword(email, input.name, passwordHash, role as "user" | "admin");
+        const sessionToken = await sdk.createSessionToken(`local:${email}`, { name: input.name });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
         return { success: true };
@@ -352,11 +370,20 @@ export const appRouter = router({
         password: z.string().min(1),
       }))
       .mutation(async ({ ctx, input }) => {
-        const user = await getUserByEmail(input.email);
-        if (!user || !user.passwordHash) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+        const email = input.email.trim().toLowerCase();
+        assertLoginAllowed(email);
+        const user = await getUserByEmail(email);
+        if (!user || !user.passwordHash) {
+          recordLoginFailure(email);
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+        }
         const valid = await bcrypt.compare(input.password, user.passwordHash);
-        if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
-        const sessionToken = await sdk.createSessionToken(`local:${input.email}`, { name: user.name ?? input.email });
+        if (!valid) {
+          recordLoginFailure(email);
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+        }
+        clearLoginFailures(email);
+        const sessionToken = await sdk.createSessionToken(`local:${email}`, { name: user.name ?? email });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
         return { success: true };
@@ -376,36 +403,25 @@ export const appRouter = router({
         authToken: z.string().optional(),         // Optional: Auth token for discovery
       }))
       .mutation(async ({ ctx, input }) => {
-        // ─── SSRF Guard ───────────────────────────────────────────────────────────────
-        // baseUrl is used for live endpoint discovery — it MUST not point at private infra
+        try {
+          assertUserSpecKey(ctx.user.id, input.specKey);
+        } catch (error: any) {
+          throw new TRPCError({ code: "FORBIDDEN", message: error?.message || "Spec key is not allowed" });
+        }
         if (input.baseUrl) {
-          const { checkURL } = await import("./_core/ssrf-guard");
-          const ssrf = checkURL(input.baseUrl);
-          if (!ssrf.allowed) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: `Invalid baseUrl: ${ssrf.reason}`,
-            });
+          try {
+            assertPublicHttpUrl(input.baseUrl, "Discovery base URL");
+          } catch (error: any) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: error?.message || "Discovery base URL is not allowed" });
           }
         }
-
         // ─── Plan-Based Rate Limit ────────────────────────────────────────────────────
-        const PLAN_LIMITS: Record<string, number> = {
-          free: 10,
-          pro: 50,
-          team: 200,
-          enterprise: Infinity,
-        };
-        const userPlan = (ctx.user as any).plan || "free";
-        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
-        if (DAILY_LIMIT !== Infinity) {
-          const todayCount = await countAnalysesToday(ctx.user.id);
-          if (todayCount >= DAILY_LIMIT) {
-            throw new TRPCError({
-              code: "TOO_MANY_REQUESTS",
-              message: `Daily limit reached: ${DAILY_LIMIT} analyses/day on ${userPlan} plan. Upgrade for more.`,
-            });
-          }
+        const userPlan = normalizePlan((ctx.user as any).plan);
+        const todayCount = await countAnalysesToday(ctx.user.id);
+        try {
+          assertWithinUsageLimit({ plan: userPlan, role: ctx.user.role, todayCount });
+        } catch (error: any) {
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: error?.message || "Daily limit reached" });
         }
         // ──────────────────────────────────────────────────────────────────────────────
         const analysisId = await createAnalysis({
@@ -417,7 +433,7 @@ export const appRouter = router({
         });
 
         // Start async job — fetch spec text from S3 inside the job
-        startAnalysisJobFromKey(analysisId, input.specKey, input.projectName, input.industryPack as IndustryPack | undefined, input.baseUrl, input.authToken);
+        startAnalysisJobFromKey(analysisId, ctx.user.id, input.specKey, input.projectName, input.industryPack as IndustryPack | undefined, input.baseUrl, input.authToken);
 
         return { id: analysisId };
       }),
@@ -445,6 +461,9 @@ export const appRouter = router({
         if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
         if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         if (analysis.status !== "completed") throw new TRPCError({ code: "BAD_REQUEST", message: "Analysis not completed yet" });
+        if (analysis.outputZipKey) {
+          return { url: `/api/analyses/${analysis.id}/download` };
+        }
         return { url: analysis.outputZipUrl };
       }),
 
@@ -478,7 +497,7 @@ export const appRouter = router({
           completedAt: null,
         } as any);
         // Restart the job
-        startAnalysisJobFromKey(input.id, analysis.specFileKey, analysis.projectName);
+        startAnalysisJobFromKey(input.id, ctx.user.id, analysis.specFileKey, analysis.projectName);
         return { id: input.id };
       }),
 
@@ -516,17 +535,12 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Either githubUrl or codeFiles is required" });
         }
         // Rate-limit (same as analyses.create)
-        const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 50, team: 200, enterprise: Infinity };
-        const userPlan = (ctx.user as any).plan || "free";
-        const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
-        if (DAILY_LIMIT !== Infinity) {
-          const todayCount = await countAnalysesToday(ctx.user.id);
-          if (todayCount >= DAILY_LIMIT) {
-            throw new TRPCError({
-              code: "TOO_MANY_REQUESTS",
-              message: `Daily limit reached: ${DAILY_LIMIT} analyses/day on ${userPlan} plan. Upgrade for more.`,
-            });
-          }
+        const userPlan = normalizePlan((ctx.user as any).plan);
+        const todayCount = await countAnalysesToday(ctx.user.id);
+        try {
+          assertWithinUsageLimit({ plan: userPlan, role: ctx.user.role, todayCount });
+        } catch (error: any) {
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: error?.message || "Daily limit reached" });
         }
 
         let codeFiles: CodeFile[] = input.codeFiles || [];
@@ -547,8 +561,9 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "No code files found" });
         }
 
-        // Quick parse to get framework info for display
-        const { parseResult } = parseCodeToIR(codeFiles);
+        // Quick parse to get framework info and quality tier for display
+        const parsedCode = parseCodeToIR(codeFiles);
+        const { parseResult } = parsedCode;
 
         const analysisId = await createAnalysis({
           userId: ctx.user.id,
@@ -565,8 +580,9 @@ export const appRouter = router({
         setImmediate(async () => {
           if (runningJobs.has(analysisId)) return;
           runningJobs.add(analysisId);
+          const jobStartedAt = new Date();
           try {
-            await updateAnalysis(analysisId, { status: "running", startedAt: new Date(), workerPid: process.pid });
+            await updateAnalysis(analysisId, { status: "running" });
             const result = await runAnalysisJob(
               "", // specText not used for code scan
               input.projectName,
@@ -613,6 +629,7 @@ export const appRouter = router({
             const zipKey = `analyses/${analysisId}/testforge-output.zip`;
             const { url: zipUrl } = await storagePut(zipKey, zipBuffer, "application/zip");
             const suite = result.validatedSuite;
+            const completedAt = new Date();
             await updateAnalysis(analysisId, {
               status: "completed",
               resultJson: {
@@ -625,6 +642,27 @@ export const appRouter = router({
                 framework: parseResult.framework,
                 endpointCount: parseResult.endpointCount,
                 tableCount: parseResult.tableCount,
+                artifactManifest: buildArtifactManifest({ analysisId, zipKey }),
+                observability: buildObservabilitySnapshot({
+                  analysisId,
+                  projectName: input.projectName,
+                  startedAt: jobStartedAt,
+                  completedAt,
+                  llmCalls: result.analysisResult.operationalStatus?.mode === "degraded" ? 0 : 1,
+                }),
+                auditTrail: [
+                  buildAuditEvent({ actorUserId: ctx.user.id, action: "analysis.created_from_code", analysisId, metadata: { fileCount: codeFiles.length } }),
+                  buildAuditEvent({ actorUserId: ctx.user.id, action: "analysis.completed", analysisId, metadata: { zipKey, validatedProofs: suite.verdict.passed } }),
+                ],
+                webhookEvents: [
+                  buildWebhookPayload({
+                    event: "analysis.completed",
+                    analysisId,
+                    userId: ctx.user.id,
+                    data: { projectName: input.projectName, validatedProofs: suite.verdict.passed, coveragePercent: suite.coverage.coveragePercent },
+                  }),
+                ],
+                sandboxPolicy: buildSandboxPolicy(),
               } as any,
               outputZipUrl: zipUrl,
               outputZipKey: zipKey,
@@ -633,7 +671,7 @@ export const appRouter = router({
               validatedProofCount: suite.verdict.passed,
               discardedProofCount: suite.verdict.failed,
               behaviorCount: result.analysisResult.ir.behaviors.length,
-              completedAt: new Date(),
+              completedAt,
             });
           } catch (err: any) {
             await updateAnalysis(analysisId, {
@@ -760,20 +798,22 @@ export const appRouter = router({
       baseUrl: z.string().url().optional(),
       authToken: z.string().optional(),
       industryPack: z.enum(["fintech", "healthtech", "ecommerce", "saas"]).optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      // Rate-limit
-      const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 50, team: 200, enterprise: Infinity };
-      const userPlan = (ctx.user as any).plan || "free";
-      const DAILY_LIMIT = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
-      if (DAILY_LIMIT !== Infinity) {
-        const todayCount = await countAnalysesToday(ctx.user.id);
-        if (todayCount >= DAILY_LIMIT) {
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message: `Daily limit reached: ${DAILY_LIMIT} analyses/day on ${userPlan} plan. Upgrade for more.`,
-          });
+      }))
+      .mutation(async ({ ctx, input }) => {
+      if (input.baseUrl) {
+        try {
+          assertPublicHttpUrl(input.baseUrl, "Discovery base URL");
+        } catch (error: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error?.message || "Discovery base URL is not allowed" });
         }
+      }
+      // Rate-limit
+      const userPlan = normalizePlan((ctx.user as any).plan);
+      const todayCount = await countAnalysesToday(ctx.user.id);
+      try {
+        assertWithinUsageLimit({ plan: userPlan, role: ctx.user.role, todayCount });
+      } catch (error: any) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: error?.message || "Daily limit reached" });
       }
       const parsed = parseGitHubUrl(input.githubUrl);
       if (!parsed) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid GitHub URL" });
@@ -857,6 +897,11 @@ export const appRouter = router({
         authToken: z.string().optional(),
       }))
       .query(async ({ ctx, input }) => {
+        try {
+          assertPublicHttpUrl(input.baseUrl, "Playwright base URL");
+        } catch (error: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error?.message || "Playwright base URL is not allowed" });
+        }
         const analysis = await getAnalysisById(input.analysisId);
         if (!analysis) throw new TRPCError({ code: "NOT_FOUND" });
         if (analysis.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
@@ -866,7 +911,7 @@ export const appRouter = router({
           timeout: 30000,
           workers: 1,
         });
-        const ciWorkflow = generateCIWorkflow(input.analysisId, "https://testforge.dev");
+        const ciWorkflow = generateCIWorkflow(input.analysisId, getConfiguredAppUrl());
         return { config, ciWorkflow };
       }),
   }),
@@ -897,7 +942,7 @@ export const appRouter = router({
             }
           }
         }
-        const reportUrl = `${input.prUrl.split("/pull/")[0].replace("github.com", "testforge.dev")}/analysis/${input.analysisId}`;
+        const reportUrl = buildAnalysisUrl(input.analysisId, ctx.req);
         const comment = buildPRComment({ analysis, reportUrl, diff });
         const result = await postGitHubPRComment(input.prUrl, comment, input.githubToken);
         if (!result.success) {
@@ -926,7 +971,7 @@ export const appRouter = router({
             }
           }
         }
-        const reportUrl = `https://testforge.dev/analysis/${input.analysisId}`;
+        const reportUrl = buildAnalysisUrl(input.analysisId, ctx.req);
         return { markdown: buildPRComment({ analysis, reportUrl, diff }) };
       }),
 
@@ -1005,6 +1050,11 @@ export const appRouter = router({
         concurrency: z.number().min(1).max(20).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        try {
+          assertPublicHttpUrl(input.baseUrl, "Test run base URL");
+        } catch (error: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error?.message || "Test run base URL is not allowed" });
+        }
         // Verify the analysis belongs to this user
         const analysis = await getAnalysisById(input.analysisId);
         if (!analysis || analysis.userId !== ctx.user.id) {
@@ -1140,9 +1190,8 @@ export const appRouter = router({
   // ─── Analytics / Usage Stats ──────────────────────────────────────────────
   analytics: router({
     getUsage: protectedProcedure.query(async ({ ctx }) => {
-      const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 50, team: 200, enterprise: Infinity };
-      const userPlan = (ctx.user as any).plan || "free";
-      const dailyLimit = ctx.user.role === "admin" ? Infinity : (PLAN_LIMITS[userPlan] ?? 10);
+      const userPlan = normalizePlan((ctx.user as any).plan);
+      const dailyLimit = getDailyAnalysisLimit(userPlan, ctx.user.role);
       const todayCount = await countAnalysesToday(ctx.user.id);
       const allAnalyses = await getAnalysesByUserId(ctx.user.id);
       const completed = allAnalyses.filter((a: any) => a.status === "completed");
@@ -1159,8 +1208,18 @@ export const appRouter = router({
         completedAnalyses: completed.length,
         totalProofsGenerated: totalProofs,
         avgVerdictScore: avgScore,
+        pricing: PLAN_PRICES_USD[userPlan],
+        queue: buildQueueSnapshot({ runningJobs: runningJobs.size, plan: userPlan }),
+        sandboxPolicy: buildSandboxPolicy(),
       };
     }),
+  }),
+
+  product: router({
+    readiness: publicProcedure.query(() => buildProductReadinessScorecard()),
+    evidence: publicProcedure.query(() => buildMarketEvidenceDeck()),
+    marketValidation: publicProcedure.query(() => buildEmptyMarketValidationSnapshot()),
+    pricing: publicProcedure.query(() => ({ limits: PLAN_LIMITS, pricesUsd: PLAN_PRICES_USD })),
   }),
 });
 

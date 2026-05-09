@@ -56,7 +56,7 @@ test.describe("Browser: Packages CRUD", () => {
     await loginViaUI(page);
     await page.goto(`${BASE_URL}/packages`);
     // Page should not redirect to login
-    await expect(page).not.toHaveURL(//login/, { timeout: 5000 });
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 });
     // Kills: List page not accessible to authenticated users
   });
 });

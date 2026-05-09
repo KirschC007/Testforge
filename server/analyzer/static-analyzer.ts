@@ -38,6 +38,33 @@ function findLines(lines: string[], regex: RegExp, ruleId: string, severity: Sta
   return findings;
 }
 
+function collectQueryBlock(lines: string[], startIdx: number): string {
+  const block: string[] = [];
+  for (let i = startIdx; i < Math.min(lines.length, startIdx + 14); i++) {
+    block.push(lines[i]);
+    if (/\}\)\s*;|\}\s*\)\s*$|\}\s*,\s*$|\)\s*;/.test(lines[i])) break;
+  }
+  return block.join("\n");
+}
+
+function hasTenantScopedQuery(block: string): boolean {
+  const tenantField = "(?:tenantId|organizationId|shopId|workspaceId|companyId)";
+  const directWhereObject = new RegExp(`where\\s*:\\s*\\{[^}]*${tenantField}`, "i");
+  const predicateWithEq = new RegExp(`(?:where|and|or|eq)\\s*\\([^\\n]*${tenantField}`, "i");
+  const nestedPredicate = new RegExp(`${tenantField}[^\\n]{0,80}(?:input\\.|ctx\\.|params\\.|query\\.|body\\.)`, "i");
+  const drizzleObjectForm = new RegExp(`${tenantField}\\s*:\\s*(?:input\\.|ctx\\.|params\\.|query\\.|body\\.)`, "i");
+  return (
+    directWhereObject.test(block) ||
+    predicateWithEq.test(block) ||
+    nestedPredicate.test(block) ||
+    drizzleObjectForm.test(block)
+  );
+}
+
+function stripLineComment(line: string): string {
+  return line.replace(/\/\/.*$/, "");
+}
+
 // ─── 15 Rules ─────────────────────────────────────────────────────────────────
 
 const RULES: Rule[] = [
@@ -49,7 +76,7 @@ const RULES: Rule[] = [
     description: "Hardcoded secret or API key",
     check: (file, lines) => findLines(
       lines,
-      /(?:apiKey|api_key|secret|password|token|jwt_secret|private_key)\s*[:=]\s*["'][^"']{8,}["']/i,
+      /(?:apiKey|api_key|secret|password|token|jwt_secret|private_key)\s*[:=]\s*["'][^"']{8,}["']|jwt\.sign\s*\([^,]+,\s*["'][^"']{8,}["']/i,
       "STATIC-001-HARDCODED-SECRET",
       "HIGH",
       "Hardcoded secret or API key detected — use environment variables",
@@ -84,14 +111,28 @@ const RULES: Rule[] = [
     id: "STATIC-003-SQL-INJECTION",
     severity: "HIGH",
     description: "Potential SQL injection via string interpolation",
-    check: (file, lines) => findLines(
-      lines,
-      /(?:query|execute|raw|sql)\s*\(\s*[`"'].*\$\{/i,
-      "STATIC-003-SQL-INJECTION",
-      "HIGH",
-      "Potential SQL injection — use parameterized queries",
-      file.path
-    ),
+    check: (file, lines) => {
+      const findings: StaticFinding[] = [];
+      lines.forEach((line, idx) => {
+        const cleanLine = stripLineComment(line);
+        const block = lines.slice(idx, idx + 5).map(stripLineComment).join("\n");
+        const hasQueryCall = /(?:query|execute|raw|sql)\s*\(/i.test(cleanLine);
+        if (!hasQueryCall) return;
+        const hasTemplateInterpolation = /(?:query|execute|raw|sql)\s*\(\s*[`"'][\s\S]*\$\{/i.test(block);
+        const hasUserControlledConcat = /(?:query|execute|raw|sql)\s*\([\s\S]*?(?:\+[\s\S]*?){2,}/i.test(block)
+          && /req\.|request\.|body\.|params\.|query\.|input\.|args\./i.test(block);
+        if (!hasTemplateInterpolation && !hasUserControlledConcat) return;
+        findings.push({
+          rule: "STATIC-003-SQL-INJECTION",
+          severity: "HIGH",
+          file: file.path,
+          line: idx + 1,
+          message: "Potential SQL injection — use parameterized queries",
+          snippet: block.trim().slice(0, 120),
+        });
+      });
+      return findings;
+    },
   },
 
   // RULE 4: Missing input validation on mutation
@@ -125,9 +166,11 @@ const RULES: Rule[] = [
     check: (file, lines) => {
       const findings: StaticFinding[] = [];
       lines.forEach((line, idx) => {
-        const isSensitive = /delete|remove|admin|billing|payment|secret|private/i.test(line);
-        const isPublic = /publicProcedure/.test(line);
-        if (isSensitive && isPublic && /\.mutation|\.query/.test(line)) {
+        const context = lines.slice(Math.max(0, idx - 3), idx + 4).join("\n");
+        const isSensitive = /delete|remove|admin|billing|payment|secret|private/i.test(context);
+        const isPublic = /publicProcedure/.test(context);
+        const isEndpoint = /\.mutation|\.query/.test(context);
+        if (isSensitive && isPublic && isEndpoint) {
           findings.push({
             rule: "STATIC-005-MISSING-AUTH",
             severity: "HIGH",
@@ -187,18 +230,20 @@ const RULES: Rule[] = [
     check: (file, lines) => {
       const findings: StaticFinding[] = [];
       lines.forEach((line, idx) => {
-        const isDbQuery = /\.findMany\(|\.findFirst\(|\.findUnique\(/.test(line);
+        const isDbQuery = /\.findMany\(|\.findFirst\(|\.findUnique\(|\.select\(\)\.from\(|db\.query\./.test(line);
         if (!isDbQuery) return;
-        const context = lines.slice(Math.max(0, idx - 2), idx + 8).join("\n");
-        const hasTenantFilter = /tenantId|organizationId|shopId|workspaceId|companyId/.test(context);
-        if (!hasTenantFilter) {
+        const queryBlock = collectQueryBlock(lines, idx);
+        const hasTenantSignalsNearby = /tenantId|organizationId|shopId|workspaceId|companyId/.test(queryBlock);
+        const hasTenantScopedFilter = hasTenantScopedQuery(queryBlock);
+        if (hasTenantSignalsNearby && hasTenantScopedFilter) return;
+        if (!hasTenantScopedFilter) {
           findings.push({
             rule: "STATIC-008-MISSING-TENANT-CHECK",
             severity: "HIGH",
             file: file.path,
             line: idx + 1,
             message: "DB query without tenant filter — potential IDOR/data leak",
-            snippet: line.trim().slice(0, 120),
+            snippet: queryBlock.trim().slice(0, 120),
           });
         }
       });
@@ -228,7 +273,8 @@ const RULES: Rule[] = [
     description: "Webhook handler without signature validation",
     check: (file, lines) => {
       if (!file.path.includes("webhook") && !file.path.includes("hook")) return [];
-      const hasSignatureCheck = lines.some(l => /signature|hmac|sha256|verify|stripe-signature|x-hub-signature/i.test(l));
+      const executableLines = lines.map(stripLineComment);
+      const hasSignatureCheck = executableLines.some(l => /signature|hmac|sha256|verify|stripe-signature|x-hub-signature/i.test(l));
       if (hasSignatureCheck) return [];
       return [{
         rule: "STATIC-010-MISSING-WEBHOOK-SIGNATURE",
@@ -273,6 +319,7 @@ const RULES: Rule[] = [
     severity: "HIGH",
     description: "File upload without content-type or size validation",
     check: (file, lines) => {
+      if (file.path.endsWith("package.json")) return [];
       const findings: StaticFinding[] = [];
       lines.forEach((line, idx) => {
         if (/multer|formData|upload|file.*upload|multipart/i.test(line)) {
@@ -357,6 +404,32 @@ const RULES: Rule[] = [
       return findings;
     },
   },
+
+  // RULE 16: Mass assignment via raw request/input object updates
+  {
+    id: "STATIC-016-MASS-ASSIGNMENT",
+    severity: "HIGH",
+    description: "Broad object update with unfiltered user input",
+    check: (file, lines) => {
+      const findings: StaticFinding[] = [];
+      lines.forEach((line, idx) => {
+        const dangerousWrite = /data\s*:\s*input\b|data\s*:\s*req\.body\b|\.\.\.\s*input\b|\.\.\.\s*req\.body\b/.test(line);
+        if (!dangerousWrite) return;
+        const context = lines.slice(Math.max(0, idx - 8), idx + 8).join("\n");
+        const hasProtectedFields = /role|isAdmin|tenantId|status/.test(context);
+        if (!hasProtectedFields) return;
+        findings.push({
+          rule: "STATIC-016-MASS-ASSIGNMENT",
+          severity: "HIGH",
+          file: file.path,
+          line: idx + 1,
+          message: "Unfiltered user input is written into a mutable model with protected fields nearby",
+          snippet: line.trim().slice(0, 120),
+        });
+      });
+      return findings;
+    },
+  },
 ];
 
 // ─── Runner ───────────────────────────────────────────────────────────────────
@@ -366,7 +439,11 @@ export function runStaticAnalysis(files: CodeFile[]): StaticFinding[] {
 
   for (const file of files) {
     // Skip test files, node_modules, generated files
-    if (/node_modules|\.test\.|\.spec\.|dist\/|\.d\.ts$/.test(file.path)) continue;
+    if (
+      /node_modules|\.test\.|\.spec\.|dist\/|build\/|coverage\/|\.next\/|\.d\.ts$/.test(file.path) ||
+      /(?:^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock|composer\.lock|Cargo\.lock)$/.test(file.path) ||
+      /\.(min\.js|map)$/.test(file.path)
+    ) continue;
 
     const lines = file.content.split("\n");
 

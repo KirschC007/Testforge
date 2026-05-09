@@ -313,6 +313,15 @@ describe("repo-scanner", () => {
     expect(result?.owner).toBe("owner");
     expect(result?.repo).toBe("repo");
     expect(result?.branch).toBe("main");
+    expect(result?.subpath).toBe("api/openapi.yaml");
+  });
+
+  it("parseGitHubUrl parses URL with branch and subpath", () => {
+    const result = parseGitHubUrl("https://github.com/owner/repo/tree/canary/examples/route-handlers");
+    expect(result?.owner).toBe("owner");
+    expect(result?.repo).toBe("repo");
+    expect(result?.branch).toBe("canary");
+    expect(result?.subpath).toBe("examples/route-handlers");
   });
 
   it("parseGitHubUrl returns null for invalid URL", () => {

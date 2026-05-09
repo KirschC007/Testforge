@@ -43,7 +43,7 @@ test.describe("Browser: Customer Books a Package", () => {
     // Kills: UI shows success but state not persisted
   });
 
-  test("Customer Books a Package — error: Passengers exceed package capacity → error "Kapazität übersc", async ({ page }) => {
+  test("Customer Books a Package — error: Passengers exceed package capacity", async ({ page }) => {
     await loginViaUI(page);
     // Error scenario: Passengers exceed package capacity → error "Kapazität überschritten"
     // Verify error is shown to user

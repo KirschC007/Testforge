@@ -5,8 +5,15 @@ import type { Behavior, EndpointField, AnalysisIR, APIEndpoint, SpecHealthDimens
 import { evaluateRiskRules } from "./risk-rules";
 import { normalizeEndpointName } from "./normalize";
 import { getPrompt } from "../settings-db";
+import { getProofGenerationProfile } from "./proof-planning";
 
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
+
+function endpointExecutionTarget(endpoint: APIEndpoint): string {
+  if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//i.test(endpoint.method)) return endpoint.method;
+  if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//i.test(endpoint.name)) return endpoint.name;
+  return normalizeEndpointName(endpoint.name, endpoint.method);
+}
 
 function verifyAnchor(behavior: Behavior, specText: string): { found: boolean; score: number } {
   const specLower = specText.toLowerCase();
@@ -369,14 +376,16 @@ export function assessSpecHealthFromResult(analysis: AnalysisResult): SpecHealth
 
 export function buildRiskModel(analysis: AnalysisResult): RiskModel {
   const behaviors: ScoredBehavior[] = analysis.ir.behaviors.map(b => {
-    const riskLevel = assessRiskLevel(b);
     // Pass the endpoint and IR so hasFields checks (e.g. IDOR on clinicId) work correctly
     const endpoint = analysis.ir.apiEndpoints.find(e => e.relatedBehaviors.includes(b.id))
       || analysis.ir.apiEndpoints.find(e => e.name.toLowerCase().includes(b.object?.toLowerCase() || ''));
+    const proofTypes = determineProofTypes(b, endpoint, analysis.ir);
+    const baseRiskLevel = assessRiskLevel(b);
+    const riskLevel = baseRiskLevel === "low" && proofTypes.includes("boundary") ? "medium" : baseRiskLevel;
     return {
       behavior: b,
       riskLevel,
-      proofTypes: determineProofTypes(b, endpoint, analysis.ir),
+      proofTypes,
       priority: riskLevel === "critical" || riskLevel === "high" ? 0 : riskLevel === "medium" ? 1 : 2,
       rationale: buildRationale(b, riskLevel),
     };
@@ -419,12 +428,23 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
     ...analysis.ir.invariants.map(i => `${i.id} ${i.description} ${i.alwaysTrue}`),
     ...analysis.ir.behaviors.map(b => `${b.title} ${b.preconditions.join(' ')} ${b.postconditions.join(' ')} ${b.errorCases.join(' ')}`),
   ].join(" ").toLowerCase();
+  const staticRuleIds = new Set((((analysis as unknown as { staticFindings?: Array<{ rule: string }> }).staticFindings) || []).map(f => f.rule));
 
-  const hasSQLInjectionConcern = /sql.inject|parameteriz|prepared.stat|string.concat|raw.sql|unsanitiz|unescap|user.input.*quer|search.*quer/.test(specInvariantText);
-  const hasHardcodedSecretConcern = /hardcod|jwt.secret|api.key|secret.key|private.key|process\.env|env.variable|credential|token.rotat/.test(specInvariantText);
+  const hasSQLInjectionConcern = /sql.inject|parameteriz|prepared.stat|string.concat|raw.sql|unsanitiz|unescap|user.input.*quer|search.*quer/.test(specInvariantText) || staticRuleIds.has("STATIC-003-SQL-INJECTION");
+  const hasHardcodedSecretConcern = /hardcod|jwt.secret|api.key|secret.key|private.key|process\.env|env.variable|credential|token.rotat/.test(specInvariantText) || staticRuleIds.has("STATIC-001-HARDCODED-SECRET");
+  const hasRateLimitConcern = /rate.limit|brute.force|throttle|login|signin|authenticate/.test(specInvariantText) || staticRuleIds.has("STATIC-002-NO-RATE-LIMIT");
+  const hasWebhookConcern = /webhook|event.delivery|event_delivery|stripe-signature|x-webhook-signature|hmac/.test(specInvariantText) || staticRuleIds.has("STATIC-010-MISSING-WEBHOOK-SIGNATURE");
+  const hasMassAssignmentConcern = analysis.ir.apiEndpoints.some((endpoint) => {
+    const actionSignal = /create|update|register|edit|patch/i.test(endpoint.name);
+    const protectedFieldSignal = (endpoint.inputFields || []).some((field) => /role|isAdmin|tenantId|status/i.test(field.name));
+    return actionSignal && protectedFieldSignal;
+  }) || staticRuleIds.has("STATIC-016-MASS-ASSIGNMENT") || /mass.assignment|privilege.escalat|protected.field|blindly spread request body|allowlist|whitelist/.test(specInvariantText);
 
   const alreadyHasSQLInjection = deduplicatedProofTargets.some(t => t.proofType === "sql_injection");
   const alreadyHasHardcodedSecret = deduplicatedProofTargets.some(t => t.proofType === "hardcoded_secret");
+  const alreadyHasRateLimit = deduplicatedProofTargets.some(t => t.proofType === "rate_limit");
+  const alreadyHasWebhook = deduplicatedProofTargets.some(t => t.proofType === "webhook");
+  const alreadyHasMassAssignment = deduplicatedProofTargets.some(t => t.proofType === "mass_assignment");
 
   const globalTargets: ProofTarget[] = [];
 
@@ -441,6 +461,8 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
         behaviorId: syntheticBehavior.id,
         proofType: "sql_injection",
         riskLevel: "critical",
+        evidenceLevel: deriveProofEvidenceLevel("sql_injection", analysis),
+        evidenceReason: buildProofEvidenceReason("sql_injection", analysis),
         endpoint: normalizeEndpointName(searchEp.name, searchEp.method),
         description: "SQL injection prevention — all user input must be parameterized",
         preconditions: ["User is authenticated"],
@@ -461,6 +483,8 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
         behaviorId: authBehavior.id,
         proofType: "hardcoded_secret",
         riskLevel: "critical",
+        evidenceLevel: deriveProofEvidenceLevel("hardcoded_secret", analysis),
+        evidenceReason: buildProofEvidenceReason("hardcoded_secret", analysis),
         endpoint: analysis.ir.apiEndpoints.find(e =>
           e.name.toLowerCase().includes("auth") || e.name.toLowerCase().includes("me")
         )?.name || "auth.me",
@@ -473,9 +497,99 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
     }
   }
 
-  const finalProofTargets = [...deduplicatedProofTargets, ...globalTargets];
+  if (hasRateLimitConcern && !alreadyHasRateLimit) {
+    const loginEp = analysis.ir.authModel?.loginEndpoint
+      || analysis.ir.apiEndpoints.find((endpoint) => /login|signin|auth/i.test(`${endpoint.name} ${endpoint.method}`))?.name
+      || analysis.ir.apiEndpoints[0]?.name;
+    const authBehavior = analysis.ir.behaviors.find((behavior) =>
+      /login|signin|auth/i.test(`${behavior.title} ${behavior.action} ${behavior.object}`)
+    ) || analysis.ir.behaviors[0];
+    if (authBehavior && loginEp) {
+      globalTargets.push({
+        id: "GLOBAL-RATE-LIMIT",
+        behaviorId: authBehavior.id,
+        proofType: "rate_limit",
+        riskLevel: "critical",
+        evidenceLevel: deriveProofEvidenceLevel("rate_limit", analysis),
+        evidenceReason: buildProofEvidenceReason("rate_limit", analysis),
+        endpoint: loginEp,
+        description: "Login throttling — repeated auth attempts must trigger rate limiting",
+        preconditions: ["Login endpoint accessible"],
+        assertions: [],
+        mutationTargets: [{ description: "Allow unlimited repeated login attempts without 429", expectedKill: true }],
+        constraints: [],
+      });
+    }
+  }
+
+  if (hasWebhookConcern && !alreadyHasWebhook) {
+    const webhookEndpoint = analysis.ir.apiEndpoints.find((endpoint) =>
+      /webhook|hook|event/i.test(`${endpoint.name} ${endpoint.method}`)
+    ) || analysis.ir.apiEndpoints[0];
+    const syntheticBehavior = analysis.ir.behaviors.find((behavior) =>
+      /webhook|hook|event/i.test(`${behavior.title} ${behavior.action} ${behavior.object}`)
+    ) || analysis.ir.behaviors[0];
+    if (syntheticBehavior && webhookEndpoint) {
+      globalTargets.push({
+        id: "GLOBAL-WEBHOOK",
+        behaviorId: syntheticBehavior.id,
+        proofType: "webhook",
+        riskLevel: "critical",
+        evidenceLevel: deriveProofEvidenceLevel("webhook", analysis),
+        evidenceReason: buildProofEvidenceReason("webhook", analysis),
+        endpoint: normalizeEndpointName(webhookEndpoint.name, webhookEndpoint.method),
+        description: "Webhook authenticity — unsigned or invalid webhook payloads must be rejected",
+        preconditions: ["Webhook endpoint configured"],
+        assertions: [],
+        mutationTargets: [{ description: "Accept unsigned webhook payload without signature verification", expectedKill: true }],
+        constraints: [],
+      });
+    }
+  }
+
+  if (hasMassAssignmentConcern && !alreadyHasMassAssignment) {
+    const mutableEndpoint = analysis.ir.apiEndpoints.find((endpoint) => {
+      const actionSignal = /create|update|register|edit|patch/i.test(endpoint.name);
+      const protectedFieldSignal = (endpoint.inputFields || []).some((field) => /role|isAdmin|tenantId|status/i.test(field.name));
+      return actionSignal && protectedFieldSignal;
+    }) || analysis.ir.apiEndpoints[0];
+    const syntheticBehavior = analysis.ir.behaviors.find((behavior) =>
+      /create|update|register|edit|profile|user/i.test(`${behavior.title} ${behavior.action} ${behavior.object}`)
+    ) || analysis.ir.behaviors[0];
+    if (syntheticBehavior && mutableEndpoint) {
+      globalTargets.push({
+        id: "GLOBAL-MASS-ASSIGNMENT",
+        behaviorId: syntheticBehavior.id,
+        proofType: "mass_assignment",
+        riskLevel: "critical",
+        evidenceLevel: deriveProofEvidenceLevel("mass_assignment", analysis),
+        evidenceReason: buildProofEvidenceReason("mass_assignment", analysis),
+        endpoint: normalizeEndpointName(mutableEndpoint.name, mutableEndpoint.method),
+        description: "Mass assignment protection — protected fields must not be writable via broad object updates",
+        preconditions: ["Authenticated low-privilege user"],
+        assertions: [],
+        mutationTargets: [{ description: "Blindly spread request payload into protected model fields", expectedKill: true }],
+        constraints: [],
+      });
+    }
+  }
+
+  const plannedProofTargets = [...deduplicatedProofTargets, ...globalTargets].filter(target => {
+    if ((target.proofType === "idor" || target.proofType === "cross_tenant_chain") && !analysis.ir.tenantModel) {
+      return false;
+    }
+    return true;
+  });
+  const profile = getProofGenerationProfile(analysis);
+  const finalProofTargets = plannedProofTargets.filter(target => profile.allowedProofTypes.has(target.proofType));
+  const skippedProofTargets = plannedProofTargets
+    .filter(target => !profile.allowedProofTypes.has(target.proofType))
+    .map(target => ({ id: target.id, proofType: target.proofType, reason: profile.skippedNote }));
   if (globalTargets.length > 0) {
     console.log(`[TestForge] Global Invariant Injection: +${globalTargets.length} targets (${globalTargets.map(t => t.proofType).join(", ")})`);
+  }
+  if (skippedProofTargets.length > 0) {
+    console.log(`[TestForge] Proof Planning (${profile.mode}): filtered ${skippedProofTargets.length} aggressive targets early`);
   }
 
   const idorVectors = analysis.ir.resources.reduce(
@@ -483,7 +597,19 @@ export function buildRiskModel(analysis: AnalysisResult): RiskModel {
   );
   const csrfEndpoints = behaviors.filter(b => b.proofTypes.includes("csrf")).length;
 
-  return { behaviors, proofTargets: finalProofTargets, idorVectors, csrfEndpoints };
+  return {
+    behaviors,
+    proofTargets: finalProofTargets,
+    skippedProofTargets,
+    proofPlanning: {
+      mode: profile.mode,
+      keptTargetCount: finalProofTargets.length,
+      skippedTargetCount: skippedProofTargets.length,
+      summary: profile.note,
+    },
+    idorVectors,
+    csrfEndpoints,
+  };
 }
 
 function assessRiskLevel(b: Behavior): RiskLevel {
@@ -528,7 +654,7 @@ function buildRationale(b: Behavior, level: RiskLevel): string {
 function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: AnalysisResult): string | undefined {
   // Find endpoint that mentions this behavior
   const direct = analysis.ir.apiEndpoints.find(e => e.relatedBehaviors.includes(behaviorId));
-  if (direct) return normalizeEndpointName(direct.name, direct.method);
+  if (direct) return endpointExecutionTarget(direct);
 
   // Fallback: find by proof type keywords
   const keywords: Record<ProofType, string[]> = {
@@ -574,7 +700,7 @@ function resolveEndpoint(behaviorId: string, proofType: ProofType, analysis: Ana
   const match = analysis.ir.apiEndpoints.find(e =>
     kws.some(kw => e.name.toLowerCase().includes(kw))
   );
-  return match ? normalizeEndpointName(match.name, match.method) : undefined;
+  return match ? endpointExecutionTarget(match) : undefined;
 }
 
 /**
@@ -782,7 +908,14 @@ export function extractConstraints(behavior: Behavior, ir: AnalysisIR): FieldCon
 
 export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: AnalysisResult): ProofTarget | null {
   const b = sb.behavior;
-  const base = { behaviorId: b.id, proofType: pt, riskLevel: sb.riskLevel };
+  if ((pt === "idor" || pt === "cross_tenant_chain") && !analysis.ir.tenantModel) return null;
+  const base = {
+    behaviorId: b.id,
+    proofType: pt,
+    riskLevel: sb.riskLevel,
+    evidenceLevel: deriveProofEvidenceLevel(pt, analysis),
+    evidenceReason: buildProofEvidenceReason(pt, analysis),
+  };
   const endpoint = resolveEndpoint(b.id, pt, analysis);
 
   // Extract side-effects from postconditions (field changes, counter increments, balance changes)
@@ -1184,6 +1317,68 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
       errorCodes,
     };
   }
+  if (pt === "negative_amount") {
+    const epDef = endpoint ? analysis.ir.apiEndpoints.find(e => e.name === endpoint) : null;
+    const inputFields = epDef?.inputFields || [];
+    const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+    const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+    const resolvedPayload: Record<string, unknown> = {};
+    for (const f of inputFields) {
+      resolvedPayload[f.name] = getValidDefault(f, tenantConst);
+    }
+    const amountField = inputFields.find((f) => /amount|price|total|fee|cost|charge|payment/i.test(f.name))?.name || "amount";
+    return {
+      ...base,
+      id: `PROOF-${b.id}-NEGAMOUNT`,
+      description: `Negative amount protection for ${endpoint || b.object}`,
+      preconditions: b.preconditions.length > 0 ? b.preconditions : ["Authenticated user", "Financial mutation endpoint accessible"],
+      assertions: [
+        { type: "http_status", target: "negative_amount_response", operator: "in", value: [400, 422], rationale: "Negative financial input must be rejected" },
+        { type: "field_value", target: "db.balance_delta", operator: "eq", value: 0, rationale: "Rejected negative amount must not mutate balances or totals" },
+      ],
+      mutationTargets: [
+        { description: `Remove positive-value validation for ${amountField}`, expectedKill: true },
+        { description: `Accept negative ${amountField} and apply it to balance updates`, expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+      resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
+      constraints: [{ field: amountField, type: "number", min: 0 }],
+    };
+  }
+  if (pt === "mass_assignment") {
+    const epDef = endpoint ? analysis.ir.apiEndpoints.find(e => e.name === endpoint) : null;
+    const inputFields = epDef?.inputFields || [];
+    const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
+    const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
+    const resolvedPayload: Record<string, unknown> = {};
+    for (const f of inputFields) {
+      resolvedPayload[f.name] = getValidDefault(f, tenantConst);
+    }
+    const protectedField = ["role", "isAdmin", "tenantId", "status"]
+      .find((candidate) => inputFields.some((field) => field.name === candidate)) || "role";
+    return {
+      ...base,
+      id: `PROOF-${b.id}-MASSASSIGN`,
+      description: `Mass assignment protection for ${endpoint || b.object}`,
+      preconditions: b.preconditions.length > 0 ? b.preconditions : ["Authenticated low-privilege user", "Mutable resource exists"],
+      assertions: [
+        { type: "http_status", target: "privileged_field_response", operator: "in", value: [400, 403, 422], rationale: "Protected fields must not be writable through broad payload updates" },
+        { type: "field_value", target: `db.${protectedField}`, operator: "not_contains", value: "admin", rationale: "Protected field must stay unchanged after rejected write" },
+      ],
+      mutationTargets: [
+        { description: `Blindly spread request body into model update for ${endpoint || b.object}`, expectedKill: true },
+        { description: `Allow caller to overwrite protected field '${protectedField}'`, expectedKill: true },
+      ],
+      endpoint,
+      sideEffects,
+      structuredSideEffects,
+      errorCodes,
+      resolvedPayload: Object.keys(resolvedPayload).length > 0 ? resolvedPayload : undefined,
+    };
+  }
   if (pt === "rate_limit") {
     const loginEp = analysis.ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
     return {
@@ -1413,3 +1608,23 @@ export function buildProofTarget(sb: ScoredBehavior, pt: ProofType, analysis: An
   return null;
 }
 
+function deriveProofEvidenceLevel(pt: ProofType, analysis: AnalysisResult): import("./types").EvidenceLevel {
+  const scope = analysis.supportedScope;
+  if (!scope) return "heuristic";
+  if (scope.tier === "gold") return "detected";
+  if (scope.tier === "experimental") return "heuristic";
+
+  const lowAssumptionTypes: ProofType[] = ["boundary", "spec_drift", "rate_limit", "webhook", "sql_injection", "hardcoded_secret"];
+  const mediumAssumptionTypes: ProofType[] = ["idor", "csrf", "business_logic", "status_transition", "auth_matrix", "dsgvo"];
+  if (lowAssumptionTypes.includes(pt)) return scope.evidenceLevel === "detected" ? "detected" : "inferred";
+  if (mediumAssumptionTypes.includes(pt)) return "inferred";
+  return "heuristic";
+}
+
+function buildProofEvidenceReason(pt: ProofType, analysis: AnalysisResult): string {
+  const scope = analysis.supportedScope;
+  if (!scope) return "No supported-scope assessment available; proof relies on fallback assumptions.";
+  if (scope.tier === "gold") return `Gold stack detected (${scope.primaryStack}); ${pt} proof is grounded in deterministic signals.`;
+  if (scope.tier === "experimental") return `Experimental stack (${scope.primaryStack}); ${pt} proof depends on heuristic extraction only.`;
+  return `${scope.primaryStack} detected below Gold Standard; ${pt} proof uses ${scope.evidenceLevel} stack signals with reduced certainty.`;
+}

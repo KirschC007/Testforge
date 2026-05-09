@@ -62,9 +62,9 @@ export const RISK_RULES: RiskRule[] = [
       keywords: ["csrf", "x-csrf", "double-submit", "csrf-token"],
       tags: ["csrf"],
       conditions: [
-        (b) => {
-          const method = (b as unknown as Record<string, unknown>).httpMethod as string | undefined;
-          return method === "POST" || method === "PATCH" || method === "DELETE";
+        (_b, ep) => {
+          const method = (ep?.method || "").toUpperCase();
+          return method.includes("POST") || method.includes("PATCH") || method.includes("DELETE");
         },
       ],
     },
@@ -118,8 +118,13 @@ export const RISK_RULES: RiskRule[] = [
     triggers: {
       conditions: [
         (_, ep) => (ep?.inputFields || []).some(
-          f => f.min !== undefined || f.max !== undefined
+          f => f.isBoundaryField || f.min !== undefined || f.max !== undefined
         ),
+        (_, ep) => {
+          const route = `${ep?.name || ""} ${ep?.method || ""}`;
+          const isRestPath = /(?:GET|POST|PUT|PATCH|DELETE)\s+\//i.test(route) && !/\/api\/trpc\//i.test(route);
+          return (ep?.inputFields || []).some(f => f.type !== "enum" && !f.isTenantKey);
+        },
       ],
       keywords: ["min", "max", "range", "limit", "length", "boundary", "validation", "must not exceed", "at least", "at most"],
     },
@@ -572,7 +577,7 @@ export const RISK_RULES: RiskRule[] = [
 export function evaluateRiskRules(
   behavior: Behavior,
   endpoint?: APIEndpoint,
-  _ir?: AnalysisIR
+  ir?: AnalysisIR
 ): Set<ProofType> {
   const types = new Set<ProofType>();
 
@@ -625,6 +630,33 @@ export function evaluateRiskRules(
       matched = rule.triggers.conditions.some(fn => {
         try { return fn(behavior, endpoint); } catch { return false; }
       });
+    }
+
+    if (matched && rule.proofType === "csrf") {
+      const explicitCsrfEvidence = /csrf|x-csrf|double-submit|csrf-token/i.test(combined)
+        || Boolean(ir?.authModel?.csrfEndpoint)
+        || /auth\.(login|signin)|\/auth\/(login|signin)|\/login|\/signin/i.test(endpoint?.name || endpoint?.method || "");
+      if (!explicitCsrfEvidence) matched = false;
+    }
+
+    if (matched && rule.proofType === "status_transition") {
+      const route = `${endpoint?.name || ""} ${endpoint?.method || ""}`.toLowerCase();
+      const method = (endpoint?.method || "").match(/^(GET|POST|PUT|PATCH|DELETE)\b/i)?.[1]?.toUpperCase()
+        || (endpoint?.name || "").match(/^(GET|POST|PUT|PATCH|DELETE)\b/i)?.[1]?.toUpperCase()
+        || "";
+      const hasWriteMethod = !method || method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+      const hasStatusEvidence = /status|state|transition|workflow|approve|reject|cancel|complete|archive|publish|unpublish|activate|suspend|freeze|unfreeze|ship/.test(`${combined} ${route}`);
+      if (!hasWriteMethod || !hasStatusEvidence) matched = false;
+    }
+
+    if (matched && rule.proofType === "boundary") {
+      const fields = endpoint?.inputFields || [];
+      const route = `${endpoint?.name || ""} ${endpoint?.method || ""}`;
+      const isRestPath = /(?:GET|POST|PUT|PATCH|DELETE)\s+\//i.test(route) && !/\/api\/trpc\//i.test(route);
+      const hasTypedConstraint = fields.some(f => f.isBoundaryField || f.min !== undefined || f.max !== undefined);
+      const hasTypedInputField = fields.some(f => f.type !== "enum" && !f.isTenantKey);
+      const hasTextConstraint = /(min|max|range|limit|length|boundary|must not exceed|at least|at most|minimum|maximum)/i.test(combined);
+      if (!fields.length || (!hasTypedConstraint && !hasTypedInputField && !hasTextConstraint)) matched = false;
     }
 
     if (matched) types.add(rule.proofType);

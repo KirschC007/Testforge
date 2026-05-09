@@ -216,11 +216,18 @@ const resolveApiUrl = () =>
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
 
+const resolveLlmTimeoutMs = () => {
+  const raw = Number(process.env.LLM_TIMEOUT_MS ?? 60_000);
+  return Number.isFinite(raw) && raw >= 1_000 ? raw : 60_000;
+};
+
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 };
+
+export const isLLMConfigured = () => ENV.forgeApiKey.trim().length > 0;
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -318,31 +325,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  // Hard timeout per LLM call — prevents one hung request from blocking a worker forever.
-  // 120s = 2 minutes, generous for slow Gemini/GPT-4 calls but still bounded.
-  const LLM_FETCH_TIMEOUT_MS = 120_000;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LLM_FETCH_TIMEOUT_MS);
-
-  let response: Response;
-  try {
-    response = await fetch(resolveApiUrl(), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new Error(`LLM call timed out after ${LLM_FETCH_TIMEOUT_MS}ms — provider may be slow or down`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await fetch(resolveApiUrl(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${ENV.forgeApiKey}`,
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(resolveLlmTimeoutMs()),
+  });
 
   if (!response.ok) {
     const errorText = await response.text();

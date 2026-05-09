@@ -28,7 +28,7 @@ test.describe("Browser: DSGVO Data Export & Deletion", () => {
       // Kills: Export button doesn't trigger download
     } else {
       // Export button not found — test that the settings page is accessible
-      await expect(page).not.toHaveURL(//login/, { timeout: 5000 });
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 });
       console.warn("[TestForge] DSGVO export button not found — check /profile or /settings page");
     }
   });
@@ -53,7 +53,7 @@ test.describe("Browser: DSGVO Data Export & Deletion", () => {
       }
     } else {
       // Deletion button not found — test that settings page is accessible
-      await expect(page).not.toHaveURL(//login/, { timeout: 5000 });
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 });
       console.warn("[TestForge] DSGVO delete button not found — check /profile or /settings page");
     }
   });

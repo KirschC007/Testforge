@@ -1,0 +1,75 @@
+name: Deploy TestForge
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_DIR: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_URL: ${{ secrets.APP_BASE_URL }}
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: DNS preflight
+        run: node --import tsx scripts/verify_dns_ready.ts
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Add deploy host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.HETZNER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync repository
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude 'node_modules' \
+            --exclude 'artifacts' \
+            ./ "${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}:${APP_DIR}/"
+
+      - name: Deploy on server
+        run: |
+          ssh "${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}" "
+            set -e
+            cd ${APP_DIR}
+            test -f .env
+            grep -Eq '^SERVER_NAME=.+$' .env
+            grep -Eq '^ACME_EMAIL=.+@.+$' .env
+            grep -Eq '^APP_BASE_URL=https://.+' .env
+            grep -Eq '^TRUSTED_HOSTS=.+$' .env
+            docker compose -f docker-compose.hetzner.yml config >/dev/null
+            docker compose -f docker-compose.hetzner.yml up -d --build --remove-orphans
+            docker compose -f docker-compose.hetzner.yml ps
+          "
+
+      - name: Smoke test deployment
+        run: node --import tsx scripts/smoke_deploy.ts

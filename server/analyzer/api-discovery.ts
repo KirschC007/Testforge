@@ -9,6 +9,8 @@
  * Results are merged back into the IR so LLM-guessed endpoints are replaced with real paths.
  */
 
+import { assertPublicHttpUrl } from "../_core/url-safety";
+
 export interface DiscoveredEndpoint {
   name: string;
   method: string;
@@ -132,6 +134,7 @@ export async function discoverAPI(
   baseUrl: string,
   authToken?: string
 ): Promise<DiscoveryResult> {
+  assertPublicHttpUrl(baseUrl, "Discovery base URL");
   const result: DiscoveryResult = {
     endpoints: [],
     framework: "unknown",

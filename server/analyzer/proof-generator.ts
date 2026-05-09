@@ -2,6 +2,7 @@ import { invokeLLM } from "../_core/llm";
 import { withTimeout, LLM_TIMEOUT_MS } from "./llm-parser";
 import type { Behavior, EndpointField, APIEndpoint, AnalysisResult, ProofType, ProofTarget, RiskModel, RawProof, FlowStep } from "./types";
 import { normalizeEndpointName } from "./normalize";
+import { getProofGenerationProfile, type ProofGenerationProfile } from "./proof-planning";
 import {
   generateSQLInjectionTest,
   generateHardcodedSecretTest,
@@ -11,6 +12,18 @@ import {
   generateConcurrentWriteTest,
   generateMassAssignmentTest,
 } from "./proof-templates-security";
+
+function prependGenerationBanner(code: string, profile: ProofGenerationProfile, analysis: AnalysisResult): string {
+  if (profile.mode === "gold") return code;
+  const confidence = analysis.supportedScope?.confidenceScore ?? 0;
+  const readiness = analysis.supportedScope?.goldReadinessScore ?? 0;
+  const banner = `// TestForge generation mode: ${profile.mode}\n// ${profile.note}\n// Confidence: ${confidence}/100 | Gold Readiness: ${readiness}/100\n\n`;
+  return `${banner}${code}`;
+}
+
+function isRawProof(value: RawProof | null): value is RawProof {
+  return value !== null;
+}
 
 // ─── Schicht 3: Proof Generator ───────────────────────────────────────────────
 
@@ -117,18 +130,6 @@ function getFilename(pt: ProofType): string {
     cross_tenant_chain: "tests/security/cross-tenant-chain.spec.ts",
     concurrent_write: "tests/concurrency/concurrent-writes.spec.ts",
     mass_assignment: "tests/security/mass-assignment.spec.ts",
-    db_transaction: "tests/integration/db-transactions.spec.ts",
-    audit_log: "tests/compliance/audit-log.spec.ts",
-    graphql: "tests/security/graphql.spec.ts",
-    accessibility: "tests/accessibility/wcag.spec.ts",
-    property_based: "tests/property/fuzz.spec.ts",
-    e2e_smart_form: "tests/e2e/smart-forms.spec.ts",
-    e2e_user_journey: "tests/e2e/user-journeys.spec.ts",
-    e2e_perf_budget: "tests/e2e/perf-budgets.spec.ts",
-    e2e_visual: "tests/e2e/visual-regression.spec.ts",
-    e2e_network: "tests/e2e/network-conditions.spec.ts",
-    e2e_a11y_full: "tests/e2e/wcag-full.spec.ts",
-    stateful_sequence: "tests/integration/stateful-sequences.spec.ts",
   };
   return map[pt];
 }
@@ -305,6 +306,30 @@ function findBoundaryField(fields: EndpointField[], preferredName?: string): End
   return nonTenant || fields[0];
 }
 
+function resolveEndpointDef(analysis: AnalysisResult, rawEndpoint?: string): APIEndpoint | undefined {
+  if (!rawEndpoint) return undefined;
+  const raw = rawEndpoint.trim();
+  const rest = raw.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(.+)$/i);
+  const method = rest?.[1]?.toUpperCase();
+  const path = rest?.[2];
+  const normalizedFromRaw = normalizeEndpointName(raw);
+  const normalizedFromPath = path ? normalizeEndpointName(path, method) : undefined;
+
+  return analysis.ir.apiEndpoints.find((endpoint) => {
+    const endpointMethod = (endpoint.method || "").trim();
+    const endpointName = (endpoint.name || "").trim();
+    const endpointMethodUpper = endpointMethod.toUpperCase();
+    const endpointNameUpper = endpointName.toUpperCase();
+    if (endpointName === raw || endpointMethod === raw) return true;
+    if (method && path && (endpointMethodUpper === `${method} ${path}`.toUpperCase() || endpointNameUpper === `${method} ${path}`.toUpperCase())) return true;
+    if (path && (endpointMethod === path || endpointName === path)) return true;
+    return normalizeEndpointName(endpointName, endpointMethod) === normalizedFromRaw ||
+      normalizeEndpointName(endpointMethod || endpointName) === normalizedFromRaw ||
+      (normalizedFromPath ? normalizeEndpointName(endpointName, endpointMethod) === normalizedFromPath : false) ||
+      (normalizedFromPath ? normalizeEndpointName(endpointMethod || endpointName) === normalizedFromPath : false);
+  });
+}
+
 /**
  * Finds the best boundary field for a behavior using semantic keyword matching.
  * This is the new behavior-aware version that matches the spec's field lookup logic.
@@ -354,7 +379,7 @@ export function findBoundaryFieldForBehavior(
  * Admin is preferred because most mutations require elevated privileges.
  * Falls back to owner, then the first role if no admin role is found.
  */
-export function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
+function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): { name: string } | undefined {
   if (!authModel?.roles?.length) return undefined;
   // Filter out roles with empty/undefined names (LLM sometimes returns empty strings)
   const validRoles = authModel.roles.filter(
@@ -374,7 +399,7 @@ export function getPreferredRole(authModel: AnalysisResult["ir"]["authModel"]): 
  * e.g. { name: "admin" } → "getAdminCookie"
  * e.g. { name: "bank_admin" } → "getBankAdminCookie"
  */
-export function roleToCookieFn(role: { name: string } | undefined): string {
+function roleToCookieFn(role: { name: string } | undefined): string {
   if (!role) return "getAdminCookie";
   return `get${role.name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`;
 }
@@ -885,12 +910,15 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId);
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
+  const targetEndpointDef = resolveEndpointDef(analysis, target.endpoint);
+  const targetEndpointName = targetEndpointDef?.name || target.endpoint;
 
   // Smart endpoint resolution for status transitions:
   // Different transitions may use different endpoints (e.g. accounts.freeze vs transactions.status)
   // Strategy: match the transition target state to endpoint names
   const behaviorText = [behavior?.title || "", ...behavior?.preconditions || [], ...behavior?.postconditions || []].join(" ").toLowerCase();
   const resolveTransitionEndpoint = (toState: string): string => {
+    if (targetEndpointName) return normalizeEndpointName(targetEndpointName, targetEndpointDef?.method);
     // 1. Direct match: endpoint name contains the target state (e.g. "freeze", "unfreeze", "close", "cancel")
     const stateEndpoint = analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes(toState.replace(/_/g, ""))
@@ -917,7 +945,13 @@ function generateStatusTransitionTest(target: ProofTarget, analysis: AnalysisRes
   const hasEndpoint = !!target.endpoint;
   // Find a GET endpoint to verify status after transition
   // Prefer getById, but fall back to any list/get endpoint (orders.list, products.list, etc.)
+  const targetResource = normalizeEndpointName(targetEndpointName || "").split(".")[0]?.toLowerCase();
   const getEndpoint = (
+    analysis.ir.apiEndpoints.find(e => {
+      const name = normalizeEndpointName(e.name, e.method).toLowerCase();
+      const method = (e.method || e.name).toUpperCase();
+      return targetResource && name.startsWith(`${targetResource}.`) && method.startsWith("GET");
+    }) ??
     analysis.ir.apiEndpoints.find(e =>
       e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("getby")) ??
     analysis.ir.apiEndpoints.find(e =>
@@ -1437,7 +1471,7 @@ function generateBoundaryTestLegacy(target: ProofTarget, analysis: AnalysisResul
   const isDateField = primaryConstraint?.type === "date" || allText.toLowerCase().includes("date") || allText.toLowerCase().includes("future");
   const isArrayField = primaryConstraint?.type === "array" || allText.toLowerCase().includes("array") || allText.toLowerCase().includes("items");
 
-  const targetEndpointDef = target.endpoint ? analysis.ir.apiEndpoints.find(e => e.name === target.endpoint) : undefined;
+  const targetEndpointDef = resolveEndpointDef(analysis, target.endpoint);
   const createEndpoint = targetEndpointDef || analysis.ir.apiEndpoints.find(e =>
     e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
   const knownFields = createEndpoint?.inputFields || [];
@@ -1527,14 +1561,36 @@ function generateBoundaryTest(target: ProofTarget, analysis: AnalysisResult): st
   const behavior = analysis.ir.behaviors.find(b => b.id === target.behaviorId)!;
   const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
 
-  const endpointDef = analysis.ir.apiEndpoints.find(e => e.name === endpoint);
+  const endpointDef = resolveEndpointDef(analysis, target.endpoint) ||
+    analysis.ir.apiEndpoints.find(e => e.name === endpoint);
 
   // Use new behavior-aware findBoundaryField with semantic keyword matching
-  const boundaryField = findBoundaryFieldForBehavior(behavior, endpointDef);
+  const preferredField = target.constraints?.find(c => c.field && c.type !== "enum")?.field;
+  const boundaryField = findBoundaryFieldForBehavior(behavior, endpointDef) ||
+    findBoundaryField(endpointDef?.inputFields || [], preferredField);
 
   if (!boundaryField) {
+    if (endpointDef) {
+      return generateTODOStub(target, `No typed input field with boundary evidence was detected for ${target.endpoint || endpoint}.`);
+    }
     // Fallback: legacy constraint-based approach
     return generateBoundaryTestLegacy(target, analysis);
+  }
+  const behaviorText = [
+    behavior.title,
+    ...(behavior.preconditions || []),
+    ...(behavior.postconditions || []),
+    ...(behavior.errorCases || []),
+    target.description,
+  ].join(" ");
+  const hasBoundaryEvidence = boundaryField.isBoundaryField ||
+    boundaryField.min !== undefined ||
+    boundaryField.max !== undefined ||
+    (target.constraints || []).some(c => c.field === boundaryField.name && (c.min !== undefined || c.max !== undefined)) ||
+    (boundaryField.type !== "enum" && !boundaryField.isTenantKey) ||
+    /(min|max|range|limit|length|boundary|must not exceed|at least|at most|minimum|maximum)/i.test(behaviorText);
+  if (endpointDef && !hasBoundaryEvidence) {
+    return generateTODOStub(target, `Boundary generation skipped because ${boundaryField.name} has no concrete min/max/range evidence.`);
   }
 
   // All other required fields with valid defaults
@@ -2809,51 +2865,29 @@ ${payloadStr}
 test.describe("Concurrency: ${behaviorTitle}", () => {
   let cookie: string;
 
-  // test.retries(1): race condition timing is non-deterministic on slow CI machines
-  test.retries(1);
-
   test.beforeAll(async ({ request }) => {
     cookie = await ${roleFnName}(request);
   });
 
-  test("concurrent ${action} requests — exactly one must succeed, rest must get 409", async ({ request }) => {
+  test("concurrent ${action} requests must not cause race conditions", async ({ request }) => {
     const CONCURRENCY = 5;
-
-    // Baseline: count existing ${object}s BEFORE the burst
-    const beforeList = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
-    const countBefore = (beforeList.data?.result?.data as unknown[])?.length ?? 0;
-
     // Fire \${CONCURRENCY} identical requests simultaneously
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
         trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
       )
     );
-
+    // At most one must succeed (or all must return deterministic results)
     const successCount = responses.filter(r => r.status === 200 || r.status === 201).length;
     const conflictCount = responses.filter(r => r.status === 409 || r.status === 429).length;
+    // Either exactly one succeeds (optimistic locking) or all succeed idempotently
+    expect(successCount + conflictCount).toBe(CONCURRENCY);
+    // No 500 errors allowed — system must handle concurrency gracefully
     const errorCount = responses.filter(r => r.status >= 500).length;
-
-    // Exactly one write must succeed — optimistic/pessimistic locking must prevent duplicates
-    expect(successCount).toBe(1);
-    // Kills: Remove DB uniqueness constraint — allows all 5 concurrent writes to succeed
-
-    // All remaining requests must return 409 Conflict (not silently fail or succeed)
-    expect(conflictCount).toBeGreaterThanOrEqual(CONCURRENCY - 1);
-    // Kills: Silently discard duplicate writes and return 200 instead of 409
-
-    // No 500s — concurrency must be handled gracefully, not with unhandled exceptions
     expect(errorCount).toBe(0);
-    // Kills: Unhandled DB deadlock exception returning 500 instead of 409
-
-    // DB state: only ONE new ${object} must have been created
-    const afterList = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
-    const countAfter = (afterList.data?.result?.data as unknown[])?.length ?? 0;
-    expect(countAfter - countBefore).toBe(1);
-    // Kills: Allow N concurrent writes to all persist — removes uniqueness enforcement
   });
 
-  test("concurrent ${action} must not produce duplicate ${object} IDs", async ({ request }) => {
+  test("concurrent ${action} must not create duplicate ${object}s", async ({ request }) => {
     const CONCURRENCY = 3;
     const responses = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
@@ -2861,27 +2895,36 @@ test.describe("Concurrency: ${behaviorTitle}", () => {
       )
     );
     const successResponses = responses.filter(r => r.status === 200 || r.status === 201);
-    const ids = successResponses.map(r => r.data?.result?.data?.id).filter(Boolean);
-    const uniqueIds = new Set(ids);
-    // All successful responses must reference distinct resources (no ID aliasing)
-    expect(uniqueIds.size).toBe(ids.length);
-    // Kills: Return same ID for concurrent creates (ID generator collision)
+    // If multiple succeed, they must return the same resource (idempotent)
+    if (successResponses.length > 1) {
+      const ids = successResponses.map(r => r.data?.result?.data?.id).filter(Boolean);
+      const uniqueIds = new Set(ids);
+      // All successful responses must reference the same resource
+      expect(uniqueIds.size).toBeLessThanOrEqual(1);
+    }
   });
 
-  test("system state is consistent after concurrent ${action} burst", async ({ request }) => {
-    const CONCURRENCY = 4;
+  test("system remains consistent after concurrent ${action}", async ({ request }) => {
+    // Perform concurrent operations
     await Promise.all(
-      Array.from({ length: CONCURRENCY }, () =>
+      Array.from({ length: 3 }, () =>
         trpcMutation(request, "${endpoint}", basePayload_${fnSuffix}(), cookie)
       )
     );
-    // Verify list endpoint returns well-formed data — no corrupted rows from partial writes
+    // Verify system state is consistent (no partial writes, no corruption)
     const listResponse = await trpcQuery(request, "${endpoint.split(".")[0]}.list", { ${tenantEntity}Id: ${tenantConst} }, cookie);
     expect(listResponse.status).toBe(200);
-    // Kills: Concurrent writes leave the DB in an inconsistent state causing list to fail
     const items = listResponse.data?.result?.data;
     expect(Array.isArray(items)).toBe(true);
-    // Kills: Partial write creates a null/corrupted row causing non-array response
+    // No duplicate entries with identical data
+    if (items && items.length > 1) {
+      const seen = new Set<string>();
+      for (const item of items) {
+        const key = JSON.stringify(item);
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
   });
 });
 `;
@@ -3070,10 +3113,10 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
     expect([401, 403]).toContain(response.status);
     // Kills: ${killDesc} — verify no data leaked in error response
-    const body = (response.data as any)?.result?.data ?? (response.data as any)?.result?.error;
+    const body = response.data?.result?.data ?? response.data?.result?.error;
     expect(body).toBeFalsy();
     // Kills: ${killDesc} — verify error code is present
-    const errorCode = (response.data as any)?.error?.data?.code ?? (response.data as any)?.result?.error?.data?.code;
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });`;
     } else {
@@ -3085,7 +3128,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
     expect([200, 201]).toContain(response.status);
     // Kills: ${killDesc} — verify response has expected structure (not empty/null)
-    const data = (response.data as any)?.result?.data;
+    const data = response.data?.result?.data;
     expect(data).not.toBeNull();
     expect(data).not.toBeUndefined();
   });`;
@@ -3100,7 +3143,7 @@ export function generateAuthMatrixTest(target: ProofTarget, analysis: AnalysisRe
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), roleCookie);
     expect([401, 403]).toContain(response.status);
     // Must not leak any data in error response
-    const data = (response.data as any)?.result?.data;
+    const data = response.data?.result?.data;
     expect(data).toBeFalsy();
   });`;
   }).join("\n");
@@ -3123,17 +3166,17 @@ test.describe("Auth Matrix: ${behaviorTitle}", () => {
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), cookie);
     expect([200, 201]).toContain(response.status);
     // Verify response has data (not empty)
-    const data = (response.data as any)?.result?.data;
+    const data = response.data?.result?.data;
     expect(data).not.toBeNull();
   });
   test("unauthenticated request must be rejected", async ({ request }) => {
     const response = await ${trpcFn}(request, "${endpoint}", basePayload_${fnSuffix}(), "");
     expect([401, 403]).toContain(response.status);
     // Must not leak data to unauthenticated callers
-    const data = (response.data as any)?.result?.data;
+    const data = response.data?.result?.data;
     expect(data).toBeFalsy();
     // Verify error code is UNAUTHORIZED
-    const errorCode = (response.data as any)?.error?.data?.code ?? (response.data as any)?.result?.error?.data?.code;
+    const errorCode = response.data?.error?.data?.code ?? response.data?.result?.error?.data?.code;
     expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(errorCode);
   });
 ${nonAdminTests}
@@ -3146,7 +3189,7 @@ ${nonAdminTests}
     const response = await ${trpcFn}(request, "${endpoint}", crossTenantPayload, cookie);
     expect([401, 403, 404]).toContain(response.status);
     // Must not leak data from other tenant
-    const leakedData = (response.data as any)?.result?.data;
+    const leakedData = response.data?.result?.data;
     expect(leakedData).toBeFalsy();
   });
 ${mutationKillTests}
@@ -3310,7 +3353,7 @@ export function generateWebhookTest(target: ProofTarget, analysis: AnalysisResul
     behavior?.title.match(/([a-z]+\.[a-z]+)/)?.[1] || "order.completed";
 
   return `import { test, expect } from "@playwright/test";
-import { trpcMutation, pollUntil } from "../../helpers/api";
+import { trpcMutation } from "../../helpers/api";
 import { ${roleFnName} } from "../../helpers/auth";
 import { ${tenantConst} } from "../../helpers/factories";
 import crypto from "crypto";
@@ -3355,34 +3398,6 @@ test("${target.id}c — webhook with missing signature is rejected (401)", async
 
   expect(status).toBe(401);
   // Kills: Allow unsigned webhook delivery
-});
-
-test("${target.id}d — webhook delivery is eventually consistent (pollUntil pattern)", async ({ request }) => {
-  // This test documents the async delivery assertion pattern.
-  // Replace 'jobs.status' with your actual job-status or delivery-log endpoint.
-  const { status, data } = await trpcMutation(request, "${webhookEndpoint}",
-    { event: "${eventType}", ${tenantField}: ${tenantConst}, timestamp: Date.now() },
-    adminCookie, { "x-webhook-signature": "test-sig-bypass" }
-  );
-
-  // Step 1: Trigger is synchronous — endpoint must ack immediately
-  expect([200, 202]).toContain(status);
-  // Kills: Webhook handler blocks on delivery instead of queuing → timeout under load
-
-  const jobId = (data as Record<string, unknown>)?.id || (data as Record<string, unknown>)?.jobId;
-  if (jobId) {
-    // Step 2: Delivery is async — poll until the downstream effect is visible
-    // Replace 'jobs.getStatus' with your actual polling endpoint
-    await pollUntil(
-      async () => {
-        const r = await trpcMutation(request, "jobs.getStatus", { id: jobId }, adminCookie);
-        return (r.data as Record<string, unknown>)?.status === "delivered";
-      },
-      15000, // 15s timeout for webhook delivery
-      500,
-    );
-    // Kills: Webhook queued but never delivered (dead-letter queue not monitored)
-  }
 });
 `;
 }
@@ -3551,6 +3566,7 @@ ${successAssertions}
 
 export async function generateProofs(riskModel: RiskModel, analysis: AnalysisResult): Promise<RawProof[]> {
   const t0 = Date.now();
+  const profile = getProofGenerationProfile(analysis);
 
   // Categorize targets
   const templateMap: Record<string, (target: ProofTarget, analysis: AnalysisResult) => string> = {
@@ -3578,27 +3594,20 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
     cross_tenant_chain: generateCrossTenantChainTest,
     concurrent_write: generateConcurrentWriteTest,
     mass_assignment: generateMassAssignmentTest,
-    db_transaction: generateDBTransactionTest,
-    audit_log: generateAuditLogTest,
-    graphql: generateGraphQLTest,
-    accessibility: generateAccessibilityTest,
-    property_based: generatePropertyTest,
-    e2e_smart_form: generateE2ESmartFormTest,
-    e2e_user_journey: generateE2EUserJourneyTest,
-    e2e_perf_budget: generateE2EPerfBudgetTest,
-    e2e_visual: generateE2EVisualTest,
-    e2e_network: generateE2ENetworkTest,
-    e2e_a11y_full: generateE2EAccessibilityFullTest,
-    stateful_sequence: generateStatefulSequenceTest,
   };
 
-  const templateTargets = riskModel.proofTargets.filter(t => templateMap[t.proofType]);
-  const llmTargets = riskModel.proofTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
+  const eligibleTargets = riskModel.proofTargets.filter(t => profile.allowedProofTypes.has(t.proofType));
+  const skippedTargets = riskModel.proofTargets.filter(t => !profile.allowedProofTypes.has(t.proofType));
+  const templateTargets = eligibleTargets.filter(t => templateMap[t.proofType]);
+  const llmTargets = eligibleTargets.filter(t => !templateMap[t.proofType]); // all types now have templates
 
-  console.log(`[TestForge] Schicht 3: ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL`);
+  console.log(`[TestForge] Schicht 3 (${profile.mode}): ${templateTargets.length} template tests, ${llmTargets.length} LLM tests — ALL PARALLEL`);
+  if (skippedTargets.length > 0) {
+    console.log(`[TestForge] Proof profile filtered ${skippedTargets.length} targets — ${profile.skippedNote}`);
+  }
 
   // Template tests (instant)
-  const templateProofs: RawProof[] = templateTargets.map(target => {
+  const templateProofs: RawProof[] = templateTargets.map((target): RawProof | null => {
     const generator = templateMap[target.proofType];
     let code: string;
     try {
@@ -3615,20 +3624,25 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
       console.warn(`[TestForge] Syntax error in ${target.id}: ${syntaxError}`);
       code = generateTODOStub(target, `Syntax error: ${syntaxError}`);
     }
+    code = prependGenerationBanner(code, profile, analysis);
     return {
       id: target.id,
       behaviorId: target.behaviorId,
       proofType: target.proofType,
       riskLevel: target.riskLevel,
+      evidenceLevel: target.evidenceLevel,
+      evidenceReason: target.evidenceReason,
       filename: getFilename(target.proofType),
       code,
       mutationTargets: target.mutationTargets,
+      generationMode: profile.mode,
+      qualityNotes: [profile.note, target.evidenceReason],
     };
-  }).filter((p): p is RawProof => p !== null);
+  }).filter(isRawProof);
 
   // LLM tests — ALL parallel, no limit
-  const llmProofs: RawProof[] = (await Promise.all(
-    llmTargets.map(async (target) => {
+  const llmProofResults: Array<RawProof | null> = await Promise.all(
+    llmTargets.map(async (target): Promise<RawProof | null> => {
       try {
         let code = await withTimeout(generateLLMTest(target, analysis), LLM_TIMEOUT_MS, "");
         if (!code) return null;
@@ -3643,1708 +3657,29 @@ export async function generateProofs(riskModel: RiskModel, analysis: AnalysisRes
             code = generateTODOStub(target, `LLM syntax error: ${llmSyntaxError}`);
           }
         }
+        code = prependGenerationBanner(code, profile, analysis);
         console.log(`[TestForge] LLM test ${target.id} done in ${Date.now() - t0}ms`);
         return {
           id: target.id,
           behaviorId: target.behaviorId,
           proofType: target.proofType,
           riskLevel: target.riskLevel,
+          evidenceLevel: target.evidenceLevel,
+          evidenceReason: target.evidenceReason,
           filename: getFilename(target.proofType),
           code,
           mutationTargets: target.mutationTargets,
+          generationMode: profile.mode,
+          qualityNotes: [profile.note, target.evidenceReason],
         };
       } catch (err) {
         console.warn(`[TestForge] LLM test failed for ${target.id}:`, err);
         return null;
       }
     })
-  )).filter((p): p is RawProof => p !== null);
+  );
+  const llmProofs: RawProof[] = llmProofResults.filter(isRawProof);
 
   console.log(`[TestForge] Schicht 3 done in ${Date.now() - t0}ms — ${templateProofs.length + llmProofs.length} proofs`);
   return [...templateProofs, ...llmProofs];
 }
-
-// ─── DB Transaction / Rollback Test Generator ─────────────────────────────────
-/**
- * Verifies atomicity: when a multi-step operation fails mid-way, no partial writes persist.
- * Tests the most common backend bug: partial DB writes when step 2 fails after step 1 succeeded.
- *
- * Mutation targets:
- * - Missing try/catch with rollback → partial write stays in DB
- * - Missing DB transaction wrapper → commit happens after step 1 regardless of step 2
- */
-export function generateDBTransactionTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
-  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
-
-  // Find a create + update endpoint pair for the transaction test
-  const createEp = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create")) || ir.apiEndpoints[0];
-  const updateEp = ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("update") || e.name.toLowerCase().includes("status")
-  ) || ir.apiEndpoints[1] || createEp;
-
-  const createEndpoint = normalizeEndpointName(createEp?.name || "TODO_REPLACE_WITH_CREATE_ENDPOINT");
-  const updateEndpoint = normalizeEndpointName(updateEp?.name || "TODO_REPLACE_WITH_UPDATE_ENDPOINT");
-  const listEndpoint = `${createEndpoint.split(".")[0]}.list`;
-
-  const object = behavior?.object || createEndpoint.split(".").pop() || "resource";
-  const behaviorTitle = behavior?.title || target.description;
-
-  // Build a valid create payload from createEp fields
-  const createFields = createEp?.inputFields || [];
-  const payloadLines: string[] = [];
-  for (const f of createFields) {
-    payloadLines.push(`    ${f.name}: ${getValidDefault(f, tenantConst)},`);
-  }
-  if (payloadLines.length === 0) payloadLines.push(`    ${tenantField}: ${tenantConst},`);
-  const payloadStr = payloadLines.join("\n");
-
-  return `import { test, expect } from "@playwright/test";
-import { trpcMutation, trpcQuery } from "../../helpers/api";
-import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
-
-// ${target.id} — DB Transaction Atomicity: ${behaviorTitle}
-// Risk: ${target.riskLevel}
-// Verifies: partial writes are rolled back when a multi-step operation fails
-
-let cookie: string;
-
-test.beforeAll(async ({ request }) => {
-  cookie = await ${roleFnName}(request);
-});
-
-test("${target.id}a — successful create persists all data atomically", async ({ request }) => {
-  // Step 1: Create resource with valid payload
-  const created = await trpcMutation(request, "${createEndpoint}", {
-${payloadStr}
-  }, cookie);
-
-  expect([200, 201]).toContain(created.status);
-  // Kills: Return 200 without actually writing to DB
-
-  const createdId = created.data?.result?.data?.id;
-  expect(createdId).toBeDefined();
-  // Kills: Auto-increment ID not returned — can't verify persistence
-
-  // Step 2: Verify the resource was actually persisted (not just returned in-memory)
-  const fetched = await trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  expect(fetched.status).toBe(200);
-  const items = fetched.data?.result?.data as Array<{ id: unknown }> | undefined;
-  const found = items?.find(i => i.id === createdId);
-  expect(found).toBeDefined();
-  // Kills: Resource created in-memory but not committed to DB
-});
-
-test("${target.id}b — failed operation leaves no partial write in DB", async ({ request }) => {
-  // Get baseline count BEFORE the failing operation
-  const beforeList = await trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  const countBefore = (beforeList.data?.result?.data as unknown[])?.length ?? 0;
-
-  // Trigger a failure by sending an intentionally invalid payload (missing required field)
-  const failing = await trpcMutation(request, "${createEndpoint}", {
-    ${tenantField}: ${tenantConst},
-    __invalid_field__: "trigger_failure",
-  }, cookie);
-
-  // Must return an error status — not silently succeed
-  expect(failing.status).not.toBe(200);
-  expect(failing.status).not.toBe(201);
-  // Kills: Accept invalid payload and partially persist data before validation
-
-  // DB state must be unchanged — no partial write
-  const afterList = await trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  const countAfter = (afterList.data?.result?.data as unknown[])?.length ?? 0;
-  expect(countAfter).toBe(countBefore);
-  // Kills: Missing DB transaction — step 1 write commits even when step 2 fails
-});
-
-test("${target.id}c — concurrent create + update is atomic (no torn read)", async ({ request }) => {
-  // Create a resource first
-  const created = await trpcMutation(request, "${createEndpoint}", {
-${payloadStr}
-  }, cookie);
-  expect([200, 201]).toContain(created.status);
-  const resourceId = created.data?.result?.data?.id;
-
-  // Simultaneously: try to read and update — reader must never see a half-updated state
-  const [readResult, _updateResult] = await Promise.all([
-    trpcQuery(request, "${listEndpoint}", { ${tenantField}: ${tenantConst} }, cookie),
-    trpcMutation(request, "${updateEndpoint}", { id: resourceId, ${tenantField}: ${tenantConst} }, cookie),
-  ]);
-
-  expect(readResult.status).toBe(200);
-  // Kills: Read returns corrupt/null rows during concurrent write (missing read lock)
-  const items = readResult.data?.result?.data;
-  expect(Array.isArray(items)).toBe(true);
-  // Kills: Concurrent write corrupts the list endpoint response structure
-});
-`;
-}
-
-// ─── Audit Log Validation Test Generator ──────────────────────────────────────
-/**
- * Verifies that security-sensitive actions produce immutable audit trail entries.
- * Critical for HIPAA, PSD2, SOX, and GDPR compliance.
- *
- * Mutation targets:
- * - Missing audit log write → sensitive action goes unrecorded
- * - Wrong actor recorded → audit trail is useless for forensics
- * - Audit entries can be deleted → immutability violated
- */
-export function generateAuditLogTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
-  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
-  const behaviorTitle = behavior?.title || target.description;
-
-  // Find or infer the audit log endpoint
-  const auditEp = ir.apiEndpoints.find(e => {
-    const n = e.name.toLowerCase();
-    return n.includes("audit") || n.includes("log") || n.includes("history") || n.includes("event");
-  });
-  const auditEndpoint = auditEp
-    ? normalizeEndpointName(auditEp.name)
-    : `${tenantEntity}s.auditLog`;
-
-  // Find a security-sensitive action endpoint
-  const sensitiveEp = ir.apiEndpoints.find(e => {
-    const n = e.name.toLowerCase();
-    return n.includes("delete") || n.includes("update") || n.includes("cancel") ||
-           n.includes("transfer") || n.includes("admin");
-  }) || ir.apiEndpoints.find(e => e.auth !== "public") || ir.apiEndpoints[0];
-  const sensitiveEndpoint = normalizeEndpointName(sensitiveEp?.name || "TODO_REPLACE_WITH_SENSITIVE_ENDPOINT");
-
-  // Build a minimal payload for the sensitive action
-  const sensitiveFields = sensitiveEp?.inputFields || [];
-  const payloadLines: string[] = [];
-  for (const f of sensitiveFields.slice(0, 3)) {
-    payloadLines.push(`    ${f.name}: ${getValidDefault(f, tenantConst)},`);
-  }
-  if (payloadLines.length === 0) payloadLines.push(`    ${tenantField}: ${tenantConst},`);
-  const payloadStr = payloadLines.join("\n");
-
-  return `import { test, expect } from "@playwright/test";
-import { trpcMutation, trpcQuery } from "../../helpers/api";
-import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
-
-// ${target.id} — Audit Log Validation: ${behaviorTitle}
-// Risk: ${target.riskLevel}
-// Compliance: HIPAA / PSD2 / SOX / GDPR — every sensitive action must produce an audit entry
-
-let cookie: string;
-
-test.beforeAll(async ({ request }) => {
-  cookie = await ${roleFnName}(request);
-});
-
-test("${target.id}a — sensitive action creates an audit log entry", async ({ request }) => {
-  const actionTimestamp = Date.now();
-
-  // Perform the security-sensitive action
-  const action = await trpcMutation(request, "${sensitiveEndpoint}", {
-${payloadStr}
-  }, cookie);
-
-  expect([200, 201, 204]).toContain(action.status);
-  // Kills: Sensitive action endpoint is completely unimplemented
-
-  // Wait briefly for async audit write (if needed)
-  await new Promise(r => setTimeout(r, 200));
-
-  // Audit log must contain an entry for this action
-  const auditLog = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  expect(auditLog.status).toBe(200);
-  // Kills: Audit log endpoint returns 404 — audit trail not implemented
-
-  const entries = auditLog.data?.result?.data as Array<{
-    action?: string; actor?: string; timestamp?: string | number; resourceId?: unknown;
-  }> | undefined;
-
-  expect(Array.isArray(entries)).toBe(true);
-  // Kills: Audit entries stored in non-queryable format
-
-  // At least one entry must exist after the action timestamp
-  const recentEntries = entries?.filter(e => {
-    const ts = e.timestamp ? new Date(e.timestamp).getTime() : 0;
-    return ts >= actionTimestamp - 1000;
-  });
-  expect((recentEntries?.length ?? 0)).toBeGreaterThan(0);
-  // Kills: Audit log write is skipped or runs after a timeout
-});
-
-test("${target.id}b — audit entry contains required fields (actor, action, timestamp)", async ({ request }) => {
-  // Perform a sensitive action to generate a fresh audit entry
-  await trpcMutation(request, "${sensitiveEndpoint}", {
-${payloadStr}
-  }, cookie);
-
-  const auditLog = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  expect(auditLog.status).toBe(200);
-
-  const entries = auditLog.data?.result?.data as Array<Record<string, unknown>> | undefined;
-  const latestEntry = entries?.[entries.length - 1] ?? entries?.[0];
-
-  expect(latestEntry).toBeDefined();
-  // Kills: Empty audit log — no entries written
-
-  // Actor field must be present (who performed the action)
-  const hasActor = "actor" in (latestEntry ?? {}) || "userId" in (latestEntry ?? {}) ||
-    "performedBy" in (latestEntry ?? {}) || "createdBy" in (latestEntry ?? {});
-  expect(hasActor).toBe(true);
-  // Kills: Audit entry written without recording which user performed the action
-
-  // Timestamp must be present (when did it happen)
-  const hasTimestamp = "timestamp" in (latestEntry ?? {}) || "createdAt" in (latestEntry ?? {}) ||
-    "occurredAt" in (latestEntry ?? {}) || "at" in (latestEntry ?? {});
-  expect(hasTimestamp).toBe(true);
-  // Kills: Audit entry has no timestamp — forensic timeline is impossible
-
-  // Action type must be present (what happened)
-  const hasAction = "action" in (latestEntry ?? {}) || "event" in (latestEntry ?? {}) ||
-    "type" in (latestEntry ?? {}) || "operation" in (latestEntry ?? {});
-  expect(hasAction).toBe(true);
-  // Kills: Audit entry has no action field — can't determine what was done
-});
-
-test("${target.id}c — audit log entries are immutable (cannot be deleted)", async ({ request }) => {
-  // Record the current audit log size
-  const before = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  const entriesBefore = (before.data?.result?.data as unknown[])?.length ?? 0;
-
-  // Perform an action to create an entry
-  await trpcMutation(request, "${sensitiveEndpoint}", {
-${payloadStr}
-  }, cookie);
-
-  const after = await trpcQuery(request, "${auditEndpoint}", { ${tenantField}: ${tenantConst} }, cookie);
-  const entriesAfter = (after.data?.result?.data as unknown[])?.length ?? 0;
-
-  // Audit log must grow (entries are appended, never removed)
-  expect(entriesAfter).toBeGreaterThanOrEqual(entriesBefore);
-  // Kills: Audit entries are truncated, rotated, or deleted instead of being append-only
-});
-`;
-}
-
-// ─── GraphQL Security Test Generator ─────────────────────────────────────────
-/**
- * Verifies GraphQL endpoints are hardened against common attack vectors:
- * - Introspection disabled in production
- * - Query depth limits enforced
- * - IDOR via variable manipulation
- * - Batch query abuse
- *
- * Mutation targets:
- * - Introspection enabled → schema leakage
- * - No depth limit → DoS via deeply nested queries
- * - No authorization on variables → IDOR
- */
-export function generateGraphQLTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
-  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
-  const behaviorTitle = behavior?.title || target.description;
-
-  // Detect the GraphQL endpoint
-  const gqlEp = ir.apiEndpoints.find(e => {
-    const n = e.name.toLowerCase();
-    return n.includes("graphql") || n.includes("/graphql");
-  });
-  const gqlEndpoint = gqlEp?.name || "/graphql";
-  // Normalize: if it's a tRPC-style name, use /graphql as the HTTP path
-  const gqlPath = gqlEndpoint.startsWith("/") ? gqlEndpoint : "/graphql";
-
-  // Find a resource name from IR for IDOR test
-  const resource = ir.resources[0]?.name || tenantEntity;
-  const resourceIdField = ir.resources[0]?.tenantKey || `${tenantEntity}Id`;
-
-  return `import { test, expect } from "@playwright/test";
-import { BASE_URL } from "../../helpers/api";
-import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
-
-// ${target.id} — GraphQL Security Hardening: ${behaviorTitle}
-// Risk: ${target.riskLevel}
-// Covers: introspection, depth limits, IDOR via variables, batch abuse
-
-let cookie: string;
-
-async function gqlRequest(request: any, query: string, variables?: Record<string, unknown>, authCookie?: string) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (authCookie) headers["Cookie"] = authCookie;
-  const response = await request.post(\`\${BASE_URL}${gqlPath}\`, {
-    headers,
-    data: { query, variables },
-  });
-  const body = await response.json().catch(() => ({}));
-  return { status: response.status(), body };
-}
-
-test.beforeAll(async ({ request }) => {
-  cookie = await ${roleFnName}(request);
-});
-
-test("${target.id}a — introspection is disabled in production", async ({ request }) => {
-  const { status, body } = await gqlRequest(request, \`
-    { __schema { types { name } } }
-  \`, {}, cookie);
-
-  // Either introspection is disabled (error) or returns 400/403
-  const isDisabled = status >= 400 ||
-    (body.errors && body.errors.some((e: { message?: string }) =>
-      (e.message || "").toLowerCase().includes("introspection")));
-  expect(isDisabled).toBe(true);
-  // Kills: Introspection enabled in production — leaks full schema to attackers
-});
-
-test("${target.id}b — deeply nested query is rejected (depth limit enforced)", async ({ request }) => {
-  // Build a 10-level deep query — should be rejected by depth limit
-  const deepQuery = \`{
-    ${resource} {
-      ${resource} {
-        ${resource} {
-          ${resource} {
-            ${resource} {
-              ${resource} { id }
-            }
-          }
-        }
-      }
-    }
-  }\`;
-
-  const { status, body } = await gqlRequest(request, deepQuery, {}, cookie);
-
-  // Must reject with error — not execute a potentially infinite query
-  const isRejected = status >= 400 ||
-    (body.errors && body.errors.some((e: { message?: string }) =>
-      (e.message || "").toLowerCase().match(/depth|complex|limit|too|nested/)));
-  expect(isRejected).toBe(true);
-  // Kills: No query depth limit — allows DoS via deeply nested queries
-});
-
-test("${target.id}c — IDOR via GraphQL variable substitution is blocked", async ({ request }) => {
-  // Positive control: authenticated user can query their own tenant's data
-  const ownQuery = await gqlRequest(request, \`
-    query GetResources($${tenantField}: ID!) {
-      ${resource}s(${tenantField}: $${tenantField}) { id }
-    }
-  \`, { ${tenantField}: ${tenantConst} }, cookie);
-
-  expect([200]).toContain(ownQuery.status);
-  // Kills: Query always fails — GraphQL endpoint not functional
-
-  // Attack: substitute a different tenant's ID into the variable
-  const attackQuery = await gqlRequest(request, \`
-    query GetResources($${tenantField}: ID!) {
-      ${resource}s(${tenantField}: $${tenantField}) { id }
-    }
-  \`, { ${tenantField}: "9999999" }, cookie);
-
-  // Must return 403/401 or empty results — NOT another tenant's data
-  const isBlocked = attackQuery.status >= 400 ||
-    (attackQuery.body?.data?.[resource + "s"]?.length === 0) ||
-    attackQuery.body?.errors?.length > 0;
-  expect(isBlocked).toBe(true);
-  // Kills: GraphQL resolver ignores tenantId variable — returns any tenant's data
-});
-
-test("${target.id}d — batch query abuse is rate-limited", async ({ request }) => {
-  // Send 50 identical queries in one batch request
-  const batchQueries = Array.from({ length: 50 }, (_, i) => ({
-    query: \`{ __typename }\`,
-    operationName: \`BatchOp\${i}\`,
-  }));
-
-  const response = await request.post(\`\${BASE_URL}${gqlPath}\`, {
-    headers: { "Content-Type": "application/json", "Cookie": cookie },
-    data: batchQueries,
-  });
-
-  // Must either: reject batching entirely (400), or rate-limit (429), or limit batch size
-  const status = response.status();
-  const isProtected = status === 400 || status === 429 ||
-    (status === 200 && (await response.json().catch(() => [])).length < 50);
-  expect(isProtected).toBe(true);
-  // Kills: Unlimited batch processing — allows amplified DoS with single HTTP request
-});
-`;
-}
-
-// ─── Accessibility Test Generator (WCAG 2.1 AA) ──────────────────────────────
-/**
- * Generates Playwright browser tests verifying WCAG 2.1 AA compliance.
- * Uses @axe-core/playwright for automated accessibility scanning.
- *
- * Covers:
- * - Keyboard navigation works for all interactive elements
- * - ARIA labels present on interactive elements
- * - Focus management after modal open/close
- * - Form fields have associated labels
- * - No keyboard traps
- *
- * Mutation targets:
- * - Missing ARIA labels → screen readers announce nothing
- * - Keyboard trap in modal → users cannot Tab out
- * - Form fields without labels → assistive tech can't describe purpose
- */
-export function generateAccessibilityTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const behavior = ir.behaviors.find(b => b.id === target.behaviorId);
-  const behaviorTitle = behavior?.title || target.description;
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-
-  // Find UI-related endpoints (create, update — these have forms)
-  const formEndpoints = ir.apiEndpoints.filter(e => {
-    const n = e.name.toLowerCase();
-    return n.includes("create") || n.includes("update") || n.includes("register") || n.includes("edit");
-  });
-
-  // Infer a likely page path from the endpoint name
-  const primaryEp = formEndpoints[0] || ir.apiEndpoints[0];
-  const moduleName = primaryEp?.name.split(".")[0] || tenantEntity;
-  const pagePath = `/${moduleName}s`;
-  const createPath = `/${moduleName}s/new`;
-
-  return `import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
-import { BASE_URL } from "../../helpers/api";
-import { ${ir.authModel?.roles?.[0]
-    ? `get${ir.authModel.roles[0].name.split(/[-_\s]+/).map((w: string) => w[0].toUpperCase() + w.slice(1)).join("")}Cookie`
-    : "getAdminCookie"} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
-
-// ${target.id} — WCAG 2.1 AA Accessibility: ${behaviorTitle}
-// Risk: ${target.riskLevel}
-// Requires: @axe-core/playwright (npm install --save-dev @axe-core/playwright)
-
-test.describe("Accessibility: ${behaviorTitle}", () => {
-  test.use({ baseURL: process.env.BASE_URL || "http://localhost:3000" });
-
-  test("${target.id}a — main ${moduleName} page has no critical WCAG 2.1 AA violations", async ({ page }) => {
-    await page.goto(\`\${BASE_URL}${pagePath}\`);
-    await page.waitForLoadState("networkidle");
-
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-      .analyze();
-
-    // Filter to critical and serious violations only (best-effort — minor warnings acceptable)
-    const critical = results.violations.filter(v =>
-      v.impact === "critical" || v.impact === "serious"
-    );
-
-    if (critical.length > 0) {
-      const summary = critical.map(v =>
-        \`[\${v.impact?.toUpperCase()}] \${v.id}: \${v.description} — \${v.nodes.length} element(s)\`
-      ).join("\\n");
-      throw new Error(\`\${critical.length} critical/serious accessibility violations:\\n\${summary}\`);
-    }
-    // Kills: UI rendered without ARIA roles — screen readers cannot navigate
-    expect(critical.length).toBe(0);
-  });
-
-  test("${target.id}b — all interactive elements are keyboard-reachable (no keyboard trap)", async ({ page }) => {
-    await page.goto(\`\${BASE_URL}${pagePath}\`);
-    await page.waitForLoadState("networkidle");
-
-    // Tab through the page — collect all focused elements
-    const focusedElements: string[] = [];
-    for (let i = 0; i < 20; i++) {
-      await page.keyboard.press("Tab");
-      const focused = await page.evaluate(() => {
-        const el = document.activeElement;
-        return el ? \`\${el.tagName}[\${el.getAttribute("aria-label") || el.getAttribute("name") || el.textContent?.slice(0, 30) || "?"}]\` : null;
-      });
-      if (focused) focusedElements.push(focused);
-    }
-
-    // Must have found at least 3 focusable elements (nav, main content, at least 1 action)
-    expect(focusedElements.length).toBeGreaterThanOrEqual(3);
-    // Kills: All interactive elements have tabIndex=-1 — keyboard users cannot reach them
-  });
-
-  test("${target.id}c — form fields have associated labels (create form)", async ({ page }) => {
-    await page.goto(\`\${BASE_URL}${createPath}\`);
-    await page.waitForLoadState("networkidle");
-
-    // Check all visible input fields have labels (via aria-label, aria-labelledby, or <label for>)
-    const unlabeledInputs = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll("input:not([type='hidden']), textarea, select"));
-      return inputs.filter(input => {
-        const el = input as HTMLElement;
-        // Check aria-label
-        if (el.getAttribute("aria-label")) return false;
-        // Check aria-labelledby
-        const labelledBy = el.getAttribute("aria-labelledby");
-        if (labelledBy && document.getElementById(labelledBy)) return false;
-        // Check associated <label>
-        const id = el.id;
-        if (id && document.querySelector(\`label[for="\${id}"]\`)) return false;
-        // Check parent label
-        if (el.closest("label")) return false;
-        return true; // Unlabeled
-      }).map(el => \`\${el.tagName}[name=\${(el as HTMLInputElement).name || "?"}]\`);
-    });
-
-    expect(unlabeledInputs.length).toBe(0);
-    // Kills: Form inputs without labels — screen reader announces "edit text" with no context
-    // If this test fails, add aria-label or <label for="..."> to: ${formEndpoints.map(e => e.name).join(", ")}
-  });
-
-  test("${target.id}d — create form page has no WCAG 2.1 AA violations", async ({ page }) => {
-    await page.goto(\`\${BASE_URL}${createPath}\`);
-    await page.waitForLoadState("networkidle");
-
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-      .exclude("#cookie-banner") // Exclude cookie consent banners (third-party)
-      .analyze();
-
-    const critical = results.violations.filter(v =>
-      v.impact === "critical" || v.impact === "serious"
-    );
-    expect(critical.length).toBe(0);
-    // Kills: Form rendered without fieldset/legend grouping, missing error message IDs
-  });
-});
-`;
-}
-
-// ─── Property-Based Fuzz Testing (fast-check) ────────────────────────────────
-
-/**
- * Generates property-based tests using fast-check.
- * Instead of one fixed example, fast-check generates 50 random valid inputs and
- * verifies API invariants hold for all of them. When a property fails, fast-check
- * automatically shrinks the input to the minimal reproducing case.
- *
- * Generated invariants:
- *   P1: Valid inputs never trigger 500 Internal Server Error
- *   P2: Success responses always include required 'id' field
- *   P3: Injection/XSS payloads in string fields never cause 500
- *   P4: Numeric overflow/underflow never causes 500
- */
-export function generatePropertyTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const tenantField = analysis.ir.tenantModel?.tenantIdField || "tenantId";
-  const tenantEntity = analysis.ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const roleFnName = roleToCookieFn(getPreferredRole(analysis.ir.authModel));
-
-  // Resolve endpoint
-  const ep = analysis.ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  ) || analysis.ir.apiEndpoints.find(e =>
-    e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add")
-  );
-  const endpoint = ep ? normalizeEndpointName(ep.name, ep.method) : (target.endpoint || "create");
-
-  // Get non-tenant input fields (cap at 6 to keep tests readable)
-  const fields = (ep?.inputFields || [])
-    .filter(f => !f.isTenantKey && f.name !== tenantField)
-    .slice(0, 6);
-
-  // Generate fc arbitraries for each field type
-  interface FcArb { name: string; arb: string; type: string }
-  const fcArbs: FcArb[] = fields.map(f => {
-    let arb: string;
-    switch (f.type) {
-      case "number":
-        if (f.min !== undefined && f.max !== undefined)
-          arb = `fc.integer({ min: ${f.min}, max: ${f.max} })`;
-        else if (f.min !== undefined)
-          arb = `fc.integer({ min: ${f.min}, max: ${f.min + 10000} })`;
-        else
-          arb = `fc.nat({ max: 10000 })`;
-        break;
-      case "boolean":
-        arb = `fc.boolean()`;
-        break;
-      case "enum":
-        arb = f.enumValues?.length
-          ? `fc.constantFrom(${f.enumValues.map(v => `"${v}"`).join(", ")})`
-          : `fc.string({ minLength: 1, maxLength: 20 })`;
-        break;
-      case "date":
-        arb = `fc.date({ min: new Date(), max: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) }).map(d => d.toISOString().split("T")[0])`;
-        break;
-      case "string":
-      default:
-        arb = f.max !== undefined
-          ? `fc.string({ minLength: ${f.min ?? 1}, maxLength: ${f.max} })`
-          : `fc.string({ minLength: 1, maxLength: 200 })`;
-    }
-    return { name: f.name, arb, type: f.type };
-  });
-
-  const paramNames = fcArbs.map(a => a.name).join(", ");
-  const arbLines = fcArbs.map(a => `        ${a.arb}`).join(",\n");
-  const fcOverrides = fcArbs.map(a => `            ${a.name},`).join("\n");
-  const defaultPayload = fields.map(f => `        ${f.name}: ${getValidDefault(f, tenantConst)},`).join("\n");
-  const firstStringField = fields.find(f => f.type === "string")?.name;
-  const firstNumberField = fields.find(f => f.type === "number")?.name;
-
-  const hasArbs = fcArbs.length > 0;
-  // Build payload that overrides the first number field with the extreme value `n`
-  const extremeNumberPayload = firstNumberField
-    ? fields.map(f => f.name === firstNumberField
-        ? `        ${f.name}: n, // overridden by extreme value`
-        : `        ${f.name}: ${getValidDefault(f, tenantConst)},`
-      ).join("\n")
-    : "";
-
-  // Detect helpers used by getValidDefault so we import them (date → tomorrowStr, phone → randomPhone)
-  const usesTomorrowStr = fields.some(f =>
-    f.type === "date" || (f.type === "string" && (f.name.toLowerCase().includes("date") || f.name.toLowerCase().includes("datum")))
-  );
-  const usesRandomPhone = fields.some(f =>
-    f.type === "string" && f.name.toLowerCase().includes("phone")
-  );
-  const apiHelperImports = ["trpcMutation"];
-  if (usesTomorrowStr) apiHelperImports.push("tomorrowStr");
-  if (usesRandomPhone) apiHelperImports.push("randomPhone");
-
-  return `import { test, expect } from "@playwright/test";
-import * as fc from "fast-check";
-import { ${apiHelperImports.join(", ")} } from "../../helpers/api";
-import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
-
-// ${target.id} — Property-Based Fuzz Tests: ${target.description}
-// fast-check generates ${hasArbs ? "50" : "fixed"} random valid inputs and verifies invariants hold for all.
-// On failure: fast-check automatically shrinks to the minimal reproducing case.
-// Run with VERBOSE=1 to see all generated inputs: fc.assert(..., { verbose: true })
-
-test.describe("${target.id} — Property-Based: ${target.description}", () => {
-  // adminCookie + beforeAll inside describe — survives mergeProofsToFile() top-level stripping
-  let adminCookie: string;
-
-  test.beforeAll(async ({ request }) => {
-    adminCookie = await ${roleFnName}(request);
-  });
-
-  test("P1: valid inputs never trigger 500 Internal Server Error", async ({ request }) => {
-${hasArbs ? `    // fc.assert runs the property 50 times with random inputs (seed=42 for reproducibility).
-    // If this fails, fast-check prints the minimal input that caused the failure.
-    // Note: response destructured as 'httpStatus' (not 'status') to avoid name clash
-    // with any user-defined field named 'status' in the fc.asyncProperty params.
-    await fc.assert(
-      fc.asyncProperty(
-${arbLines},
-        async (${paramNames}) => {
-          const { status: httpStatus } = await trpcMutation(request, "${endpoint}", {
-            ${tenantField}: ${tenantConst},
-${fcOverrides}
-          }, adminCookie);
-          // Kills: unhandled exception on valid input shape → 500 leaks stack trace to attacker
-          expect(httpStatus, \`Server crashed with \${httpStatus} on: \${JSON.stringify({ ${paramNames} })}\`).not.toBe(500);
-          expect(httpStatus).not.toBe(503);
-          return true;
-        }
-      ),
-      { numRuns: 50, verbose: false, seed: 42 }
-    );` : `    // No typed input fields detected — test with default payload
-    const { status: httpStatus } = await trpcMutation(request, "${endpoint}", {
-      ${tenantField}: ${tenantConst},
-    }, adminCookie);
-    // Kills: unhandled exception → 500 leaks stack trace
-    expect(httpStatus).not.toBe(500);`}
-  });
-
-  test("P2: success responses always include required 'id' field", async ({ request }) => {
-${hasArbs ? `    await fc.assert(
-      fc.asyncProperty(
-${arbLines},
-        async (${paramNames}) => {
-          const { data, status: httpStatus } = await trpcMutation(request, "${endpoint}", {
-            ${tenantField}: ${tenantConst},
-${fcOverrides}
-          }, adminCookie);
-          if (httpStatus === 200 || httpStatus === 201) {
-            // Kills: serializer omits 'id' on some code paths (conditional return shape)
-            expect(data).toBeDefined();
-            const d = data as Record<string, unknown>;
-            if (d && typeof d === "object" && !Array.isArray(d)) {
-              expect(d.id, "Success response must always include id").toBeDefined();
-            }
-          }
-          return true;
-        }
-      ),
-      { numRuns: 50, verbose: false, seed: 42 }
-    );` : `    const { data, status: httpStatus } = await trpcMutation(request, "${endpoint}", {
-      ${tenantField}: ${tenantConst},
-    }, adminCookie);
-    if (httpStatus === 200 || httpStatus === 201) {
-      // Kills: serializer omits 'id' on some code paths
-      expect((data as Record<string, unknown>)?.id).toBeDefined();
-    }`}
-  });
-${firstStringField ? `
-  test("P3: injection payloads in string fields never cause 500", async ({ request }) => {
-    // Security invariant: no user-controlled string should ever cause an unhandled exception.
-    // This catches: raw SQL concatenation, template injection, path traversal, XSS in logs.
-    const attackPayloads = [
-      { label: "SQL injection", value: "'; DROP TABLE users; --" },
-      { label: "XSS", value: "<script>alert(document.cookie)</script>" },
-      { label: "null bytes", value: "\\x00\\x01\\x02\\x03" },
-      { label: "unicode overflow", value: "\\uD800\\uDFFF\\u0000" },
-      { label: "template injection", value: "{{7*7}}$\\{7*7\\}" },
-      { label: "path traversal", value: "../../../etc/passwd" },
-      { label: "huge string", value: "A".repeat(65_536) },
-    ];
-
-    for (const { label, value } of attackPayloads) {
-      const { status } = await trpcMutation(request, "${endpoint}", {
-        ${tenantField}: ${tenantConst},
-        ${firstStringField}: value,
-      }, adminCookie);
-      // Kills: raw user input passed to SQL / template engine / filesystem path
-      expect(status, \`Attack "\${label}" caused 500 — unhandled input\`).not.toBe(500);
-    }
-  });
-` : ""}
-${firstNumberField ? `  test("P4: extreme numeric inputs never cause 500", async ({ request }) => {
-    // Arithmetic invariant: ${firstNumberField} field must handle edge values gracefully.
-    // 400 is acceptable; 500 means unhandled overflow/underflow in business logic.
-    const extremes = [
-      Number.MAX_SAFE_INTEGER,   // 9007199254740991
-      -Number.MAX_SAFE_INTEGER,  // negative overflow
-      0,
-      0.0000001,                 // epsilon
-      9_999_999_999,             // >32-bit int (catches int32 overflow in DB columns)
-    ];
-
-    for (const n of extremes) {
-      const { status } = await trpcMutation(request, "${endpoint}", {
-        ${tenantField}: ${tenantConst},
-${extremeNumberPayload}
-      }, adminCookie);
-      // Kills: integer overflow in ${firstNumberField} calculation → negative balance or 500
-      expect(status, \`Extreme value \${n} for ${firstNumberField} caused \${status}\`).not.toBe(500);
-    }
-  });
-` : ""}
-${fields.length > 0 ? `  test("P5: concurrent identical requests produce idempotent or conflict result (no 500)", async ({ request }) => {
-    // Concurrency invariant: racing two identical creates must not corrupt state or crash.
-    const payload = {
-      ${tenantField}: ${tenantConst},
-${defaultPayload}
-    };
-
-    const [r1, r2] = await Promise.all([
-      trpcMutation(request, "${endpoint}", payload, adminCookie),
-      trpcMutation(request, "${endpoint}", payload, adminCookie),
-    ]);
-
-    // One of: both succeed (201), one wins (201) + one conflicts (409), or both idempotent (200)
-    // Never: either returns 500 — concurrent access must not corrupt DB state
-    // Kills: missing transaction → partial write leaves record in invalid state
-    expect(r1.status).not.toBe(500);
-    expect(r2.status).not.toBe(500);
-    expect([200, 201, 409, 422]).toContain(r1.status);
-    expect([200, 201, 409, 422]).toContain(r2.status);
-  });
-` : ""}});
-`;
-}
-
-// ─── True E2E (Phase 1): Smart Form Generator ────────────────────────────────
-
-/**
- * Generates a browser E2E test that auto-discovers and fills a form for a given
- * create/update endpoint. Uses smart selector fallbacks (label → placeholder →
- * data-testid → name attribute) so tests survive minor UI refactors.
- *
- * Tests generated:
- *   F1: happy path — fill all required fields, submit, verify success indicator
- *   F2: validation — submit empty form, verify error messages appear
- *   F3: persistence — submitted data appears in subsequent list/detail page
- */
-export function generateE2ESmartFormTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
-
-  // Resolve endpoint and path
-  const ep = ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  ) || ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
-  const endpointName = ep?.name || target.endpoint || "resource.create";
-
-  // Infer UI path from endpoint name (resource.create → /<resource>/new)
-  const resourceMatch = endpointName.match(/^([^.]+)\./);
-  const resourceName = resourceMatch?.[1] || "resource";
-  const isCreate = endpointName.toLowerCase().includes("create") || endpointName.toLowerCase().includes("add");
-  const uiPath = isCreate ? `/${resourceName}/new` : `/${resourceName}/edit`;
-  const listPath = `/${resourceName}`;
-
-  // Get required non-tenant fields, cap at 8 for readable tests
-  const fields = (ep?.inputFields || [])
-    .filter(f => !f.isTenantKey && f.required !== false)
-    .slice(0, 8);
-
-  // Build test value for each field — use semantic value when possible
-  const fillSteps = fields.map(f => {
-    let value: string;
-    const fl = f.name.toLowerCase();
-    switch (f.type) {
-      case "number":
-        value = String(f.min ?? 1);
-        break;
-      case "boolean":
-        return `    // ${f.name} (boolean): leave default state`;
-      case "enum":
-        if (f.enumValues?.length) {
-          return `    await smartSelect(page, ${JSON.stringify(f.name)}, ${JSON.stringify(f.enumValues[0])});`;
-        }
-        value = "active";
-        break;
-      case "date":
-        value = "2026-12-31";
-        break;
-      default:
-        if (fl.includes("email")) value = `e2e-test-\${Date.now()}@example.com`;
-        else if (fl.includes("phone")) value = `+49176\${Date.now().toString().slice(-8)}`;
-        else if (fl.includes("name") || fl.includes("title")) value = `E2E Test \${Date.now()}`;
-        else value = `e2e-${f.name}-\${Date.now()}`;
-    }
-    return `    await smartFill(page, ${JSON.stringify(f.name)}, \`${value}\`);`;
-  }).join("\n");
-
-  return `import { test, expect } from "@playwright/test";
-import { loginAsRole, navigateTo, smartFill, smartSelect, smartClick, expectVisible } from "../../helpers/browser";
-
-// ${target.id} — E2E Smart Form: ${target.description}
-// Risk: ${target.riskLevel}
-// Endpoint: ${endpointName}
-// Path discovered: ${uiPath}
-//
-// Strategy: smart selector fallbacks (label → placeholder → testid → name attr).
-// If a field can't be found by ANY strategy, the test FAILS LOUDLY (not silently).
-
-test.describe("${target.id} — Smart Form (${endpointName})", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsRole(page, "${primaryRole}");
-    await navigateTo(page, "${uiPath}");
-  });
-
-  test("${target.id}_F1 — happy path: fill all required fields and submit", async ({ page }) => {
-    // Fill each required field using smart selector strategy
-${fillSteps || '    // No fields detected on this endpoint'}
-
-    // Submit
-    await smartClick(page, "submit|save|create|add|book");
-
-    // Verify success indicator appears within 10s (toast / redirect / new entity)
-    // Strategy: any of: success text, list page URL, or detail page URL
-    await Promise.race([
-      expectVisible(page, "success|created|saved|added|done").catch(() => null),
-      page.waitForURL(/\\/${resourceName}(\\/|$)/, { timeout: 10000 }).catch(() => null),
-    ]);
-
-    // Final assertion: we must not still be on the new/edit page (form would still show)
-    const url = page.url();
-    // Kills: ${target.mutationTargets[0]?.description || "Form submit handler not wired (silent failure)"}
-    expect(url, "Still on ${uiPath} after submit — form may not have submitted").not.toContain("${uiPath}");
-  });
-
-  test("${target.id}_F2 — validation: submit empty form shows error", async ({ page }) => {
-    // Don't fill anything — directly submit
-    await smartClick(page, "submit|save|create|add|book");
-
-    // Either: error message visible, OR form did not submit (still on same page)
-    // Both are acceptable signals that validation worked.
-    await page.waitForTimeout(500); // brief settle
-
-    const stillOnForm = page.url().includes("${uiPath}");
-    const hasErrorText = await page.getByText(/required|please fill|invalid|error|missing/i)
-      .first().isVisible({ timeout: 2000 }).catch(() => false);
-
-    // Kills: ${target.mutationTargets[1]?.description || "Required field validation removed"}
-    expect(stillOnForm || hasErrorText, "Empty form was accepted — validation missing!").toBe(true);
-  });
-${fields.length > 0 ? `
-  test("${target.id}_F3 — persistence: submitted data appears in list view", async ({ page }) => {
-    const uniqueMarker = \`e2e-marker-\${Date.now()}\`;
-    // Fill the first text field with a unique marker
-${(fields.find(f => f.type === "string") ? `    await smartFill(page, ${JSON.stringify(fields.find(f => f.type === "string")!.name)}, uniqueMarker);
-${fillSteps.split("\n").filter((_, i) => i > 0).join("\n")}` : "    // No string field to mark — skip persistence check\n    test.skip();")}
-    await smartClick(page, "submit|save|create|add|book");
-
-    // Wait for redirect (success), then navigate to list view
-    await page.waitForTimeout(1000);
-    await navigateTo(page, "${listPath}");
-
-    // Marker should appear in the list (with retry for eventual consistency)
-    await expect(page.getByText(uniqueMarker)).toBeVisible({ timeout: 10000 });
-    // Kills: ${target.mutationTargets[2]?.description || "Submitted data not persisted (write succeeded but DB rollback)"}
-  });
-` : ""}});
-`;
-}
-
-// ─── True E2E (Phase 1): Multi-Step User Journey Generator ───────────────────
-
-/**
- * Generates a browser E2E test for a multi-step user journey defined in IR.userFlows.
- * Each step is mapped to a smart UI action: navigate / fill / click / verify.
- *
- * Falls back to a stub test when the IR has no userFlows (the test is marked .skip
- * with a clear message — does NOT fail the suite).
- */
-export function generateE2EUserJourneyTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
-
-  // Find the most relevant user flow for this behavior
-  const flow = ir.userFlows?.find(f =>
-    f.id === target.behaviorId ||
-    f.relatedEndpoints?.some(ep => ep === target.endpoint) ||
-    f.name.toLowerCase().includes(target.description.toLowerCase().slice(0, 20))
-  ) || ir.userFlows?.[0];
-
-  // Translate a single flow step into Playwright code using smart helpers
-  function stepToCode(step: string, idx: number): string {
-    const s = step.toLowerCase();
-    const stepLabel = step.replace(/`/g, "'").slice(0, 80);
-
-    // Login step
-    if (s.includes("login") || s.includes("sign in") || s.includes("authenticate")) {
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await loginAsRole(page, ${JSON.stringify(primaryRole)});`;
-    }
-    // Navigation step
-    if (s.includes("navigate") || s.includes("open") || s.includes("go to") || s.includes("visit")) {
-      const pathMatch = step.match(/\/[\w\-/{}]+/);
-      const path = pathMatch ? pathMatch[0].replace(/\{[^}]+\}/g, "1") : "/";
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await navigateTo(page, ${JSON.stringify(path)});`;
-    }
-    // Fill step
-    if (s.includes("fill") || s.includes("enter") || s.includes("type") || s.includes("input")) {
-      const fieldMatch = step.match(/(?:fill|enter|type|input)\s+(?:in\s+)?(?:the\s+)?(\w+)/i);
-      const field = fieldMatch ? fieldMatch[1] : "field";
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await smartFill(page, ${JSON.stringify(field)}, \`e2e-\${Date.now()}\`);`;
-    }
-    // Select / dropdown
-    if (s.includes("select") || s.includes("choose") || s.includes("pick")) {
-      const fieldMatch = step.match(/(?:select|choose|pick)\s+(?:the\s+)?(\w+)/i);
-      const field = fieldMatch ? fieldMatch[1] : "option";
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await smartSelect(page, ${JSON.stringify(field)}, "first");`;
-    }
-    // Click / Submit
-    if (s.includes("click") || s.includes("submit") || s.includes("press") || s.includes("tap")) {
-      const btnMatch = step.match(/(?:click|submit|press|tap)\s+(?:the\s+)?(\w[\w ]*)/i);
-      const btn = btnMatch ? btnMatch[1].trim().toLowerCase() : "submit";
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await smartClick(page, ${JSON.stringify(btn)});`;
-    }
-    // Verify / assert
-    if (s.includes("verify") || s.includes("see") || s.includes("confirm") || s.includes("check") || s.includes("expect")) {
-      const expectedMatch = step.match(/(?:verify|see|confirm|check|expect)\s+(?:that\s+)?(.+)/i);
-      const expected = expectedMatch ? expectedMatch[1].slice(0, 50).replace(/[\\/[\]()]/g, "") : "success";
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await expectVisible(page, ${JSON.stringify(expected)});`;
-    }
-    // Wait
-    if (s.includes("wait")) {
-      const msMatch = step.match(/(\d+)\s*(?:ms|second|sec)/i);
-      const ms = msMatch ? parseInt(msMatch[1]) * (step.toLowerCase().includes("ms") ? 1 : 1000) : 1000;
-      return `    // Step ${idx + 1}: ${stepLabel}\n    await page.waitForTimeout(${ms});`;
-    }
-    // Generic fallback — record step but don't auto-implement (avoids false greens)
-    return `    // Step ${idx + 1}: ${stepLabel}\n    // TODO: implement this step manually — could not auto-translate`;
-  }
-
-  if (!flow || !flow.steps || flow.steps.length === 0) {
-    // No user flow — emit a skip stub with explanation
-    return `import { test, expect } from "@playwright/test";
-
-// ${target.id} — E2E User Journey: ${target.description}
-// SKIPPED: No userFlow found in IR. Add one to spec to enable this test.
-
-test.skip("${target.id} — TODO: Add userFlow to spec to generate this journey", async () => {
-  expect(true).toBe(true);
-});
-`;
-  }
-
-  const stepsCode = flow.steps.map((s: string, i: number) => stepToCode(s, i)).join("\n\n");
-  const successAssertions = (flow.successCriteria || []).slice(0, 3).map((criterion: string) => {
-    const expected = criterion.slice(0, 50).replace(/[\\/[\]()`]/g, "");
-    return `    await expectVisible(page, ${JSON.stringify(expected)});`;
-  }).join("\n");
-
-  return `import { test, expect } from "@playwright/test";
-import { loginAsRole, navigateTo, smartFill, smartSelect, smartClick, expectVisible } from "../../helpers/browser";
-
-// ${target.id} — E2E User Journey: ${flow.name}
-// Actor: ${flow.actor}
-// Risk: ${target.riskLevel}
-// Steps: ${flow.steps.length}
-
-test("${target.id} — ${flow.name.replace(/"/g, "'")}", async ({ page }) => {
-${stepsCode}
-
-${successAssertions ? `    // Success criteria from spec:\n${successAssertions}` : ""}
-    // Kills: ${target.mutationTargets[0]?.description || "Step transition broken (e.g. submit button disabled after click)"}
-});
-`;
-}
-
-// ─── True E2E (Phase 1): Performance Budget Generator (Core Web Vitals) ──────
-
-/**
- * Generates a browser E2E test that measures Core Web Vitals on a page and
- * asserts against budgets:
- *   LCP  < 2.5s   (Largest Contentful Paint — perceived load speed)
- *   CLS  < 0.1    (Cumulative Layout Shift — visual stability)
- *   TTFB < 800ms  (Time To First Byte — backend response speed)
- *
- * Uses native Performance API + PerformanceObserver — no external deps.
- */
-export function generateE2EPerfBudgetTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
-
-  // Pick a representative page path from the endpoint
-  const ep = ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  );
-  const resourceName = ep?.name.split(".")[0] || "dashboard";
-  const pagePath = ep?.name.includes("list") || ep?.name.includes("dashboard")
-    ? `/${resourceName}`
-    : "/";
-
-  return `import { test, expect } from "@playwright/test";
-import { loginAsRole } from "../../helpers/browser";
-
-// ${target.id} — E2E Performance Budget: ${target.description}
-// Risk: ${target.riskLevel}
-// Page: ${pagePath}
-// Budgets: LCP < 2500ms, CLS < 0.1, TTFB < 800ms (Core Web Vitals "good" thresholds)
-
-test.describe("${target.id} — Performance Budget (${pagePath})", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-  });
-
-  test("${target.id}_P1 — LCP < 2500ms (Largest Contentful Paint)", async ({ page }) => {
-    await page.goto(\`\${process.env.BASE_URL || "http://localhost:3000"}${pagePath}\`);
-    await page.waitForLoadState("networkidle");
-
-    // Use PerformanceObserver to capture LCP — runs in browser context
-    const lcpMs = await page.evaluate(() => new Promise<number>((resolve) => {
-      let lcp = 0;
-      const observer = new PerformanceObserver((entries) => {
-        for (const entry of entries.getEntries()) {
-          // Use renderTime if available, otherwise loadTime
-          lcp = (entry as any).renderTime || (entry as any).loadTime || entry.startTime;
-        }
-      });
-      observer.observe({ type: "largest-contentful-paint", buffered: true });
-      // Resolve after 3s to give LCP time to settle
-      setTimeout(() => { observer.disconnect(); resolve(lcp); }, 3000);
-    }));
-
-    console.log(\`LCP for ${pagePath}: \${lcpMs.toFixed(0)}ms\`);
-    // Kills: ${target.mutationTargets[0]?.description || "Render-blocking script in <head> regresses LCP"}
-    expect(lcpMs, \`LCP \${lcpMs.toFixed(0)}ms exceeds 2500ms budget\`).toBeLessThan(2500);
-  });
-
-  test("${target.id}_P2 — CLS < 0.1 (Cumulative Layout Shift)", async ({ page }) => {
-    await page.goto(\`\${process.env.BASE_URL || "http://localhost:3000"}${pagePath}\`);
-    await page.waitForLoadState("networkidle");
-
-    const cls = await page.evaluate(() => new Promise<number>((resolve) => {
-      let total = 0;
-      const observer = new PerformanceObserver((entries) => {
-        for (const entry of entries.getEntries() as any[]) {
-          // Don't count shifts during user input
-          if (!entry.hadRecentInput) total += entry.value;
-        }
-      });
-      observer.observe({ type: "layout-shift", buffered: true });
-      // 3s window to capture late shifts (lazy images, web fonts)
-      setTimeout(() => { observer.disconnect(); resolve(total); }, 3000);
-    }));
-
-    console.log(\`CLS for ${pagePath}: \${cls.toFixed(3)}\`);
-    // Kills: ${target.mutationTargets[1]?.description || "Image without width/height attrs causes layout shift"}
-    expect(cls, \`CLS \${cls.toFixed(3)} exceeds 0.1 budget\`).toBeLessThan(0.1);
-  });
-
-  test("${target.id}_P3 — TTFB < 800ms (Time To First Byte)", async ({ page }) => {
-    await page.goto(\`\${process.env.BASE_URL || "http://localhost:3000"}${pagePath}\`);
-
-    const ttfb = await page.evaluate(() => {
-      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
-      return nav ? nav.responseStart - nav.requestStart : 0;
-    });
-
-    console.log(\`TTFB for ${pagePath}: \${ttfb.toFixed(0)}ms\`);
-    // Kills: ${target.mutationTargets[2]?.description || "Synchronous DB query in render path regresses TTFB"}
-    expect(ttfb, \`TTFB \${ttfb.toFixed(0)}ms exceeds 800ms budget\`).toBeLessThan(800);
-  });
-});
-`;
-}
-
-// ─── True E2E (Phase 2): Visual Regression ───────────────────────────────────
-
-/**
- * Generates a Playwright visual regression test using `expect(page).toHaveScreenshot()`.
- * Baselines are auto-created on first run (commit them to git). Subsequent runs
- * compare the current screenshot against the baseline; fails if pixel diff > 1%.
- *
- * Generated tests:
- *   V1: full-page screenshot of inferred page path
- *   V2: above-the-fold screenshot (no scroll, viewport-sized)
- *   V3: post-interaction screenshot (clicks first button, waits, captures)
- */
-export function generateE2EVisualTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
-
-  // Resolve a representative page path
-  const ep = ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  );
-  const resourceName = ep?.name.split(".")[0] || "dashboard";
-  const pagePath = ep?.name.includes("list") ? `/${resourceName}` : "/";
-  const pageSlug = pagePath.replace(/\//g, "-").replace(/^-/, "") || "home";
-
-  return `import { test, expect } from "@playwright/test";
-import { loginAsRole, navigateTo } from "../../helpers/browser";
-
-// ${target.id} — Visual Regression: ${target.description}
-// Risk: ${target.riskLevel}
-// Page: ${pagePath}
-//
-// Strategy: capture screenshots, compare against baselines committed to git.
-// First run: baselines created in __screenshots__/ directory — commit them.
-// Subsequent runs: fail if any pixel diff exceeds 1% threshold.
-//
-// Update baselines after intentional UI change: npx playwright test --update-snapshots
-
-test.describe("${target.id} — Visual Regression (${pagePath})", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-    await navigateTo(page, ${JSON.stringify(pagePath)});
-    // Wait for fonts + lazy images to settle (reduces flakiness)
-    await page.waitForLoadState("networkidle");
-    await page.evaluate(() => document.fonts.ready);
-  });
-
-  test("${target.id}_V1 — full page screenshot matches baseline", async ({ page }) => {
-    // Mask dynamic content that shouldn't trigger diffs (timestamps, user avatars)
-    await expect(page).toHaveScreenshot(\`${pageSlug}-full.png\`, {
-      fullPage: true,
-      maxDiffPixelRatio: 0.01, // 1% pixel diff allowed (anti-aliasing tolerance)
-      mask: [
-        page.locator('[data-testid="timestamp"]'),
-        page.locator('[data-testid="user-avatar"]'),
-        page.locator('time'),
-      ],
-    });
-    // Kills: ${target.mutationTargets[0]?.description || "CSS regression breaks layout"}
-  });
-
-  test("${target.id}_V2 — viewport (above-fold) screenshot matches baseline", async ({ page }) => {
-    // Above-the-fold check is most user-visible — strict 0.5% threshold
-    await expect(page).toHaveScreenshot(\`${pageSlug}-viewport.png\`, {
-      fullPage: false,
-      maxDiffPixelRatio: 0.005,
-    });
-    // Kills: ${target.mutationTargets[1]?.description || "Hero/header visual regression above the fold"}
-  });
-
-  test("${target.id}_V3 — interaction state: click first button, capture", async ({ page }) => {
-    const firstButton = page.getByRole("button").first();
-    if (await firstButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await firstButton.click();
-      // Wait for any animations/state transitions to settle
-      await page.waitForTimeout(500);
-      await expect(page).toHaveScreenshot(\`${pageSlug}-after-click.png\`, {
-        fullPage: false,
-        maxDiffPixelRatio: 0.01,
-      });
-      // Kills: ${target.mutationTargets[2]?.description || "Button click state visually broken (no feedback)"}
-    } else {
-      test.skip(true, "No buttons on page to test interaction state");
-    }
-  });
-});
-`;
-}
-
-// ─── True E2E (Phase 2): Network Conditions ──────────────────────────────────
-
-/**
- * Generates a Playwright test that exercises the app under adverse network
- * conditions: slow 3G, offline, API 500 errors, and request timeouts.
- *
- * Generated tests:
- *   N1: slow 3G — verify loading UI appears, page eventually loads
- *   N2: offline — verify graceful degradation (error UI, not blank/spinner-forever)
- *   N3: API 500 errors — verify error UI shown, not silent failure
- *   N4: API timeout — verify timeout handled (retry button or error message)
- */
-export function generateE2ENetworkTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
-
-  const ep = ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  );
-  const resourceName = ep?.name.split(".")[0] || "dashboard";
-  const pagePath = ep?.name.includes("list") ? `/${resourceName}` : "/";
-
-  return `import { test, expect } from "@playwright/test";
-import { loginAsRole } from "../../helpers/browser";
-
-// ${target.id} — Network Conditions: ${target.description}
-// Risk: ${target.riskLevel}
-// Page: ${pagePath}
-//
-// Strategy: use Playwright's page.route() and context.setOffline() to simulate
-// adverse conditions. Verifies app degrades gracefully — never blank, never frozen.
-
-const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-
-test.describe("${target.id} — Network Conditions (${pagePath})", () => {
-  test("${target.id}_N1 — slow 3G: loading UI appears, page eventually loads", async ({ page, context }) => {
-    // Throttle to slow 3G: ~50KB/s download, 500ms latency
-    const cdpSession = await context.newCDPSession(page);
-    await cdpSession.send("Network.enable");
-    await cdpSession.send("Network.emulateNetworkConditions", {
-      offline: false,
-      latency: 500,
-      downloadThroughput: 50 * 1024,
-      uploadThroughput: 25 * 1024,
-    });
-
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-    const navPromise = page.goto(\`\${BASE_URL}${pagePath}\`);
-
-    // Within first 2s of slow load, some loading indicator should appear
-    // (spinner, skeleton, progress bar — anything that's not blank)
-    const hasLoadingUI = await Promise.race([
-      page.locator('[role="progressbar"], .spinner, .skeleton, [data-loading="true"]')
-        .first().isVisible({ timeout: 3000 }).catch(() => false),
-      page.locator('text=/loading|laden/i').first().isVisible({ timeout: 3000 }).catch(() => false),
-    ]);
-
-    await navPromise; // Eventually completes
-    // Kills: ${target.mutationTargets[0]?.description || "No loading state during slow network"}
-    expect(hasLoadingUI, "No loading UI shown during slow 3G — user sees blank page").toBe(true);
-  });
-
-  test("${target.id}_N2 — offline: graceful error UI, not blank/frozen", async ({ page, context }) => {
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-    await page.goto(\`\${BASE_URL}${pagePath}\`);
-    await page.waitForLoadState("networkidle");
-
-    // Now go offline and try to navigate / re-fetch
-    await context.setOffline(true);
-    await page.reload({ waitUntil: "domcontentloaded" }).catch(() => null);
-    await page.waitForTimeout(2000);
-
-    // Should show some indication of offline state — not just blank page
-    const hasOfflineUI = await Promise.race([
-      page.locator('text=/offline|no internet|connection lost|verbindung/i').first()
-        .isVisible({ timeout: 3000 }).catch(() => false),
-      page.locator('[role="alert"]').first().isVisible({ timeout: 3000 }).catch(() => false),
-    ]);
-
-    await context.setOffline(false); // Restore for cleanup
-    // Kills: ${target.mutationTargets[1]?.description || "Blank page on offline (no error UI)"}
-    expect(hasOfflineUI, "No offline indicator shown — user has no idea what's wrong").toBe(true);
-  });
-
-  test("${target.id}_N3 — API 500 errors: error UI shown, not silent", async ({ page }) => {
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-
-    // Mock all API calls to return 500
-    await page.route(/\\/api\\//, route => route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "Internal Server Error" }),
-    }));
-
-    await page.goto(\`\${BASE_URL}${pagePath}\`);
-    await page.waitForTimeout(3000);
-
-    // Page must show some indication that something went wrong
-    const hasErrorUI = await Promise.race([
-      page.locator('text=/error|failed|something went wrong|fehler/i').first()
-        .isVisible({ timeout: 3000 }).catch(() => false),
-      page.locator('[role="alert"]').first().isVisible({ timeout: 3000 }).catch(() => false),
-      page.getByRole("button", { name: /retry|try again|wiederholen/i }).first()
-        .isVisible({ timeout: 3000 }).catch(() => false),
-    ]);
-
-    // Kills: ${target.mutationTargets[2]?.description || "API 500 silently swallowed"}
-    expect(hasErrorUI, "API errors not surfaced to user — silent failure!").toBe(true);
-  });
-
-  test("${target.id}_N4 — API timeout: handled (retry UI or error message)", async ({ page }) => {
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-
-    // Mock API to delay 30s — simulates timeout
-    await page.route(/\\/api\\//, async route => {
-      await new Promise(resolve => setTimeout(resolve, 30_000));
-      await route.fulfill({ status: 200, body: "{}" });
-    });
-
-    await page.goto(\`\${BASE_URL}${pagePath}\`).catch(() => null);
-    // After 8s, app should show some signal that things aren't loading
-    await page.waitForTimeout(8000);
-
-    const stillLoadingForever = await page.locator('[role="progressbar"], .spinner').first()
-      .isVisible({ timeout: 1000 }).catch(() => false);
-    const hasTimeoutHandling = await Promise.race([
-      page.locator('text=/timeout|taking longer|slow|retry/i').first()
-        .isVisible({ timeout: 1000 }).catch(() => false),
-      page.getByRole("button", { name: /retry|cancel/i }).first()
-        .isVisible({ timeout: 1000 }).catch(() => false),
-    ]);
-
-    // Either: timeout handling shown, OR loading state has cleared (not stuck forever)
-    // Kills: ${target.mutationTargets[3]?.description || "Request timeout never recovers (no retry UI)"}
-    expect(hasTimeoutHandling || !stillLoadingForever,
-      "App stuck in loading state after 8s — no timeout handling").toBe(true);
-  });
-});
-`;
-}
-
-// ─── True E2E (Phase 2): Full WCAG 2.1 AA Audit ──────────────────────────────
-
-/**
- * Generates 5 categorized accessibility tests, one per WCAG criterion category.
- * Goes beyond a single axe.run() by separating concerns so failures point to
- * specific WCAG criteria for faster debugging.
- *
- * Generated tests:
- *   A1: Color contrast (WCAG 1.4.3)
- *   A2: Keyboard navigation (WCAG 2.1.1, 2.1.2, 2.4.7)
- *   A3: Form labels (WCAG 3.3.2, 4.1.2)
- *   A4: Heading structure (WCAG 1.3.1, 2.4.6)
- *   A5: ARIA correctness (WCAG 4.1.2)
- */
-export function generateE2EAccessibilityFullTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const primaryRole = ir.authModel?.roles?.[0]?.name || "admin";
-
-  const ep = ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  );
-  const resourceName = ep?.name.split(".")[0] || "dashboard";
-  const pagePath = ep?.name.includes("list") ? `/${resourceName}` : "/";
-
-  return `import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
-import { loginAsRole, navigateTo } from "../../helpers/browser";
-
-// ${target.id} — Full WCAG 2.1 AA Audit: ${target.description}
-// Risk: ${target.riskLevel}
-// Page: ${pagePath}
-//
-// Strategy: 5 separate axe runs, each scoped to one WCAG category.
-// Failures point to the specific criterion violated → faster fix.
-
-test.describe("${target.id} — Full WCAG 2.1 AA (${pagePath})", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsRole(page, ${JSON.stringify(primaryRole)});
-    await navigateTo(page, ${JSON.stringify(pagePath)});
-  });
-
-  test("${target.id}_A1 — color contrast (WCAG 1.4.3)", async ({ page }) => {
-    const results = await new AxeBuilder({ page })
-      .withRules(["color-contrast"])
-      .analyze();
-    const violations = results.violations;
-    if (violations.length > 0) {
-      const summary = violations.flatMap(v =>
-        v.nodes.map(n => \`  \${v.help}: \${n.html.slice(0, 100)}\`)
-      ).join("\\n");
-      console.log(\`Color contrast violations:\\n\${summary}\`);
-    }
-    // Kills: ${target.mutationTargets[0]?.description || "Text changed to low-contrast variant"}
-    expect(violations).toHaveLength(0);
-  });
-
-  test("${target.id}_A2 — keyboard navigation (WCAG 2.1.1)", async ({ page }) => {
-    const results = await new AxeBuilder({ page })
-      .withRules(["focusable-content", "tabindex", "focus-order-semantics"])
-      .analyze();
-    expect(results.violations).toHaveLength(0);
-
-    // Additional manual check: tab through the first 10 elements, ensure focus moves
-    const focusedTags: string[] = [];
-    for (let i = 0; i < 10; i++) {
-      await page.keyboard.press("Tab");
-      const tag = await page.evaluate(() => document.activeElement?.tagName || "");
-      focusedTags.push(tag);
-    }
-    const uniqueFocused = new Set(focusedTags);
-    // Kills: ${target.mutationTargets[1]?.description || "Button replaced with div onclick (loses keyboard support)"}
-    expect(uniqueFocused.size, "Tab focus stuck on same element — keyboard trap!").toBeGreaterThan(1);
-  });
-
-  test("${target.id}_A3 — form labels (WCAG 3.3.2)", async ({ page }) => {
-    const results = await new AxeBuilder({ page })
-      .withRules(["label", "form-field-multiple-labels", "label-title-only"])
-      .analyze();
-    if (results.violations.length > 0) {
-      const summary = results.violations.flatMap(v =>
-        v.nodes.map(n => \`  \${v.help}: \${n.html.slice(0, 100)}\`)
-      ).join("\\n");
-      console.log(\`Form label violations:\\n\${summary}\`);
-    }
-    // Kills: ${target.mutationTargets[2]?.description || "Form label removed (screen reader announces 'edit text')"}
-    expect(results.violations).toHaveLength(0);
-  });
-
-  test("${target.id}_A4 — heading structure (WCAG 1.3.1)", async ({ page }) => {
-    const results = await new AxeBuilder({ page })
-      .withRules(["heading-order", "page-has-heading-one", "empty-heading"])
-      .analyze();
-    expect(results.violations).toHaveLength(0);
-
-    // Additional check: must have at least one h1
-    const h1Count = await page.locator("h1").count();
-    // Kills: ${target.mutationTargets[3]?.description || "Heading skipped (h2 → h4) breaks document outline"}
-    expect(h1Count, "Page must have exactly one h1 (WCAG 1.3.1)").toBe(1);
-  });
-
-  test("${target.id}_A5 — ARIA correctness (WCAG 4.1.2)", async ({ page }) => {
-    const results = await new AxeBuilder({ page })
-      .withRules([
-        "aria-valid-attr", "aria-valid-attr-value", "aria-roles",
-        "aria-required-attr", "aria-allowed-attr", "aria-required-children",
-        "aria-required-parent", "aria-hidden-focus",
-      ])
-      .analyze();
-    if (results.violations.length > 0) {
-      const summary = results.violations.flatMap(v =>
-        v.nodes.map(n => \`  \${v.help}: \${n.html.slice(0, 100)}\`)
-      ).join("\\n");
-      console.log(\`ARIA violations:\\n\${summary}\`);
-    }
-    // Kills: ${target.mutationTargets[4]?.description || "Invalid ARIA role (role='nav' instead of 'navigation')"}
-    expect(results.violations).toHaveLength(0);
-  });
-});
-`;
-}
-
-// ─── Phase A: Stateful API Sequence Generator (Schemathesis-killer) ──────────
-
-/**
- * Generates a multi-step CRUD lifecycle test that chains:
- *   1. Create resource (POST)
- *   2. Read by ID (verify same data returned)
- *   3. Update (verify change persisted)
- *   4. List (verify resource appears)
- *   5. Delete (verify removal)
- *   6. Read after delete (verify 404 / not present)
- *
- * Catches sequence-dependent bugs that single-call tests miss:
- *   - Silent rollback (create returns 200 but doesn't persist)
- *   - Stale cache after update
- *   - Soft delete leaks (delete succeeds but record still readable)
- *   - List cache invalidation bugs
- *
- * Falls back to a partial sequence (just create + read) when full CRUD isn't available.
- */
-export function generateStatefulSequenceTest(target: ProofTarget, analysis: AnalysisResult): string {
-  const ir = analysis.ir;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
-  const tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
-  const tenantConst = `TEST_${tenantEntity.toUpperCase()}_ID`;
-  const roleFnName = roleToCookieFn(getPreferredRole(ir.authModel));
-
-  // Resolve the create endpoint (anchor of the sequence)
-  const createEp = ir.apiEndpoints.find(e =>
-    normalizeEndpointName(e.name, e.method) === target.endpoint || e.name === target.endpoint
-  ) || ir.apiEndpoints.find(e => e.name.toLowerCase().includes("create") || e.name.toLowerCase().includes("add"));
-
-  if (!createEp) {
-    return generateTODOStub(target, "No create endpoint detected — cannot build stateful sequence");
-  }
-
-  // Find the resource name (e.g. "users" from "users.create")
-  const resourceName = createEp.name.split(".")[0];
-
-  // Discover related endpoints by resource prefix
-  const relatedEndpoints = ir.apiEndpoints.filter(e => e.name.startsWith(resourceName + "."));
-  const readEp = relatedEndpoints.find(e => /\.(get|getById|find|read|fetch)/.test(e.name));
-  const listEp = relatedEndpoints.find(e => /\.(list|all|search|index)/.test(e.name));
-  const updateEp = relatedEndpoints.find(e => /\.(update|edit|patch|put)/.test(e.name));
-  const deleteEp = relatedEndpoints.find(e => /\.(delete|remove|destroy)/.test(e.name));
-
-  // Build create payload from input fields
-  const createFields = (createEp.inputFields || []).filter(f => !f.isTenantKey);
-
-  // Identify a string field for unique markers (preferred for assertion)
-  const markerField = createFields.find(f => f.type === "string" && (f.name.toLowerCase().includes("name") || f.name.toLowerCase().includes("title")))
-    || createFields.find(f => f.type === "string");
-  const markerFieldName = markerField?.name;
-
-  // Build create payload — EXCLUDE marker field from defaults (marker overrides it later)
-  // This avoids the "duplicate property in object literal" TypeScript error.
-  const createPayloadEntries = createFields
-    .filter(f => f.name !== markerFieldName)
-    .map(f => `      ${f.name}: ${getValidDefault(f, tenantConst)},`)
-    .join("\n");
-
-  // Detect helpers used by getValidDefault (tomorrowStr / randomPhone) so we import them
-  const usesTomorrowStr = createFields.some(f =>
-    f.type === "date" || (f.type === "string" && (f.name.toLowerCase().includes("date") || f.name.toLowerCase().includes("datum")))
-  );
-  const usesRandomPhone = createFields.some(f =>
-    f.type === "string" && f.name.toLowerCase().includes("phone")
-  );
-  const apiHelperImports = ["trpcMutation", "trpcQuery"];
-  if (usesTomorrowStr) apiHelperImports.push("tomorrowStr");
-  if (usesRandomPhone) apiHelperImports.push("randomPhone");
-
-  // Build update payload (only modifies the marker field if present)
-  const updateFieldEntry = markerFieldName
-    ? `      ${markerFieldName}: \`updated-\${uniqueMarker}\`,`
-    : "";
-
-  return `import { test, expect } from "@playwright/test";
-import { ${apiHelperImports.join(", ")} } from "../../helpers/api";
-import { ${roleFnName} } from "../../helpers/auth";
-import { ${tenantConst} } from "../../helpers/factories";
-
-// ${target.id} — Stateful Sequence: ${target.description}
-// Resource: ${resourceName}
-// Lifecycle: create${readEp ? " → read" : ""}${updateEp ? " → update" : ""}${listEp ? " → list" : ""}${deleteEp ? " → delete → read-after-delete" : ""}
-//
-// Strategy: chain related endpoints with data passing between steps.
-// Catches bugs that single-call tests miss: silent rollback, stale cache,
-// soft delete leaks, list cache invalidation.
-
-let adminCookie: string;
-
-test.beforeAll(async ({ request }) => {
-  adminCookie = await ${roleFnName}(request);
-});
-
-test("${target.id} — full CRUD lifecycle: ${resourceName}", async ({ request }) => {
-  // Use unique marker so assertions can match exact data across steps
-  const uniqueMarker = \`stateful-\${Date.now()}-\${Math.floor(Math.random() * 10000)}\`;
-
-  // ── Step 1: CREATE ──────────────────────────────────────────────────────────
-  const createPayload = {
-    ${tenantField}: ${tenantConst},
-${createPayloadEntries}${markerFieldName ? `\n    ${markerFieldName}: uniqueMarker,` : ""}
-  };
-  const { status: createStatus, data: created } = await trpcMutation(
-    request, "${createEp.name}", createPayload, adminCookie
-  );
-
-  // Kills: Create returns 500 / unhandled exception
-  expect(createStatus, "Create failed").not.toBe(500);
-  expect([200, 201]).toContain(createStatus);
-  expect(created, "Create response is empty").toBeDefined();
-
-  // Extract created ID for next steps (cast as any for nested .data access — strict TS chains can't infer)
-  const createdId = (created as any)?.id ?? (created as any)?.data?.id ?? null;
-  expect(createdId, "Create response missing id field").not.toBeNull();
-${readEp ? `
-  // ── Step 2: READ — verify create actually persisted ─────────────────────────
-  const { status: readStatus, data: read } = await trpcQuery(
-    request, "${readEp.name}",
-    { ${tenantField}: ${tenantConst}, id: createdId },
-    adminCookie
-  );
-  expect(readStatus, "Read failed after create").toBe(200);
-  expect(read, "Read returned empty after create").toBeDefined();
-  // Kills: Create returned 200 but data wasn't persisted (silent rollback)
-  ${markerFieldName ? `expect(
-    (read as any)?.${markerFieldName} ?? (read as any)?.data?.${markerFieldName},
-    "Created marker not found in read response — silent rollback?"
-  ).toBe(uniqueMarker);` : `expect(
-    (read as any)?.id ?? (read as any)?.data?.id,
-    "Read returned different ID than created"
-  ).toBe(createdId);`}
-` : ""}${updateEp ? `
-  // ── Step 3: UPDATE — verify change is persisted ─────────────────────────────
-  const { status: updateStatus, data: updated } = await trpcMutation(
-    request, "${updateEp.name}",
-    {
-      ${tenantField}: ${tenantConst},
-      id: createdId,
-${updateFieldEntry}
-    },
-    adminCookie
-  );
-  expect([200, 201, 204]).toContain(updateStatus);
-${markerFieldName ? `
-  // Re-read to verify update took effect (catches stale cache)
-  const { data: afterUpdate } = await trpcQuery(
-    request, "${readEp?.name || createEp.name}",
-    { ${tenantField}: ${tenantConst}, id: createdId },
-    adminCookie
-  );
-  // Kills: Update returns 200 but cache returns stale data
-  expect(
-    (afterUpdate as any)?.${markerFieldName} ?? (afterUpdate as any)?.data?.${markerFieldName},
-    "Update succeeded but read returned stale value — cache invalidation broken"
-  ).toBe(\`updated-\${uniqueMarker}\`);` : ""}
-` : ""}${listEp ? `
-  // ── Step 4: LIST — verify resource appears in list ──────────────────────────
-  const { status: listStatus, data: listData } = await trpcQuery(
-    request, "${listEp.name}",
-    { ${tenantField}: ${tenantConst} },
-    adminCookie
-  );
-  expect(listStatus).toBe(200);
-  const items = Array.isArray(listData)
-    ? listData
-    : (listData as Record<string, unknown>)?.data ?? (listData as Record<string, unknown>)?.items ?? [];
-  // Kills: List endpoint cache not invalidated after create — record missing
-  const found = (items as Array<Record<string, unknown>>).some(
-    item => item.id === createdId || item.id === String(createdId)
-  );
-  expect(found, \`Created \${${JSON.stringify(resourceName)}} (id=\${createdId}) not found in list — cache invalidation bug?\`).toBe(true);
-` : ""}${deleteEp ? `
-  // ── Step 5: DELETE ──────────────────────────────────────────────────────────
-  const { status: deleteStatus } = await trpcMutation(
-    request, "${deleteEp.name}",
-    { ${tenantField}: ${tenantConst}, id: createdId },
-    adminCookie
-  );
-  expect([200, 204]).toContain(deleteStatus);
-
-  // ── Step 6: READ-AFTER-DELETE — verify removal ──────────────────────────────
-  const { status: postDeleteStatus } = await trpcQuery(
-    request, "${readEp?.name || createEp.name}",
-    { ${tenantField}: ${tenantConst}, id: createdId },
-    adminCookie
-  );
-  // Kills: Delete returned 200 but resource is still readable (soft delete leak)
-  expect([404, 410, 204], "Resource still readable after delete — soft delete leak!")
-    .toContain(postDeleteStatus);
-` : ""}
-});
-`;
-}
-
-

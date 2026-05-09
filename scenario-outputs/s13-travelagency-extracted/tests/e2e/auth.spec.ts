@@ -13,7 +13,7 @@ test.describe("Browser: Authentication", () => {
     await page.getByLabel(/email/i).fill(process.env.E2E_ADMIN_USER || "null@test.com");
     await page.getByLabel(/password|passwort/i).fill(process.env.E2E_ADMIN_PASS || "null");
     await page.getByRole("button", { name: /login|anmelden|sign.in/i }).click();
-    await expect(page).not.toHaveURL(//login/, { timeout: 10000 });
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
     // Kills: Login form doesn't redirect on success
   });
 

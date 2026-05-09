@@ -134,6 +134,43 @@ export default router;
 `,
 };
 
+const NEXT_ROUTE_FILE: CodeFile = {
+  path: "app/api/orders/route.ts",
+  content: `
+import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const createOrderSchema = z.object({
+  tenantId: z.number(),
+  amount: z.number().min(1).max(10000),
+  status: z.enum(["pending", "paid", "cancelled"]),
+});
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  const input = createOrderSchema.parse(body);
+  return NextResponse.json({ id: "ord_1", tenantId: input.tenantId, amount: input.amount, status: input.status });
+}
+
+export async function GET() {
+  return Response.json({ id: "ord_1", tenantId: 1, amount: 99, status: "paid" });
+}
+`,
+};
+
+const PACKAGE_JSON_NEXT_ZOD: CodeFile = {
+  path: "package.json",
+  content: JSON.stringify({
+    dependencies: {
+      "next": "^14.0.0",
+      "zod": "^3.22.0",
+    },
+    devDependencies: {
+      "typescript": "^5.0.0",
+    },
+  }),
+};
+
 // ─── detectFramework tests ────────────────────────────────────────────────────
 
 describe("detectFramework", () => {
@@ -308,6 +345,45 @@ describe("parseCodeToIR", () => {
       const methods = result.ir.apiEndpoints.map(ep => ep.method);
       expect(methods.some(m => m.startsWith("GET"))).toBe(true);
       expect(methods.some(m => m.startsWith("POST"))).toBe(true);
+    });
+  });
+
+  describe("Next.js App Router detection", () => {
+    it("detects Auth.js Credentials instead of inventing /api/auth/login", () => {
+      const result = parseCodeToIR([
+        PACKAGE_JSON_NEXT_ZOD,
+        {
+          path: "app/api/auth/[...nextauth]/route.ts",
+          content: `
+            import NextAuth from "next-auth";
+            import CredentialsProvider from "next-auth/providers/credentials";
+            export const { handlers } = NextAuth({
+              providers: [CredentialsProvider({ authorize: async () => ({ id: "1" }) })],
+            });
+            export const { GET, POST } = handlers;
+          `,
+        },
+      ]);
+
+      expect(result.ir.authModel?.loginEndpoint).toBe("POST /api/auth/callback/credentials");
+      expect(result.ir.authModel?.loginEndpoint).not.toBe("/api/auth/login");
+    });
+
+    it("extracts named Zod schemas, tenant keys, and response fields", () => {
+      const result = parseCodeToIR([PACKAGE_JSON_NEXT_ZOD, NEXT_ROUTE_FILE]);
+      const postEndpoint = result.ir.apiEndpoints.find(ep => ep.method.startsWith("POST"));
+      expect(postEndpoint).toBeDefined();
+      expect(postEndpoint?.inputFields.map(f => f.name)).toEqual(expect.arrayContaining(["tenantId", "amount", "status"]));
+      expect(postEndpoint?.inputFields.find(f => f.name === "tenantId")?.isTenantKey).toBe(true);
+      expect(postEndpoint?.outputFields).toEqual(expect.arrayContaining(["id", "tenantId", "amount", "status"]));
+      expect(result.ir.tenantModel?.tenantIdField).toBe("tenantId");
+    });
+
+    it("keeps single Next.js + Zod projects in conservative rather than minimal readiness", () => {
+      const result = parseCodeToIR([PACKAGE_JSON_NEXT_ZOD, NEXT_ROUTE_FILE]);
+      expect(result.supportedScope?.confidenceScore).toBeGreaterThanOrEqual(60);
+      expect(result.supportedScope?.goldReadinessScore).toBeGreaterThanOrEqual(50);
+      expect(result.supportedScope?.matchedGoldSignals).toContain("No mixed backend frameworks");
     });
   });
 

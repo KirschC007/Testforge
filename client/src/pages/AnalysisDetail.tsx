@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -9,9 +9,10 @@ import {
   Package, GitBranch, Zap, Lock, Scale, Activity, Search,
   RefreshCw, Database, Star, ChevronRight, Layers, GitCompare
 } from "lucide-react";
-import { Streamdown } from "streamdown";
 import type { Analysis } from "../../../drizzle/schema";
 import { SpecHealthPanel, type SpecHealth } from "@/components/SpecHealthPanel";
+
+const MarkdownRenderer = lazy(() => import("@/components/MarkdownRenderer"));
 
 const STEPS = [
   { key: "pending",   label: "Queued",               desc: "Waiting to start",                     layer: 0 },
@@ -140,6 +141,232 @@ function ProofTypeBadge({ type }: { type: string }) {
       style={{ color: cat.color, background: `${cat.color}18` }}>
       {cat.icon} {cat.label}
     </span>
+  );
+}
+
+function SupportedScopePanel({ supportedScope }: { supportedScope: any }) {
+  const verdictColors: Record<string, string> = {
+    supported: "var(--tf-green)",
+    partial: "var(--tf-yellow)",
+    unsupported: "var(--tf-red)",
+  };
+  const color = verdictColors[supportedScope?.verdict] || "var(--tf-yellow)";
+  const tierLabels: Record<string, string> = {
+    gold: "Gold Standard",
+    supported: "Supported",
+    experimental: "Experimental",
+  };
+  const evidenceLabels: Record<string, string> = {
+    detected: "Detected",
+    inferred: "Inferred",
+    heuristic: "Heuristic",
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Shield className="w-4 h-4" style={{ color }} />
+        <h3 className="font-semibold text-sm">Supported Scope</h3>
+        <span
+          className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full"
+          style={{
+            color: supportedScope?.tier === "gold" ? "var(--tf-yellow)" : "var(--tf-blue)",
+            background: supportedScope?.tier === "gold" ? "var(--tf-yellow)18" : "var(--tf-blue)18",
+          }}
+        >
+          {tierLabels[supportedScope?.tier] || supportedScope?.tier}
+        </span>
+        <span
+          className="ml-auto text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full"
+          style={{ color, background: `${color}18` }}
+        >
+          {supportedScope.verdict}
+        </span>
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">{supportedScope.summary}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+        <div className="text-xs text-muted-foreground">
+          Primary Stack: <span className="text-foreground">{supportedScope.primaryStack || "unknown"}</span>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Evidence Level: <span className="text-foreground">{evidenceLabels[supportedScope.evidenceLevel] || supportedScope.evidenceLevel}</span>
+        </div>
+      </div>
+      <div className="mb-3 flex items-center gap-2">
+        <div className="text-xs text-muted-foreground">Confidence</div>
+        <div className="flex-1 h-2 rounded-full overflow-hidden bg-muted">
+          <div className="h-full rounded-full" style={{ width: `${supportedScope.confidenceScore || 0}%`, background: color }} />
+        </div>
+        <div className="text-xs font-mono text-foreground">{supportedScope.confidenceScore || 0}/100</div>
+      </div>
+      <div className="mb-3 flex items-center gap-2">
+        <div className="text-xs text-muted-foreground">Gold Readiness</div>
+        <div className="flex-1 h-2 rounded-full overflow-hidden bg-muted">
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${supportedScope.goldReadinessScore || 0}%`, background: "var(--tf-yellow)" }}
+          />
+        </div>
+        <div className="text-xs font-mono text-foreground">{supportedScope.goldReadinessScore || 0}/100</div>
+      </div>
+      {supportedScope.strengths?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium mb-1">Matched</div>
+          <div className="flex flex-wrap gap-1.5">
+            {supportedScope.strengths.map((item: string) => (
+              <span key={item} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {supportedScope.matchedGoldSignals?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium mb-1">Gold Signals Present</div>
+          <div className="flex flex-wrap gap-1.5">
+            {supportedScope.matchedGoldSignals.map((item: string) => (
+              <span key={item} className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--tf-yellow)]/10 text-[var(--tf-yellow)]">
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {supportedScope.missingGoldSignals?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium mb-1">Missing For Gold</div>
+          <div className="space-y-1">
+            {supportedScope.missingGoldSignals.map((item: string) => (
+              <div key={item} className="text-xs text-muted-foreground">• {item}</div>
+            ))}
+          </div>
+        </div>
+      )}
+      {supportedScope.evidenceSignals?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium mb-1">Evidence Signals</div>
+          <div className="space-y-1">
+            {supportedScope.evidenceSignals.map((signal: any) => (
+              <div key={`${signal.label}-${signal.source}`} className="text-xs text-muted-foreground">
+                • {signal.matched ? "matched" : "missing"}: {signal.label} [{signal.level}] via {signal.source}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {supportedScope.blockers?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium mb-1">Blockers</div>
+          <div className="space-y-1">
+            {supportedScope.blockers.map((item: string) => (
+              <div key={item} className="text-xs text-muted-foreground">• {item}</div>
+            ))}
+          </div>
+        </div>
+      )}
+      {supportedScope.recommendations?.length > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-1">Recommendations</div>
+          <div className="space-y-1">
+            {supportedScope.recommendations.map((item: string) => (
+              <div key={item} className="text-xs text-muted-foreground">• {item}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProofPlanningPanel({ proofPlanning, skippedProofTargets }: { proofPlanning: any; skippedProofTargets?: any[] }) {
+  if (!proofPlanning) return null;
+  const visibleSkippedTargets = skippedProofTargets || [];
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Layers className="w-4 h-4 text-primary" />
+        <h3 className="font-semibold text-sm">Proof Planning</h3>
+        <span className="ml-auto text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+          {proofPlanning.mode}
+        </span>
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">{proofPlanning.summary}</p>
+      <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+        <div className="bg-muted/50 rounded-lg p-3">
+          <div className="text-muted-foreground">Kept Targets</div>
+          <div className="text-lg font-mono text-foreground">{proofPlanning.keptTargetCount}</div>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-3">
+          <div className="text-muted-foreground">Skipped Targets</div>
+          <div className="text-lg font-mono text-foreground">{proofPlanning.skippedTargetCount}</div>
+        </div>
+      </div>
+      {visibleSkippedTargets.length > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-1">Skipped Before Generation</div>
+          <div className="space-y-1">
+            {visibleSkippedTargets.slice(0, 8).map((target: any) => (
+              <div key={target.id} className="text-xs text-muted-foreground">• {target.proofType} — {target.reason}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExecutionProfilePanel({ executionProfile }: { executionProfile: any }) {
+  if (!executionProfile) return null;
+  const color = executionProfile.mode === "verified" ? "var(--tf-green)" : executionProfile.mode === "conservative" ? "var(--tf-yellow)" : "var(--tf-red)";
+  const bars = [
+    { label: "Compile", value: executionProfile.compileReadinessScore },
+    { label: "Runtime", value: executionProfile.runtimeReadinessScore },
+    { label: "Sandbox", value: executionProfile.sandboxReadinessScore },
+  ];
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Zap className="w-4 h-4" style={{ color }} />
+        <h3 className="font-semibold text-sm">Execution Profile</h3>
+        <span className="ml-auto text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full" style={{ color, background: `${color}18` }}>
+          {executionProfile.mode}
+        </span>
+      </div>
+      <p className="text-sm text-muted-foreground mb-3">{executionProfile.summary}</p>
+      <div className="space-y-2 mb-3">
+        {bars.map((bar) => (
+          <div key={bar.label} className="flex items-center gap-2">
+            <div className="w-16 text-xs text-muted-foreground">{bar.label}</div>
+            <div className="flex-1 h-2 rounded-full overflow-hidden bg-muted">
+              <div className="h-full rounded-full" style={{ width: `${bar.value || 0}%`, background: color }} />
+            </div>
+            <div className="text-xs font-mono text-foreground">{bar.value || 0}/100</div>
+          </div>
+        ))}
+      </div>
+      {executionProfile.blockers?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium mb-1">Execution Blockers</div>
+          <div className="space-y-1">
+            {executionProfile.blockers.map((item: string) => (
+              <div key={item} className="text-xs text-muted-foreground">• {item}</div>
+            ))}
+          </div>
+        </div>
+      )}
+      {executionProfile.recommendations?.length > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-1">Recommendations</div>
+          <div className="space-y-1">
+            {executionProfile.recommendations.map((item: string) => (
+              <div key={item} className="text-xs text-muted-foreground">• {item}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -367,6 +594,10 @@ export default function AnalysisDetail() {
 
   // Extract specHealth from result (Fix 2: check top-level first, then nested for older analyses)
   const specHealth: SpecHealth | null = result?.specHealth || result?.analysisResult?.specHealth || null;
+  const supportedScope = result?.analysisResult?.supportedScope || null;
+  const executionProfile = result?.analysisResult?.executionProfile || null;
+  const proofPlanning = result?.riskModel?.proofPlanning || null;
+  const skippedProofTargets = result?.riskModel?.skippedProofTargets || [];
 
   // Group proofs by type
   const proofGroups = groupProofsByCategory(allProofs);
@@ -435,7 +666,7 @@ export default function AnalysisDetail() {
                 Abbrechen
               </Button>
             )}
-            {analysis.status === "completed" && analysis.outputZipUrl && (
+            {analysis.status === "completed" && (analysis.outputZipKey || analysis.outputZipUrl) && (
               <div className="flex items-center gap-2 flex-wrap">
                 <Link href={`/analysis/${id}/run`}>
                   <Button size="sm" className="gap-1.5 bg-violet-600 hover:bg-violet-500 text-white">
@@ -469,7 +700,7 @@ export default function AnalysisDetail() {
                 >
                   <GitBranch className="w-3.5 h-3.5" /> Post PR Comment
                 </Button>
-                <a href={analysis.outputZipUrl} download>
+                <a href={`/api/analyses/${id}/download`} download>
                   <Button className="gap-2">
                     <Download className="w-4 h-4" /> Download Tests (.zip)
                   </Button>
@@ -540,6 +771,19 @@ export default function AnalysisDetail() {
         {/* Completed */}
         {analysis.status === "completed" && suite && (
           <div className="space-y-6">
+            {supportedScope && (
+              <SupportedScopePanel supportedScope={supportedScope} />
+            )}
+            {(proofPlanning || executionProfile) && (
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {proofPlanning && (
+                  <ProofPlanningPanel proofPlanning={proofPlanning} skippedProofTargets={skippedProofTargets} />
+                )}
+                {executionProfile && (
+                  <ExecutionProfilePanel executionProfile={executionProfile} />
+                )}
+              </div>
+            )}
             {/* Spec Health Panel — top priority */}
             {specHealth && (
               <SpecHealthPanel specHealth={specHealth} />
@@ -802,14 +1046,16 @@ export default function AnalysisDetail() {
                 </button>
                 {showFullReport && (
                   <div className="p-6 prose prose-invert prose-sm max-w-none">
-                    <Streamdown>{report}</Streamdown>
+                    <Suspense fallback={<div className="text-sm text-muted-foreground">Loading report renderer...</div>}>
+                      <MarkdownRenderer>{report}</MarkdownRenderer>
+                    </Suspense>
                   </div>
                 )}
               </div>
             )}
 
             {/* Download CTA */}
-            {analysis.outputZipUrl && (
+            {(analysis.outputZipKey || analysis.outputZipUrl) && (
               <div className="bg-card border border-[var(--tf-green)]/20 rounded-lg p-5 flex items-center justify-between gap-4">
                 <div>
                   <div className="font-semibold text-sm mb-1">Test Suite Ready — CI/CD Included</div>
@@ -817,7 +1063,7 @@ export default function AnalysisDetail() {
                     {allProofs.length} validated tests + GitHub Actions + README — unzip, npm install, playwright test
                   </div>
                 </div>
-                <a href={analysis.outputZipUrl} download>
+                <a href={`/api/analyses/${id}/download`} download>
                   <Button className="gap-2 shrink-0">
                     <Download className="w-4 h-4" /> Download .zip
                   </Button>

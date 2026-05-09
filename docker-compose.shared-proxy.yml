@@ -1,0 +1,93 @@
+version: "3.9"
+
+# TestForge shared-proxy deployment.
+# Use this on servers that already have a public Caddy/Nginx container on 80/443.
+# The existing reverse proxy must join `taco_internal` and route to `testforge_app:3000`.
+
+services:
+  app:
+    image: testforge/app:latest
+    container_name: testforge_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      AUTH_MODE: ${AUTH_MODE:-local}
+      APP_BASE_URL: ${APP_BASE_URL}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, linklocal, uniquelocal}
+      DATABASE_URL: mysql://testforge:${MYSQL_PASSWORD}@testforge_db:3306/testforge
+      JWT_SECRET: ${JWT_SECRET}
+      BUILT_IN_FORGE_API_KEY: ${LLM_API_KEY}
+      BUILT_IN_FORGE_API_URL: ${LLM_API_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      S3_ENDPOINT: http://testforge-minio:9000
+      S3_BUCKET: ${S3_BUCKET:-testforge}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-testforge}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      VITE_APP_ID: ${VITE_APP_ID:-}
+      OAUTH_SERVER_URL: ${OAUTH_SERVER_URL:-}
+      VITE_OAUTH_PORTAL_URL: ${VITE_OAUTH_PORTAL_URL:-}
+      OWNER_OPEN_ID: ${OWNER_OPEN_ID:-}
+      OWNER_NAME: ${OWNER_NAME:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      testforge: {}
+      shared_proxy: {}
+
+  db:
+    image: mysql:8.0
+    container_name: testforge_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: testforge
+      MYSQL_USER: testforge
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - testforge_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "testforge", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - testforge
+
+  minio:
+    image: minio/minio:latest
+    container_name: testforge_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-testforge}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - testforge_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      testforge:
+        aliases:
+          - testforge-minio
+
+volumes:
+  testforge_db_data:
+  testforge_minio_data:
+
+networks:
+  testforge:
+    driver: bridge
+  shared_proxy:
+    external: true
+    name: taco_internal

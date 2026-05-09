@@ -25,6 +25,7 @@ export interface RepoScanResult {
   owner: string;
   repo: string;
   branch: string;
+  subpath?: string;
   specs: DiscoveredSpec[];
   totalFiles: number;
   scannedAt: string;
@@ -64,6 +65,72 @@ interface GitHubTreeItem {
   download_url?: string;
 }
 
+type FetchLike = typeof fetch;
+
+function buildGitHubHeaders(githubToken?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (githubToken) {
+    headers["Authorization"] = `Bearer ${githubToken}`;
+  }
+  return headers;
+}
+
+async function fetchDefaultBranch(
+  owner: string,
+  repo: string,
+  headers: Record<string, string>,
+  fetchImpl: FetchLike = fetch
+): Promise<string | null> {
+  const repoUrl = `https://api.github.com/repos/${owner}/${repo}`;
+  const response = await fetchImpl(repoUrl, { headers });
+  if (!response.ok) return null;
+  const data = await response.json() as { default_branch?: string };
+  return data.default_branch || null;
+}
+
+async function fetchRepoTreeWithFallback(
+  owner: string,
+  repo: string,
+  branch: string,
+  headers: Record<string, string>,
+  fetchImpl: FetchLike = fetch
+): Promise<{ tree: GitHubTreeItem[]; truncated: boolean; resolvedBranch: string }> {
+  const candidates = Array.from(new Set([branch, "main", "master", "canary"]));
+  let lastErrorText = "unknown error";
+  let lastStatus = 500;
+
+  for (const candidate of candidates) {
+    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${candidate}?recursive=1`;
+    const response = await fetchImpl(treeUrl, { headers });
+    if (response.ok) {
+      const data = await response.json() as { tree: GitHubTreeItem[]; truncated: boolean };
+      return { ...data, resolvedBranch: candidate };
+    }
+    lastStatus = response.status;
+    lastErrorText = await response.text();
+    if (response.status !== 404) {
+      throw new Error(`GitHub API error ${response.status}: ${lastErrorText}`);
+    }
+  }
+
+  const defaultBranch = await fetchDefaultBranch(owner, repo, headers, fetchImpl);
+  if (defaultBranch && !candidates.includes(defaultBranch)) {
+    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`;
+    const response = await fetchImpl(treeUrl, { headers });
+    if (response.ok) {
+      const data = await response.json() as { tree: GitHubTreeItem[]; truncated: boolean };
+      return { ...data, resolvedBranch: defaultBranch };
+    }
+    lastStatus = response.status;
+    lastErrorText = await response.text();
+  }
+
+  throw new Error(`GitHub API error ${lastStatus}: ${lastErrorText}`);
+}
+
 /**
  * Scan a GitHub repository for API spec files.
  * Uses the GitHub Trees API (recursive) for efficiency.
@@ -72,33 +139,21 @@ export async function scanGitHubRepo(
   owner: string,
   repo: string,
   branch: string = "main",
-  githubToken?: string
+  githubToken?: string,
+  subpath?: string
 ): Promise<RepoScanResult> {
-  const headers: Record<string, string> = {
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  if (githubToken) {
-    headers["Authorization"] = `Bearer ${githubToken}`;
-  }
-
-  // Get the tree recursively
-  const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-  const treeRes = await fetch(treeUrl, { headers });
-  if (!treeRes.ok) {
-    const err = await treeRes.text();
-    throw new Error(`GitHub API error ${treeRes.status}: ${err}`);
-  }
-  const treeData = await treeRes.json() as { tree: GitHubTreeItem[]; truncated: boolean };
+  const headers = buildGitHubHeaders(githubToken);
+  const treeData = await fetchRepoTreeWithFallback(owner, repo, branch, headers);
+  const normalizedSubpath = normalizeSubpath(subpath);
 
   const specs: DiscoveredSpec[] = [];
   const candidates = treeData.tree.filter(
-    item => item.type === "blob" && isSpecFile(item.path)
+    item => item.type === "blob" && isWithinSubpath(item.path, normalizedSubpath) && isSpecFile(item.path)
   );
 
   // For each candidate, peek at the first 500 bytes to detect type
   for (const item of candidates.slice(0, 20)) { // Max 20 specs per repo
-    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${treeData.resolvedBranch}/${item.path}`;
     let specType: DiscoveredSpec["type"] = "unknown";
     try {
       const peekRes = await fetch(rawUrl, {
@@ -124,7 +179,8 @@ export async function scanGitHubRepo(
   return {
     owner,
     repo,
-    branch,
+    branch: treeData.resolvedBranch,
+    subpath: normalizedSubpath,
     specs,
     totalFiles: treeData.tree.filter(i => i.type === "blob").length,
     scannedAt: new Date().toISOString(),
@@ -165,6 +221,18 @@ function isCodeFile(path: string): boolean {
   return CODE_FILE_PATTERNS.some(p => p.test(path));
 }
 
+function normalizeSubpath(subpath?: string): string | undefined {
+  if (!subpath) return undefined;
+  const normalized = subpath.replace(/^\/+|\/+$/g, "");
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function isWithinSubpath(filePath: string, subpath?: string): boolean {
+  const normalized = normalizeSubpath(subpath);
+  if (!normalized) return true;
+  return filePath === normalized || filePath.startsWith(`${normalized}/`);
+}
+
 /**
  * Fetch code files from a GitHub repository for static analysis.
  * Downloads all relevant .ts/.tsx/.js/.prisma/package.json/.env.example files.
@@ -175,28 +243,16 @@ export async function fetchRepoCodeFiles(
   owner: string,
   repo: string,
   branch: string = "main",
-  githubToken?: string
+  githubToken?: string,
+  subpath?: string
 ): Promise<Array<{ path: string; content: string }>> {
-  const headers: Record<string, string> = {
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  if (githubToken) {
-    headers["Authorization"] = `Bearer ${githubToken}`;
-  }
-
-  // Get the full file tree
-  const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-  const treeRes = await fetch(treeUrl, { headers });
-  if (!treeRes.ok) {
-    const err = await treeRes.text();
-    throw new Error(`GitHub API error ${treeRes.status}: ${err}`);
-  }
-  const treeData = await treeRes.json() as { tree: GitHubTreeItem[]; truncated: boolean };
+  const headers = buildGitHubHeaders(githubToken);
+  const treeData = await fetchRepoTreeWithFallback(owner, repo, branch, headers);
+  const normalizedSubpath = normalizeSubpath(subpath);
 
   // Filter to relevant code files
   const candidates = treeData.tree
-    .filter(item => item.type === "blob" && isCodeFile(item.path))
+    .filter(item => item.type === "blob" && isWithinSubpath(item.path, normalizedSubpath) && isCodeFile(item.path))
     .sort((a, b) => (a.size || 0) - (b.size || 0)) // Smallest first
     .slice(0, 100); // Max 100 files
 
@@ -209,7 +265,7 @@ export async function fetchRepoCodeFiles(
     if (totalBytes >= MAX_TOTAL_BYTES) break;
     if ((item.size || 0) > MAX_FILE_BYTES) continue;
 
-    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`;
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${treeData.resolvedBranch}/${item.path}`;
     try {
       const res = await fetch(rawUrl, { headers });
       if (!res.ok) continue;
@@ -231,12 +287,13 @@ export async function fetchRepoCodeFiles(
  *   https://github.com/owner/repo/tree/branch
  *   https://github.com/owner/repo/blob/branch/path
  */
-export function parseGitHubUrl(url: string): { owner: string; repo: string; branch: string } | null {
-  const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/(?:tree|blob)\/([^/]+))?(?:\/.*)?$/);
+export function parseGitHubUrl(url: string): { owner: string; repo: string; branch: string; subpath?: string } | null {
+  const match = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/(tree|blob)\/([^/]+)(?:\/(.*))?)?\/?$/);
   if (!match) return null;
   return {
     owner: match[1],
     repo: match[2],
-    branch: match[3] || "main",
+    branch: match[4] || "main",
+    subpath: normalizeSubpath(match[5]),
   };
 }

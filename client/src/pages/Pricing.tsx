@@ -7,68 +7,69 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
+import PublicFooter from "@/components/PublicFooter";
 
 const PLANS = [
   {
     id: "free",
-    name: "Free",
+    name: "First Run",
     price: 0,
-    period: "forever",
+    period: "one-time",
     color: "var(--tf-blue)",
     icon: <Shield className="w-5 h-5" />,
-    description: "For individual developers evaluating TestForge.",
+    description: "One free proof-grade analysis to see whether TestForge catches something real in your stack.",
     features: [
-      "3 analyses / day",
+      "1 analysis free",
       "All 16 proof types",
       "ZIP download",
       "OpenAPI / Swagger support",
       "tRPC + Express + Next.js code scan",
-      "Community support",
+      "No credit card required",
     ],
-    cta: "Start Free",
-    ctaHref: "/new",
+    cta: "Run First Analysis",
+    ctaHref: "/analysis/new",
     highlight: false,
   },
   {
-    id: "pro",
-    name: "Pro",
-    price: 49,
-    period: "/ month",
+    id: "starter",
+    name: "Starter",
+    price: 19,
+    period: "/ analysis",
     color: "var(--tf-orange)",
     icon: <Zap className="w-5 h-5" />,
-    description: "For solo engineers and small teams shipping fast.",
+    description: "For solo builders who want a fast yes-or-no check before shipping.",
     features: [
-      "50 analyses / day",
+      "Single deep analysis",
       "All 16 proof types",
-      "Smart Parser (3-pass, 4 parallel LLM calls)",
-      "5 browser flow types (A–E) + helpers/browser.ts",
-      "Spec Diff tracking",
-      "GitHub PR — Branch + Commit + PR via API",
-      "Priority email support",
+      "Code or spec upload",
+      "Ready-to-run ZIP output",
+      "Static findings + proof report",
+      "Replayable scorecard artifacts",
+      "Email support",
     ],
-    cta: "Start Pro",
-    ctaHref: "/new",
+    cta: "Buy One Analysis",
+    ctaHref: "/analysis/new",
     highlight: true,
   },
   {
     id: "team",
     name: "Team",
-    price: 199,
+    price: 499,
     period: "/ month",
     color: "var(--tf-purple)",
     icon: <Users className="w-5 h-5" />,
-    description: "For engineering teams with multiple services.",
+    description: "For teams that want recurring scans without per-run friction.",
     features: [
-      "200 analyses / day",
-      "All Pro features",
-      "Feedback-Loop (test results → re-analysis)",
-      "Repo-Scan (multi-file)",
-      "Industry Proof Packs (FinTech, HealthTech, eCommerce)",
-      "Slack / webhook notifications",
-      "Dedicated Slack channel",
+      "200 analyses / day fair-use guard",
+      "All Starter features",
+      "Spec diff tracking",
+      "GitHub PR comment generation",
+      "External benchmark scorecards",
+      "Priority queue",
+      "Team sharing",
     ],
-    cta: "Start Team",
-    ctaHref: "/new",
+    cta: "Start Power Pack",
+    ctaHref: "/analysis/new",
     highlight: false,
   },
   {
@@ -149,14 +150,14 @@ export default function Pricing() {
         {/* Header */}
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/5 text-xs font-medium text-primary mb-4">
-            <Zap className="w-3 h-3" /> Simple, transparent pricing
+            <Zap className="w-3 h-3" /> One free run, then pay for outcomes
           </div>
           <h1 className="text-4xl font-bold mb-3">
-            From spec to proof-grade tests
+            Start free. Pay when the analysis is worth running again.
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            All plans include all 16 proof types, ZIP download, and OpenAPI + code-scan support.
-            Upgrade for higher volume, browser flow tests, GitHub PR integration, and team collaboration.
+            TestForge is priced like a developer tool, not a six-month pentest retainer.
+            The first analysis is free, single runs are cheap, and teams only upgrade when repeated coverage becomes useful.
           </p>
         </div>
 
@@ -290,7 +291,7 @@ export default function Pricing() {
             {[
               {
                 q: "What counts as one analysis?",
-                a: "One analysis = one spec file or codebase processed through the full 5-layer pipeline. The daily limit resets at UTC midnight.",
+              a: "One analysis = one spec file or codebase processed through the full pipeline. The first full-strength analysis is free. Paid tiers unlock more usage.",
               },
               {
                 q: "Can I use OpenAPI / Swagger specs?",
@@ -325,6 +326,7 @@ export default function Pricing() {
           </div>
         </div>
       </div>
+      <PublicFooter />
     </div>
   );
 }

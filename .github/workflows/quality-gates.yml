@@ -1,0 +1,67 @@
+name: Quality Gates
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  analyzer-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Analyzer regression tests
+        run: npx vitest run server/analyzer/static-analyzer.test.ts server/analyzer/evals/bug-zoo-eval.test.ts server/analyzer/evals/bug-kill-readiness.test.ts server/analyzer/evals/scoreboard.test.ts server/analyzer/evals/scoreboard-compare.test.ts server/analyzer/buggy-system-smoke.test.ts server/analyzer/report.test.ts server/analyzer/risk-model-proof-types.test.ts server/analyzer/world-class-regressions.test.ts server/_core/product-readiness.test.ts server/_core/security-headers.test.ts server/_core/upload-security.test.ts server/_core/url-safety.test.ts
+
+      - name: Bug zoo evaluation
+        run: npm run eval:bug-zoo -- --json
+
+      - name: Bug-kill readiness evaluation
+        run: npm run eval:bug-kill-readiness -- --json
+
+      - name: False positive evaluation
+        run: npm run eval:false-positives -- --json
+
+      - name: External repo benchmarks
+        run: npm run eval:external-repos -- --json
+
+      - name: Output execution readiness
+        run: npm run eval:output-execution -- --json
+
+      - name: Quality scoreboard
+        run: npm run eval:scoreboard -- --json
+
+      - name: Compare against quality baseline
+        run: npm run eval:compare-baseline -- --json
+
+      - name: Verify launch readiness
+        run: npm run verify:launch
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: npm run verify:build-artifacts
+
+      - name: Upload quality artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: testforge-quality-report
+          path: artifacts/quality

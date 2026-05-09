@@ -1,10 +1,31 @@
 import type { EndpointField, AnalysisResult, GeneratedHelpers, AuthRole } from "./types";
+import { normalizeEndpointName } from "./normalize";
 
 // ─── Helpers Generator ────────────────────────────────────────────────────────
 
+function toSafeIdentifier(raw: string, fallback = "Generated"): string {
+  const parts = raw
+    .replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "")
+    .replace(/^\/api\/?/i, "")
+    .split(/[^a-zA-Z0-9_$]+/)
+    .filter(Boolean);
+  const joined = parts
+    .map((part, index) => {
+      const cleaned = part.replace(/^[^a-zA-Z_$]+/, "");
+      if (!cleaned) return "";
+      return index === 0
+        ? cleaned.charAt(0).toLowerCase() + cleaned.slice(1)
+        : cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    })
+    .join("");
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(joined) ? joined : fallback;
+}
+
 export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const ir = analysis.ir;
-  const tenantField = ir.tenantModel?.tenantIdField || "tenantId";
+  const tenantField = ir.tenantModel?.tenantIdField || null;
+  const hasTenantModel = Boolean(tenantField);
+  const hasAuthModel = Boolean(ir.authModel?.loginEndpoint);
   // Detect tenantEntity from IR or from apiEndpoints isTenantKey fields or resources tenantKey
   let tenantEntity = ir.tenantModel?.tenantEntity || "tenant";
   if (tenantEntity === "tenant") {
@@ -26,12 +47,10 @@ export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
     }
   }
   // Strip HTTP method prefix if present (e.g. "POST /api/trpc/auth.login" → "/api/trpc/auth.login")
-  const rawLoginEndpoint = ir.authModel?.loginEndpoint || "/api/trpc/auth.login";
+  const rawLoginEndpoint = hasAuthModel ? ir.authModel!.loginEndpoint : "";
   const loginEndpoint = rawLoginEndpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
   const csrfEndpoint = ir.authModel?.csrfEndpoint || "";
-  const roles = (ir.authModel?.roles || [
-    { name: "admin", envUserVar: "E2E_ADMIN_USER", envPassVar: "E2E_ADMIN_PASS", defaultUser: "test-admin", defaultPass: "TestPass2026x" },
-  ]).filter((r): r is typeof r & { name: string } => Boolean(r?.name && typeof r.name === "string" && r.name.trim().length > 0))
+  const roles = (hasAuthModel ? ir.authModel?.roles || [] : []).filter((r): r is typeof r & { name: string } => Boolean(r?.name && typeof r.name === "string" && r.name.trim().length > 0))
   .map(r => ({
     ...r,
     name: r.name.trim(),
@@ -54,30 +73,111 @@ export function generateHelpers(analysis: AnalysisResult): GeneratedHelpers {
   const getEndpoint = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("getbyid") || e.name.toLowerCase().includes("get"));
   const listEndpoint = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("list"));
   const cancelEndpoint = ir.apiEndpoints.find(e => e.name.toLowerCase().includes("cancel") || e.name.toLowerCase().includes("delete"));
+  type RestEndpointAlias = { default: string; query?: string; mutation?: string };
+  const restEndpointAliases: Record<string, RestEndpointAlias> = {};
+  const addRestEndpointAlias = (key: string, raw: string, method: string) => {
+    if (!key) return;
+    const existing = restEndpointAliases[key] || { default: raw };
+    if (method === "GET") {
+      existing.query = raw;
+      if (!existing.default) existing.default = raw;
+    } else {
+      existing.mutation = raw;
+      // Prefer write methods as default because ambiguous helper calls are usually mutations.
+      existing.default = raw;
+    }
+    restEndpointAliases[key] = existing;
+  };
+  for (const endpoint of ir.apiEndpoints) {
+    const raw = endpoint.method || endpoint.name;
+    const restMatch = raw.match(/^(GET|POST|PUT|PATCH|DELETE)\s+\/.+/i);
+    if (!restMatch) continue;
+    const method = restMatch[1].toUpperCase();
+    const normalized = normalizeEndpointName(endpoint.name, endpoint.method);
+    addRestEndpointAlias(normalized, raw, method);
+    if (endpoint.name !== raw) addRestEndpointAlias(endpoint.name, raw, method);
+  }
+  const tenantConstants = hasTenantModel
+    ? `// Test tenant IDs — update these to match your test environment
+export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
+export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_B_ID || process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
+${tenantField ? `// Compatibility aliases for generators that derive constants from the tenant field name (${tenantField})
+export const TEST_${tenantField.toUpperCase()} = TEST_${tenantEntity.toUpperCase()}_ID;
+export const TEST_${tenantField.toUpperCase()}_B = TEST_${tenantEntity.toUpperCase()}_B_ID;` : ""}
+${tenantEntity.toUpperCase() !== "TENANT" ? `// Canonical alias — always available regardless of tenant entity name
+export const TEST_TENANT_ID = TEST_${tenantEntity.toUpperCase()}_ID;
+export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;` : ""}`
+    : "// Single-tenant app detected: no tenantId fallback or cross-tenant fixtures are generated.";
+  const createTenantInterfaceLine = hasTenantModel ? `  ${tenantField}?: number;` : "";
+  const createTenantPayloadLine = hasTenantModel ? `    ${tenantField}: opts.${tenantField} ?? TEST_${tenantEntity.toUpperCase()}_ID,` : "";
+  const getResourceInput = hasTenantModel ? `{ id, ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }` : `{ id }`;
+  const listResourceInput = hasTenantModel ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, ...extra }` : `{ ...extra }`;
+  const identifierInput = hasTenantModel ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, id: identifier }` : `{ id: identifier }`;
+  const resetConstant = hasTenantModel
+    ? `export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");`
+    : "// Single-tenant app detected: reset payload does not include tenantId.";
+  const resetPayload = hasTenantModel ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }` : "{}";
 
   const apiTs = `// GENERATED by TestForge v3.0 — do not edit manually
 // Source: ${analysis.specType} spec
 
 export const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+type EndpointAlias = { default: string; query?: string; mutation?: string };
+const ENDPOINT_ALIASES: Record<string, EndpointAlias> = ${JSON.stringify(restEndpointAliases, null, 2)};
+
+function resolveProcedure(procedure: string, kind: "query" | "mutation"): string {
+  const alias = ENDPOINT_ALIASES[procedure];
+  if (!alias) return procedure;
+  return kind === "query" ? (alias.query || alias.default) : (alias.mutation || alias.default);
+}
 
 export async function loginAndGetCookie(
   request: any,
   username: string,
   password: string
 ): Promise<string> {
+  const loginEndpoint = "${loginEndpoint}";
+  if (!loginEndpoint) return "";
+  const getSetCookie = (response: any): string => {
+    const headers = response.headers();
+    return headers["set-cookie"] || headers["setCookie"] || headers["Set-Cookie"] || "";
+  };
+  if (loginEndpoint.includes("/api/auth/callback/credentials")) {
+    const csrfResp = await request.get(\`\${BASE_URL}/api/auth/csrf\`);
+    const csrfBody = await csrfResp.json().catch(() => ({}));
+    const csrfToken = csrfBody?.csrfToken || csrfBody?.token || "";
+    const response = await request.post(\`\${BASE_URL}\${loginEndpoint}\`, {
+      form: {
+        csrfToken,
+        email: username,
+        username,
+        password,
+        callbackUrl: BASE_URL,
+        json: "true",
+      },
+      maxRedirects: 0,
+    });
+    const setCookie = getSetCookie(response);
+    if (setCookie) return setCookie;
+    if (response.status() >= 200 && response.status() < 400) {
+      throw new Error("Auth.js login did not return a session cookie. Check credential field names and callback configuration.");
+    }
+    throw new Error(\`Auth.js login failed for \${username}: HTTP \${response.status()}\`);
+  }
+
   // Auto-detect REST vs tRPC: try REST-style body first (plain JSON), fall back to tRPC-style ({json: ...})
-  const isTrpc = "${loginEndpoint}".includes("trpc");
+  const isTrpc = loginEndpoint.includes("trpc");
   const primaryBody = isTrpc ? { json: { username, password } } : { username, password };
   const fallbackBody = isTrpc ? { username, password } : { json: { username, password } };
 
-  let response = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+  let response = await request.post(\`\${BASE_URL}\${loginEndpoint}\`, {
     headers: { "Content-Type": "application/json" },
     data: primaryBody,
   });
 
   // If primary format fails, try the alternative
   if (!response.ok()) {
-    response = await request.post(\`\${BASE_URL}${loginEndpoint}\`, {
+    response = await request.post(\`\${BASE_URL}\${loginEndpoint}\`, {
       headers: { "Content-Type": "application/json" },
       data: fallbackBody,
     });
@@ -87,7 +187,7 @@ export async function loginAndGetCookie(
     throw new Error(\`Login failed for \${username}: HTTP \${response.status()}\`);
   }
   // Support both Cookie-based auth (tRPC/session) and JWT Bearer Token (REST)
-  const setCookie = response.headers()["set-cookie"];
+  const setCookie = getSetCookie(response);
   if (setCookie) return setCookie;
   // Try JWT Bearer Token from response body
   const body = await response.json().catch(() => null);
@@ -103,13 +203,14 @@ export async function trpcMutation(
   cookieHeader?: string,
   extraHeaders?: Record<string, string>
 ): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
+  procedure = resolveProcedure(procedure, "mutation");
   const headers: Record<string, string> = { "Content-Type": "application/json", ...extraHeaders };
   if (cookieHeader) {
     if (cookieHeader.startsWith("Bearer ")) headers["Authorization"] = cookieHeader;
     else headers["Cookie"] = cookieHeader;
   }
-  // REST-path detection: if procedure contains "/", treat as REST endpoint
-  // Handle "METHOD /path" format (e.g. "POST /api/auth/login" or "GET /api/users")
+  // REST-path detection: if procedure contains "/", treat as REST endpoint.
+  // Handles "METHOD /path" format, e.g. "GET /api/users".
   const verbMatch = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\\s+(\\/.*)/i);
   const isRestPath = procedure.includes("/");
   let restMethod = "POST";
@@ -151,13 +252,14 @@ export async function trpcQuery(
   input: Record<string, unknown> = {},
   cookieHeader?: string
 ): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
+  procedure = resolveProcedure(procedure, "query");
   const headers: Record<string, string> = {};
   if (cookieHeader) {
     if (cookieHeader.startsWith("Bearer ")) headers["Authorization"] = cookieHeader;
     else headers["Cookie"] = cookieHeader;
   }
-  // REST-path detection: if procedure contains "/", treat as REST endpoint
-  // Handle "METHOD /path" format (e.g. "GET /api/users" or "POST /api/auth/login")
+  // REST-path detection: if procedure contains "/", treat as REST endpoint.
+  // Handles "METHOD /path" format, e.g. "GET /api/users".
   const verbMatchQ = procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\\s+(\\/.*)/i);
   const isRestPath = procedure.includes("/");
   let restMethodQ = "GET";
@@ -210,30 +312,21 @@ export function yesterdayStr(): string {
 export function randomPhone(): string {
   return \`+49176\${Date.now().toString().slice(-8)}\`;
 }
-
-/**
- * Poll an async condition until it resolves true or times out.
- * Use for eventually-consistent endpoints (webhooks, cron jobs, async processing).
- *
- * @example
- * await pollUntil(() => trpcQuery(request, "jobs.status", { id }, cookie)
- *   .then(r => r.data?.result?.data?.status === "completed"), 5000);
- */
-export async function pollUntil(
-  condition: () => Promise<boolean>,
-  timeoutMs = 10000,
-  intervalMs = 500,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await condition()) return;
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-  }
-  throw new Error(\`pollUntil timed out after \${timeoutMs}ms\`);
-}
 `;
 
-  const authTs = `// GENERATED by TestForge v3.0 — Auth helpers
+  const authTs = !hasAuthModel ? `// GENERATED by TestForge v3.0 — Auth helpers
+// Source: no auth model detected
+
+export async function getAdminCookie(): Promise<string> {
+  return "";
+}
+
+export async function getUserCookie(): Promise<string> {
+  return "";
+}
+
+export function resetCookieCache(): void {}
+` : `// GENERATED by TestForge v3.0 — Auth helpers
 // Source: ${ir.authModel?.csrfPattern || "standard"} auth pattern
 
 import { loginAndGetCookie, BASE_URL } from "./api";
@@ -290,16 +383,11 @@ export async function getCsrfToken(request: any, cookie: string): Promise<string
 
 import { trpcMutation, trpcQuery } from "./api";
 
-// Test tenant IDs — update these to match your test environment
-export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");
-export const TEST_${tenantEntity.toUpperCase()}_B_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_B_ID || process.env.TEST_TENANT_B_ID || "99002"); // For IDOR tests
-${tenantEntity.toUpperCase() !== "TENANT" ? `// Canonical alias — always available regardless of tenant entity name
-export const TEST_TENANT_ID = TEST_${tenantEntity.toUpperCase()}_ID;
-export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;` : ""}
+${tenantConstants}
 
 ${createEndpoint ? `
 export interface CreateTestResourceOpts {
-  ${tenantField}?: number;
+${createTenantInterfaceLine}
 ${(createEndpoint.inputFields || []).filter((f) => f.name !== tenantField).map((f) => `  ${f.name}?: unknown;`).join("\n")}
   [key: string]: unknown;
 }
@@ -310,7 +398,7 @@ export async function createTestResource(
   opts: CreateTestResourceOpts = {}
 ): Promise<Record<string, unknown>> {
   const { data, error } = await trpcMutation(request, "${createEndpoint.name}", {
-    ${tenantField}: opts.${tenantField} ?? TEST_${tenantEntity.toUpperCase()}_ID,
+${createTenantPayloadLine}
 ${(createEndpoint.inputFields || []).filter((f) => !f.isTenantKey && f.name !== tenantField).map((f) => {
   const fname = f.name;
   const fl = fname.toLowerCase();
@@ -328,7 +416,7 @@ ${(createEndpoint.inputFields || []).filter((f) => !f.isTenantKey && f.name !== 
   else if (fl.includes('status')) defaultVal = `"active"`;
   else if (fl.includes('priority')) defaultVal = `"medium"`;
   else if (fl.includes('count') || fl.includes('size') || fl.includes('num')) defaultVal = '1';
-  else if (fl.includes('id') || fl.includes('workspace') || fl.includes('tenant')) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
+  else if (hasTenantModel && (fl.includes('id') || fl.includes('workspace') || fl.includes('tenant'))) defaultVal = `TEST_${tenantEntity.toUpperCase()}_ID`;
     else {
     // Generic fallback: use getValidDefault logic for unknown fields
     defaultVal = `\`test-${fname}-\${Date.now()}\``;
@@ -349,7 +437,7 @@ export async function getResource(
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
   const { data, error } = await trpcQuery(request, "${getEndpoint.name}",
-    { id, ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }, cookieHeader);
+    ${getResourceInput}, cookieHeader);
   if (error) throw new Error(\`getResource failed: \${JSON.stringify(error)}\`);
   return data as Record<string, unknown>;
 }
@@ -362,7 +450,7 @@ export async function listResources(
   extra: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>[]> {
   const { data } = await trpcQuery(request, "${listEndpoint.name}",
-    { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, ...extra }, cookieHeader);
+    ${listResourceInput}, cookieHeader);
   return (data as Record<string, unknown>[]) ?? [];
 }
 ` : ""}
@@ -385,7 +473,7 @@ export async function getResourceByIdentifier(
   cookieHeader: string
 ): Promise<Record<string, unknown>> {
   const { data, error } = await trpcQuery(request, "${piiEndpoint}",
-    { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, id: identifier }, cookieHeader);
+    ${identifierInput}, cookieHeader);
   if (error) throw new Error(\`getResourceByIdentifier failed: \${JSON.stringify(error)}\`);
   return data as Record<string, unknown>;
 }
@@ -399,9 +487,8 @@ export async function getResourceByIdentifier(
 // Protect it with DEBUG_API_TOKEN env var and only enable in non-production
 
 import { BASE_URL } from "./api";
-// Import (don't re-export) tenant ID — single source of truth in factories.ts
-// avoids the duplicate-export error in helpers/index.ts barrel re-export
-import { TEST_${tenantEntity.toUpperCase()}_ID } from "./factories";
+
+${resetConstant}
 
 export async function resetTestTenant(request: any): Promise<void> {
   const token = process.env.DEBUG_API_TOKEN;
@@ -414,7 +501,7 @@ export async function resetTestTenant(request: any): Promise<void> {
       "Content-Type": "application/json",
       "X-Debug-Token": token,
     },
-    data: { ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID },
+    data: ${resetPayload},
   });
   if (!response.ok()) {
     throw new Error(\`resetTestTenant failed: HTTP \${response.status()}\`);
@@ -482,7 +569,8 @@ export async function resetTestTenant(request: any): Promise<void> {
       );
       if (!createEp?.inputFields?.length) return "";
 
-      const resourceName = resource.name.charAt(0).toUpperCase() + resource.name.slice(1);
+      const resourceNameBase = toSafeIdentifier(resource.name, "Resource");
+      const resourceName = resourceNameBase.charAt(0).toUpperCase() + resourceNameBase.slice(1);
       const schemaName = `${resourceName}Schema`;
 
       // Response schema: input fields + id + timestamps
@@ -503,14 +591,15 @@ export async function resetTestTenant(request: any): Promise<void> {
     const endpointSchemaBlocks = ir.apiEndpoints
       .filter(e => e.inputFields && e.inputFields.length > 0)
       .map(ep => {
-        const schemaName = ep.name.replace(/\./g, "_") + "Schema";
+        const endpointIdentifier = toSafeIdentifier(ep.name, "endpoint");
+        const schemaName = endpointIdentifier + "Schema";
         const fields = (ep.inputFields || []).filter(f => !f.isTenantKey);
         const fieldLines = fields.map(f => `  ${f.name}: ${generateZodField(f)}`).join(",\n");
         const outputFields = ep.outputFields || [];
         const responseFields = outputFields.length > 0
           ? outputFields.map(fname => `  ${fname}: z.unknown()`).join(",\n")
           : "  id: z.number().or(z.string())";
-        return `// Input schema for ${ep.name}\nexport const ${schemaName} = z.object({\n${fieldLines}\n});\nexport const ${ep.name.replace(/\./g, "_")}ResponseSchema = z.object({\n${responseFields}\n}).passthrough();`;
+        return `// Input schema for ${ep.name}\nexport const ${schemaName} = z.object({\n${fieldLines}\n});\nexport const ${endpointIdentifier}ResponseSchema = z.object({\n${responseFields}\n}).passthrough();`;
       }).join("\n\n");
 
     const hasSchemas = resourceSchemaBlocks || endpointSchemaBlocks;
@@ -533,7 +622,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   timeout: 30000,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : 4,
   reporter: [
     ["list"],
@@ -543,10 +632,8 @@ export default defineConfig({
   use: {
     baseURL: process.env.BASE_URL || "http://localhost:3000",
     extraHTTPHeaders: { "Accept": "application/json" },
-    // Debug artifacts on failure — enables visual-diff-report.mjs + trace viewer
-    trace: "on-first-retry",       // npx playwright show-trace test-results/.../trace.zip
-    screenshot: "only-on-failure", // saved to test-results/<test>/test-failed-1.png
-    video: "retain-on-failure",    // saved to test-results/<test>/video.webm
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   projects: [
     {
@@ -559,58 +646,17 @@ export default defineConfig({
         "**/tests/integration/**/*.ts",
         "**/tests/concurrency/**/*.ts",
         "**/tests/unit/**/*.ts",
-        "**/tests/property/**/*.ts",   // fast-check property-based fuzz tests
-        "**/tests/traffic/**/*.ts",    // HAR-derived traffic replay tests
-        "**/tests/accessibility/**/*.ts",
       ],
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      // Layer 2: Browser E2E Tests — Chromium (default, fastest)
+      // Layer 2: Browser E2E Tests (real Chromium browser)
       name: "browser-e2e",
       testMatch: ["**/tests/e2e/**/*.ts"],
       use: {
         ...devices["Desktop Chrome"],
         headless: true,
         viewport: { width: 1280, height: 720 },
-      },
-    },
-    {
-      // Cross-browser: Firefox
-      // Run with: npx playwright test --project=firefox-e2e
-      name: "firefox-e2e",
-      testMatch: ["**/tests/e2e/**/*.ts"],
-      use: {
-        ...devices["Desktop Firefox"],
-        headless: true,
-      },
-    },
-    {
-      // Cross-browser: WebKit (Safari engine)
-      // Run with: npx playwright test --project=webkit-e2e
-      name: "webkit-e2e",
-      testMatch: ["**/tests/e2e/**/*.ts"],
-      use: {
-        ...devices["Desktop Safari"],
-        headless: true,
-      },
-    },
-    {
-      // Mobile responsive: Pixel 5 viewport
-      // Run with: npx playwright test --project=mobile-chrome
-      name: "mobile-chrome",
-      testMatch: ["**/tests/e2e/**/*.ts"],
-      use: {
-        ...devices["Pixel 5"],
-      },
-    },
-    {
-      // Mobile responsive: iPhone 13
-      // Run with: npx playwright test --project=mobile-safari
-      name: "mobile-safari",
-      testMatch: ["**/tests/e2e/**/*.ts"],
-      use: {
-        ...devices["iPhone 13"],
       },
     },
   ],
@@ -628,34 +674,19 @@ export default defineConfig({
       "test:integration": "playwright test tests/integration/",
       "test:compliance": "playwright test tests/compliance/",
       "test:business": "playwright test tests/business/",
-      "test:property": "playwright test tests/property/",
-      "test:e2e": "playwright test --project=browser-e2e",
-      "test:e2e:firefox": "playwright test --project=firefox-e2e",
-      "test:e2e:webkit": "playwright test --project=webkit-e2e",
-      "test:e2e:mobile": "playwright test --project=mobile-chrome --project=mobile-safari",
-      "test:e2e:all-browsers": "playwright test --project=browser-e2e --project=firefox-e2e --project=webkit-e2e",
       "test:list": "playwright test --list",
       "test:dry-run": "playwright test --dry-run",
-      "test:mutation": "stryker run",
       "install:browsers": "playwright install --with-deps chromium",
       "validate": "node validate-payloads.mjs",
-      "heal": "node heal.mjs",
-      "analyze:flakiness": "node analyze-flakiness.mjs",
-      "report:visual-diff": "node visual-diff-report.mjs",
-      "codegen": "node codegen-wrapper.mjs",
-      "mutation:sandbox": "node mutation-sandbox.mjs",
-      "mock": "node mock-server.mjs",
     },
     dependencies: {
       zod: "^3.22.0",
-      "fast-check": "^3.15.0",
     },
     devDependencies: {
       "@playwright/test": "^1.41.0",
-      "@axe-core/playwright": "^4.8.0",
-      // Stryker for mutation testing — use the COMMAND runner (no playwright-runner exists).
-      // Tests are invoked via `npm test`, which runs Playwright. This works against any test runner.
-      "@stryker-mutator/core": "^8.2.0",
+      "@cucumber/cucumber": "^10.0.0",
+      "@types/node": "^20.0.0",
+      "ts-node": "^10.9.0",
       typescript: "^5.3.0",
     },
   }, null, 2);
@@ -857,710 +888,6 @@ ${roles.map(r => `          ${r.envUserVar}: \${{ secrets.${r.envUserVar} }}\n  
 `;
 
 
-  // ─── Stryker Mutation Verification Config ─────────────────────────────────
-  // IMPORTANT: Stryker mutates SOURCE CODE and runs tests to check which mutations
-  // the tests catch. For black-box API testing, you run Stryker in your API repo,
-  // not in this test package. This config is a template — copy it to your API repo
-  // and set `mutate` to your actual source files, and `testRunner` to "playwright"
-  // with the STAGING_URL pointing at a test instance of your mutated server.
-  //
-  // Alternatively, run: npx stryker init (in your API repo) to generate a config.
-  const strykerConfig = JSON.stringify({
-    $schema: "https://stryker-mutator.io/schemas/stryker-core.json",
-    "_comment": [
-      "SETUP REQUIRED: Copy this config to your API repository root (not this test package).",
-      "Set 'mutate' to your API source files, e.g. ['src/**/*.ts', '!src/**/*.spec.ts'].",
-      "Stryker will mutate your API code, restart the server, and run these Playwright tests.",
-      "See: https://stryker-mutator.io/docs/stryker-js/configuration"
-    ],
-    testRunner: "command",
-    commandRunner: {
-      // `npm test` runs Playwright — works as a black-box test runner for Stryker.
-      // Slow but universal. For per-test mutation routing, use jest-runner with vitest tests.
-      command: "npm test",
-    },
-    reporters: ["html", "clear-text", "progress"],
-    coverageAnalysis: "off",
-    mutate: [
-      "src/**/*.ts",
-      "!src/**/*.spec.ts",
-      "!src/**/*.test.ts",
-    ],
-    thresholds: {
-      high: 80,
-      low: 70,
-      break: 60,
-    },
-    timeoutMS: 60000,
-    concurrency: 1,
-  }, null, 2);
-
-  // ─── Self-Healing Endpoint Checker ──────────────────────────────────────────
-  const healMjs = `#!/usr/bin/env node
-// GENERATED by TestForge — Self-Healing Endpoint Checker
-// Run: npm run heal (or node heal.mjs)
-// Scans all generated test files, extracts API endpoint names, and verifies
-// each one still responds (not 404/405). Reports endpoints that need updating.
-
-import { readdir, readFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-
-const GREEN = "\\x1b[32m";
-const RED = "\\x1b[31m";
-const YELLOW = "\\x1b[33m";
-const RESET = "\\x1b[0m";
-const BOLD = "\\x1b[1m";
-
-async function findTestFiles(dir) {
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-  const files = [];
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...await findTestFiles(full));
-    else if (entry.name.endsWith(".ts") && !entry.name.includes("config")) files.push(full);
-  }
-  return files;
-}
-
-function extractEndpoints(source) {
-  const endpoints = new Set();
-  // Match: trpcMutation(request, "endpoint.name", ...)
-  // Match: trpcQuery(request, "endpoint.name", ...)
-  const re = /trpc(?:Mutation|Query)\\s*\\([^,]+,\\s*["']([\\/\\w.-]+)["']/g;
-  let m;
-  while ((m = re.exec(source)) !== null) endpoints.add(m[1]);
-  return Array.from(endpoints);
-}
-
-async function checkEndpoint(endpoint) {
-  // Determine URL
-  const isTrpc = !endpoint.includes("/");
-  const url = isTrpc
-    ? \`\${BASE_URL}/api/trpc/\${endpoint}\`
-    : \`\${BASE_URL}\${endpoint}\`;
-
-  try {
-    const res = await fetch(url, {
-      method: isTrpc ? "GET" : "HEAD",
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5000),
-    });
-    // tRPC returns 200 for unknown queries (with an error body) — 404 means route gone
-    // REST: 404 or 405 means endpoint removed/renamed
-    if (res.status === 404) return { ok: false, status: res.status, reason: "NOT FOUND — endpoint removed or renamed" };
-    if (res.status === 405) return { ok: false, status: res.status, reason: "METHOD NOT ALLOWED — HTTP verb changed" };
-    return { ok: true, status: res.status };
-  } catch (err) {
-    if (err.name === "TimeoutError") return { ok: false, status: 0, reason: "TIMEOUT — server not reachable" };
-    return { ok: false, status: 0, reason: \`CONNECTION ERROR: \${err.message}\` };
-  }
-}
-
-async function main() {
-  console.log(\`\\n\${BOLD}TestForge Endpoint Healer\${RESET}\`);
-  console.log(\`Checking endpoints against: \${BASE_URL}\\n\`);
-
-  const testDir = join(__dirname, "tests");
-  const files = await findTestFiles(testDir);
-
-  if (files.length === 0) {
-    console.log(\`\${YELLOW}No test files found in ./tests/\${RESET}\`);
-    process.exit(0);
-  }
-
-  // Collect all unique endpoints across all test files
-  const endpointFiles = new Map(); // endpoint → [files using it]
-  for (const f of files) {
-    const src = await readFile(f, "utf-8");
-    for (const ep of extractEndpoints(src)) {
-      if (!endpointFiles.has(ep)) endpointFiles.set(ep, []);
-      endpointFiles.get(ep).push(f.replace(__dirname + "/", ""));
-    }
-  }
-
-  console.log(\`Found \${endpointFiles.size} unique endpoints across \${files.length} test files\\n\`);
-
-  const broken = [];
-  const checks = await Promise.all(
-    Array.from(endpointFiles.entries()).map(async ([ep, epFiles]) => {
-      const result = await checkEndpoint(ep);
-      return { ep, result, files: epFiles };
-    })
-  );
-
-  for (const { ep, result, files: epFiles } of checks.sort((a, b) => a.ep.localeCompare(b.ep))) {
-    if (result.ok) {
-      console.log(\`  \${GREEN}✓\${RESET} \${ep} → HTTP \${result.status}\`);
-    } else {
-      console.log(\`  \${RED}✗ \${ep} → \${result.reason}\${RESET}\`);
-      console.log(\`    Used in: \${epFiles.slice(0, 3).join(", ")}\${epFiles.length > 3 ? \` +\${epFiles.length - 3} more\` : ""}\`);
-      broken.push({ ep, reason: result.reason, files: epFiles });
-    }
-  }
-
-  console.log(\`\\n\${BOLD}Summary:\${RESET}\`);
-  console.log(\`  \${GREEN}\${checks.length - broken.length} endpoints healthy\${RESET}\`);
-
-  if (broken.length > 0) {
-    console.log(\`  \${RED}\${broken.length} endpoints broken\${RESET}\`);
-    console.log(\`\\n\${BOLD}Action required:\${RESET}\`);
-    for (const { ep, reason, files: epFiles } of broken) {
-      console.log(\`  \${RED}→ \${ep}: \${reason}\${RESET}\`);
-      console.log(\`    Update these files: \${epFiles.join(", ")}\`);
-    }
-    process.exit(1);
-  } else {
-    console.log(\`\\n\${GREEN}\${BOLD}All endpoints are healthy!\${RESET}\`);
-    process.exit(0);
-  }
-}
-
-main().catch(err => {
-  console.error("Heal error:", err);
-  process.exit(1);
-});
-`;
-
-  // ─── Phase 3: Flaky Test Detector ──────────────────────────────────────────
-  // Reads playwright-report/results.json and identifies tests that pass on retry.
-  // A test that needs a retry to pass is flaky. Reports list with retry counts.
-  // Exit code 1 if flaky tests exceed threshold (defaults to 5%).
-  const analyzeFlakinessMjs = `#!/usr/bin/env node
-// GENERATED by TestForge — Flaky Test Detector
-// Run: npm run analyze:flakiness  (or node analyze-flakiness.mjs)
-// Reads playwright-report/results.json and identifies tests that needed retries.
-//
-// Exit codes:
-//   0 — flakiness rate below threshold (default 5%)
-//   1 — flakiness exceeds threshold OR no results.json found
-
-import { readFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const RESULTS_PATH = process.env.RESULTS_PATH || join(__dirname, "playwright-report", "results.json");
-const THRESHOLD_PCT = parseFloat(process.env.FLAKINESS_THRESHOLD || "5"); // 5% default
-
-const RED = "\\x1b[31m";
-const YELLOW = "\\x1b[33m";
-const GREEN = "\\x1b[32m";
-const RESET = "\\x1b[0m";
-const BOLD = "\\x1b[1m";
-
-async function main() {
-  console.log(\`\\n\${BOLD}TestForge Flakiness Analyzer\${RESET}\`);
-
-  let report;
-  try {
-    report = JSON.parse(await readFile(RESULTS_PATH, "utf-8"));
-  } catch (err) {
-    console.error(\`\${RED}Could not read \${RESULTS_PATH}\${RESET}\`);
-    console.error(\`Run \\\`npm test\\\` first to generate results.\`);
-    process.exit(1);
-  }
-
-  // Walk the suite tree and collect every test with results.length > 1 (retried)
-  const flaky = [];
-  const allTests = [];
-  function visit(node) {
-    if (node.suites) for (const s of node.suites) visit(s);
-    if (node.specs) {
-      for (const spec of node.specs) {
-        for (const t of spec.tests || []) {
-          allTests.push({ title: spec.title, file: spec.file, results: t.results || [] });
-          // Flaky = needed >1 attempt OR final pass after earlier failure
-          const attempts = t.results || [];
-          if (attempts.length > 1) {
-            const retries = attempts.length - 1;
-            const finalStatus = attempts[attempts.length - 1]?.status || "unknown";
-            flaky.push({ title: spec.title, file: spec.file, retries, finalStatus });
-          }
-        }
-      }
-    }
-  }
-  visit(report);
-
-  if (allTests.length === 0) {
-    console.log(\`\${YELLOW}No tests found in results — check RESULTS_PATH\${RESET}\`);
-    process.exit(1);
-  }
-
-  const flakinessPct = (flaky.length / allTests.length) * 100;
-  console.log(\`Total tests: \${allTests.length}\`);
-  console.log(\`Flaky tests: \${flaky.length} (\${flakinessPct.toFixed(2)}%)\`);
-  console.log(\`Threshold:   \${THRESHOLD_PCT}%\\n\`);
-
-  if (flaky.length > 0) {
-    console.log(\`\${BOLD}Flaky tests (passed on retry):\${RESET}\`);
-    for (const f of flaky.sort((a, b) => b.retries - a.retries)) {
-      const color = f.retries > 1 ? RED : YELLOW;
-      console.log(\`  \${color}\${f.retries}× retry\${RESET} — \${f.title} (\${f.file})\`);
-    }
-    console.log();
-  }
-
-  if (flakinessPct > THRESHOLD_PCT) {
-    console.log(\`\${RED}\${BOLD}FAIL\${RESET} — flakiness \${flakinessPct.toFixed(2)}% exceeds \${THRESHOLD_PCT}% threshold\`);
-    console.log(\`Fix flaky tests or raise FLAKINESS_THRESHOLD env var if intentional.\`);
-    process.exit(1);
-  } else {
-    console.log(\`\${GREEN}\${BOLD}OK\${RESET} — flakiness within budget\`);
-    process.exit(0);
-  }
-}
-
-main().catch(err => { console.error("Analyzer error:", err); process.exit(1); });
-`;
-
-  // ─── Phase 3: Visual Diff Report Generator ─────────────────────────────────
-  // Generates static HTML report from screenshot diffs in test-results/.
-  // Helps reviewers see visual regressions without leaving the browser.
-  const visualDiffReportMjs = `#!/usr/bin/env node
-// GENERATED by TestForge — Visual Diff Report
-// Run: npm run report:visual-diff  (or node visual-diff-report.mjs)
-// Walks test-results/ for *-diff.png files, builds a static HTML report.
-
-import { readdir, readFile, writeFile, stat } from "fs/promises";
-import { join, dirname, basename, relative } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const RESULTS_DIR = process.env.RESULTS_DIR || join(__dirname, "test-results");
-const OUTPUT_HTML = process.env.OUTPUT_HTML || join(__dirname, "visual-diff-report.html");
-
-async function findDiffs(dir) {
-  const out = [];
-  async function walk(d) {
-    const entries = await readdir(d, { withFileTypes: true }).catch(() => []);
-    for (const e of entries) {
-      const full = join(d, e.name);
-      if (e.isDirectory()) await walk(full);
-      else if (e.name.endsWith("-diff.png")) {
-        const expectedPath = full.replace(/-diff\\.png$/, "-expected.png");
-        const actualPath = full.replace(/-diff\\.png$/, "-actual.png");
-        out.push({ diff: full, expected: expectedPath, actual: actualPath });
-      }
-    }
-  }
-  await walk(dir);
-  return out;
-}
-
-async function fileExists(p) {
-  return stat(p).then(() => true).catch(() => false);
-}
-
-async function main() {
-  const diffs = await findDiffs(RESULTS_DIR);
-  if (diffs.length === 0) {
-    console.log("No visual diffs found — all screenshot tests passed.");
-    return;
-  }
-
-  const baseDir = dirname(OUTPUT_HTML);
-  const items = await Promise.all(diffs.map(async d => ({
-    diff: relative(baseDir, d.diff),
-    expected: (await fileExists(d.expected)) ? relative(baseDir, d.expected) : null,
-    actual: (await fileExists(d.actual)) ? relative(baseDir, d.actual) : null,
-    name: basename(d.diff).replace(/-diff\\.png$/, ""),
-  })));
-
-  const html = \`<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>TestForge Visual Diff Report</title>
-<style>
-  body { font-family: -apple-system, sans-serif; margin: 0; padding: 24px; background: #0a0a0a; color: #e5e5e5; }
-  h1 { margin-top: 0; font-size: 24px; }
-  .summary { color: #999; margin-bottom: 32px; }
-  .diff-card { background: #1a1a1a; padding: 16px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #333; }
-  .diff-card h2 { margin: 0 0 16px 0; font-size: 16px; color: #fff; font-family: ui-monospace, monospace; }
-  .diff-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .diff-row > div { background: #0a0a0a; padding: 8px; border-radius: 4px; }
-  .diff-row > div h3 { margin: 0 0 8px 0; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
-  .diff-row > div.diff h3 { color: #ef4444; }
-  .diff-row img { max-width: 100%; height: auto; display: block; border: 1px solid #333; }
-</style>
-</head><body>
-<h1>TestForge Visual Diff Report</h1>
-<div class="summary">\${items.length} visual regression(s) detected. Review each diff and update baselines if intentional: <code>npx playwright test --update-snapshots</code></div>
-\${items.map(item => \`
-  <div class="diff-card">
-    <h2>\${item.name}</h2>
-    <div class="diff-row">
-      \${item.expected ? \`<div><h3>Expected (baseline)</h3><img src="\${item.expected}" alt="expected"></div>\` : ""}
-      \${item.actual ? \`<div><h3>Actual (current)</h3><img src="\${item.actual}" alt="actual"></div>\` : ""}
-      <div class="diff"><h3>Diff (red = changed)</h3><img src="\${item.diff}" alt="diff"></div>
-    </div>
-  </div>
-\`).join("")}
-</body></html>\`;
-
-  await writeFile(OUTPUT_HTML, html, "utf-8");
-  console.log(\`Visual diff report: \${OUTPUT_HTML} (\${items.length} diffs)\`);
-}
-
-main().catch(err => { console.error("Report error:", err); process.exit(1); });
-`;
-
-  // ─── Phase 3: Codegen Wrapper ─────────────────────────────────────────────
-  // Wraps Playwright codegen and post-processes output to use TestForge helpers
-  // (loginAsRole, smartFill, smartClick) instead of raw selectors.
-  const codegenWrapperMjs = `#!/usr/bin/env node
-// GENERATED by TestForge — Codegen Wrapper
-// Run: npm run codegen  (or node codegen-wrapper.mjs <url>)
-// Opens Playwright codegen against your app, then post-processes the output to
-// use TestForge smart helpers — loginAsRole, smartFill, smartClick.
-//
-// Usage:
-//   node codegen-wrapper.mjs                              # default to BASE_URL
-//   node codegen-wrapper.mjs https://staging.example.com  # custom URL
-
-import { spawn } from "child_process";
-
-const url = process.argv[2] || process.env.BASE_URL || "http://localhost:3000";
-
-console.log(\`\\nTestForge Codegen Wrapper\`);
-console.log(\`Opening Playwright codegen for: \${url}\\n\`);
-console.log(\`When done recording, copy the generated code into a tests/e2e/*.spec.ts file.\`);
-console.log(\`Then refactor:\`);
-console.log(\`  - Replace 'await page.goto(...)' with 'await navigateTo(page, ...)'\`);
-console.log(\`  - Replace 'await page.locator(...).fill(...)' with 'await smartFill(page, ...)'\`);
-console.log(\`  - Replace 'await page.locator(...).click()' with 'await smartClick(page, ...)'\`);
-console.log(\`  - Wrap login flows with 'await loginAsRole(page, "admin")'\`);
-console.log();
-
-const child = spawn("npx", ["playwright", "codegen", url], { stdio: "inherit" });
-child.on("exit", code => process.exit(code || 0));
-`;
-
-  // ─── Phase A: Real Mutation Sandbox (Stryker-killer for the helpers layer) ──
-  // Mutates helpers/api.ts (the layer we control), runs the test suite, reports
-  // which mutations the tests caught vs let through. Real mutation verification
-  // — proves the test suite actually catches bugs, not just runs without errors.
-  //
-  // Why the helpers layer? It's the only layer TestForge generates whose tests
-  // CAN catch its mutations. Tests against external APIs would need to mutate
-  // the API source — that's out of scope (use the generated stryker.config.json
-  // template for that, copy to your API repo).
-  const mutationSandboxMjs = `#!/usr/bin/env node
-// GENERATED by TestForge — Real Mutation Sandbox
-// Run: npm run mutation:sandbox  (or node mutation-sandbox.mjs)
-// Applies known mutation patterns to helpers/api.ts, reruns tests, reports
-// which mutations were caught vs survived. Real mutation verification.
-//
-// Exit codes:
-//   0 — kill rate ≥ MUTATION_THRESHOLD (default 70%)
-//   1 — kill rate below threshold (test suite is weak)
-
-import { readFile, writeFile, copyFile } from "fs/promises";
-import { spawn } from "child_process";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const TARGET_FILE = join(__dirname, "helpers", "api.ts");
-const BACKUP_FILE = TARGET_FILE + ".mutation-backup";
-const THRESHOLD_PCT = parseFloat(process.env.MUTATION_THRESHOLD || "70");
-
-const RED = "\\x1b[31m";
-const YELLOW = "\\x1b[33m";
-const GREEN = "\\x1b[32m";
-const RESET = "\\x1b[0m";
-const BOLD = "\\x1b[1m";
-
-// Mutation operators — each transforms the source code in a way that SHOULD
-// be detected by the test suite. If a mutation survives, tests are weak.
-const MUTATIONS = [
-  {
-    name: "Remove auth header",
-    apply: (src) => src.replace(/headers\\["Authorization"\\]\\s*=\\s*cookieHeader;/, "// removed: headers[\\"Authorization\\"] = cookieHeader;"),
-  },
-  {
-    name: "Always return status 200",
-    apply: (src) => src.replace(/status:\\s*response\\.status\\(\\)/g, "status: 200 /* mutated */"),
-  },
-  {
-    name: "Strip cookie from request",
-    apply: (src) => src.replace(/headers\\["Cookie"\\]\\s*=\\s*cookieHeader;/, "// removed: headers[\\"Cookie\\"] = cookieHeader;"),
-  },
-  {
-    name: "Skip ok() check on login",
-    apply: (src) => src.replace(/if \\(!response\\.ok\\(\\)\\)/, "if (false /* mutated: skip ok check */)"),
-  },
-  {
-    name: "Return null instead of error data",
-    apply: (src) => src.replace(/return\\s*\\{\\s*response,\\s*data,\\s*error/, "return { response, data: null, error: null /* mutated */"),
-  },
-  {
-    name: "Always return Bearer prefix in cookie",
-    apply: (src) => src.replace(/return setCookie;/, "return \\"Bearer fake-token\\"; /* mutated */"),
-  },
-];
-
-async function runTests() {
-  return new Promise((resolve) => {
-    const child = spawn("npx", ["playwright", "test", "--reporter=line"], {
-      cwd: __dirname,
-      env: { ...process.env, BASE_URL: process.env.BASE_URL || "http://localhost:3000" },
-    });
-    let stdout = "";
-    child.stdout?.on("data", d => stdout += d.toString());
-    child.stderr?.on("data", d => stdout += d.toString());
-    child.on("exit", code => resolve({ code: code ?? 1, output: stdout }));
-  });
-}
-
-async function main() {
-  console.log(\`\\n\${BOLD}TestForge Mutation Sandbox\${RESET}\`);
-  console.log(\`Target: \${TARGET_FILE}\`);
-  console.log(\`Threshold: \${THRESHOLD_PCT}% kill rate required\\n\`);
-
-  // 1. Backup original
-  const original = await readFile(TARGET_FILE, "utf-8");
-  await writeFile(BACKUP_FILE, original, "utf-8");
-
-  // 2. Baseline run — tests must pass before mutation testing makes sense
-  console.log(\`\${BOLD}Baseline:\${RESET} running test suite without mutations...\`);
-  const baseline = await runTests();
-  if (baseline.code !== 0) {
-    console.log(\`\${YELLOW}Baseline tests failed — fix tests before running mutation sandbox.\${RESET}\`);
-    console.log(\`(Mutation testing only meaningful when baseline is green.)\`);
-    process.exit(1);
-  }
-  console.log(\`\${GREEN}✓ Baseline passes — \${MUTATIONS.length} mutations to test\${RESET}\\n\`);
-
-  // 3. Apply each mutation, run tests, restore
-  let killed = 0;
-  let survived = 0;
-  const survivedDetails = [];
-
-  for (const mut of MUTATIONS) {
-    process.stdout.write(\`  \${mut.name.padEnd(40)} ... \`);
-    const mutated = mut.apply(original);
-    if (mutated === original) {
-      console.log(\`\${YELLOW}skipped (pattern not found in source)\${RESET}\`);
-      continue;
-    }
-    await writeFile(TARGET_FILE, mutated, "utf-8");
-    const result = await runTests();
-    await writeFile(TARGET_FILE, original, "utf-8"); // restore between mutations
-
-    if (result.code !== 0) {
-      console.log(\`\${GREEN}KILLED ✓\${RESET}\`);
-      killed++;
-    } else {
-      console.log(\`\${RED}SURVIVED ✗\${RESET}\`);
-      survived++;
-      survivedDetails.push(mut.name);
-    }
-  }
-
-  // 4. Report
-  const total = killed + survived;
-  const killRate = total > 0 ? (killed / total) * 100 : 0;
-  console.log(\`\\n\${BOLD}Results:\${RESET}\`);
-  console.log(\`  Killed:    \${GREEN}\${killed}\${RESET}\`);
-  console.log(\`  Survived:  \${RED}\${survived}\${RESET}\`);
-  console.log(\`  Kill rate: \${killRate.toFixed(0)}%\`);
-
-  if (survivedDetails.length > 0) {
-    console.log(\`\\n\${BOLD}Survived mutations (test suite is weak in these areas):\${RESET}\`);
-    for (const name of survivedDetails) console.log(\`  \${RED}→\${RESET} \${name}\`);
-    console.log(\`\\nAdd assertions that detect these mutations to strengthen the suite.\`);
-  }
-
-  if (killRate < THRESHOLD_PCT) {
-    console.log(\`\\n\${RED}\${BOLD}FAIL\${RESET} — kill rate \${killRate.toFixed(0)}% below \${THRESHOLD_PCT}% threshold\`);
-    process.exit(1);
-  } else {
-    console.log(\`\\n\${GREEN}\${BOLD}OK\${RESET} — test suite catches \${killRate.toFixed(0)}% of mutations\`);
-    process.exit(0);
-  }
-}
-
-// Always restore on exit (even on Ctrl+C)
-process.on("SIGINT", async () => {
-  try { await copyFile(BACKUP_FILE, TARGET_FILE); } catch {}
-  process.exit(130);
-});
-
-main().catch(async err => {
-  console.error("Sandbox error:", err);
-  try { await copyFile(BACKUP_FILE, TARGET_FILE); } catch {}
-  process.exit(1);
-});
-`;
-
-  // ─── Phase A: Mock-Server Generator (Postman-killer) ────────────────────────
-  // Same IR generates BOTH tests AND a mock server. Frontend devs can develop
-  // against the mock without waiting for backend. Same source of truth = no drift.
-  const mockServerEndpoints = ir.apiEndpoints.map(ep => {
-    const isWrite = /create|add|update|edit|delete|remove|patch|put|post/i.test(ep.name);
-    const httpMethod = isWrite ? "post" : "get";
-    const path = "/api/trpc/" + ep.name;
-    // Build a sample response from output fields
-    const sampleResponse = ep.outputFields && ep.outputFields.length > 0
-      ? "{ " + ep.outputFields.map(f => `${JSON.stringify(f)}: "mock-${f}"`).join(", ") + " }"
-      : '{ "id": 1, "ok": true }';
-    return { method: httpMethod, path, name: ep.name, sampleResponse };
-  });
-
-  const mockServerMjs = `#!/usr/bin/env node
-// GENERATED by TestForge — Mock Server
-// Run: npm run mock  (or node mock-server.mjs)
-// Serves all endpoints from your spec with realistic mock responses.
-// Useful for: frontend dev without backend, integration tests, CI smoke tests.
-//
-// Override port: PORT=4000 npm run mock
-
-import http from "http";
-import { URL } from "url";
-
-const PORT = parseInt(process.env.PORT || "4001");
-const VERBOSE = process.env.MOCK_VERBOSE === "true";
-
-// Endpoint registry — derived from the analyzed spec
-const ENDPOINTS = ${JSON.stringify(mockServerEndpoints, null, 2)};
-
-// Mock storage — in-memory, per-process (resets on restart)
-const storage = new Map();
-let nextId = 1000;
-
-function logRequest(method, path, status) {
-  const ts = new Date().toISOString();
-  const color = status >= 500 ? "\\x1b[31m" : status >= 400 ? "\\x1b[33m" : "\\x1b[32m";
-  console.log(\`\${ts} \${color}\${status}\\x1b[0m \${method.padEnd(6)} \${path}\`);
-}
-
-function handleRequest(req, res) {
-  const url = new URL(req.url || "/", \`http://localhost:\${PORT}\`);
-  const method = req.method || "GET";
-
-  // CORS — allow everything (mock server, dev only)
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Cookie");
-  if (method === "OPTIONS") { res.writeHead(204).end(); return; }
-
-  // Auth endpoint(s) — mock returns a fake session cookie so login flows work
-  // Matches any path containing "auth.login" or "/login" (REST or tRPC convention)
-  if (url.pathname.includes("auth.login") || url.pathname.endsWith("/login")) {
-    res.setHeader("Content-Type", "application/json");
-    res.setHeader("Set-Cookie", "mock-session=mock-token-" + Date.now() + "; Path=/; HttpOnly");
-    res.writeHead(200).end(JSON.stringify({
-      result: { data: { json: { id: 1, email: "mock@example.com", token: "mock-jwt-" + Date.now() } } },
-    }));
-    if (VERBOSE) logRequest(method, url.pathname, 200);
-    return;
-  }
-
-  // Health endpoint
-  if (url.pathname === "/health") {
-    res.setHeader("Content-Type", "application/json");
-    res.writeHead(200).end(JSON.stringify({ status: "ok", mock: true, endpoints: ENDPOINTS.length }));
-    logRequest(method, url.pathname, 200);
-    return;
-  }
-
-  // Find matching endpoint
-  const ep = ENDPOINTS.find(e => url.pathname.includes(e.name) || url.pathname === e.path);
-
-  if (!ep) {
-    res.setHeader("Content-Type", "application/json");
-    res.writeHead(404).end(JSON.stringify({
-      error: "Not Found",
-      hint: \`No mock for \${method} \${url.pathname}. Available endpoints:\`,
-      available: ENDPOINTS.map(e => e.path),
-    }));
-    logRequest(method, url.pathname, 404);
-    return;
-  }
-
-  // Read body for write requests
-  let body = "";
-  req.on("data", chunk => body += chunk);
-  req.on("end", () => {
-    let parsedInput = {};
-    try { parsedInput = body ? JSON.parse(body) : {}; } catch { /* */ }
-    // tRPC unwrap
-    if (parsedInput && typeof parsedInput === "object" && "json" in parsedInput) {
-      parsedInput = parsedInput.json;
-    }
-
-    // Generate response based on endpoint type
-    let response;
-    let status = 200;
-    const epName = ep.name.toLowerCase();
-
-    if (epName.includes("create") || epName.includes("add") || epName.includes("post")) {
-      const id = ++nextId;
-      const record = { id, ...parsedInput, createdAt: Date.now() };
-      storage.set(\`\${ep.name.split(".")[0]}:\${id}\`, record);
-      response = record;
-      status = 201;
-    } else if (epName.includes("getbyid") || epName.includes(".get") || epName.includes(".find")) {
-      const id = parsedInput.id ?? Array.from(storage.keys())[0]?.split(":")[1] ?? 1;
-      const found = storage.get(\`\${ep.name.split(".")[0]}:\${id}\`);
-      response = found || ${mockServerEndpoints.length > 0 ? mockServerEndpoints[0].sampleResponse : '{ id: 1 }'};
-      status = found ? 200 : 404;
-    } else if (epName.includes("list") || epName.includes("all") || epName.includes("search")) {
-      const prefix = ep.name.split(".")[0] + ":";
-      response = Array.from(storage.entries())
-        .filter(([k]) => k.startsWith(prefix))
-        .map(([, v]) => v);
-    } else if (epName.includes("update") || epName.includes("edit") || epName.includes("patch")) {
-      const id = parsedInput.id;
-      const key = \`\${ep.name.split(".")[0]}:\${id}\`;
-      const existing = storage.get(key);
-      if (existing) {
-        const updated = { ...existing, ...parsedInput, updatedAt: Date.now() };
-        storage.set(key, updated);
-        response = updated;
-      } else {
-        status = 404;
-        response = { error: "Not Found" };
-      }
-    } else if (epName.includes("delete") || epName.includes("remove")) {
-      const id = parsedInput.id;
-      const key = \`\${ep.name.split(".")[0]}:\${id}\`;
-      const deleted = storage.delete(key);
-      status = deleted ? 204 : 404;
-      response = deleted ? null : { error: "Not Found" };
-    } else {
-      response = { ok: true, mock: true, input: parsedInput };
-    }
-
-    // tRPC-shaped response
-    const trpcResponse = { result: { data: { json: response } } };
-
-    res.setHeader("Content-Type", "application/json");
-    res.writeHead(status);
-    res.end(status === 204 ? "" : JSON.stringify(trpcResponse));
-    if (VERBOSE) logRequest(method, url.pathname, status);
-  });
-}
-
-const server = http.createServer(handleRequest);
-server.listen(PORT, () => {
-  console.log(\`\\n🎭 TestForge Mock Server\`);
-  console.log(\`   URL:       http://localhost:\${PORT}\`);
-  console.log(\`   Health:    http://localhost:\${PORT}/health\`);
-  console.log(\`   Endpoints: \${ENDPOINTS.length} mocked from spec\`);
-  console.log(\`   Storage:   in-memory (resets on restart)\`);
-  console.log(\`\\n   To use with TestForge tests:  BASE_URL=http://localhost:\${PORT} npm test\`);
-  console.log(\`   Verbose logs:                  MOCK_VERBOSE=true npm run mock\\n\`);
-});
-
-process.on("SIGINT", () => { console.log("\\nMock server stopped"); server.close(() => process.exit(0)); });
-`;
-
   // ─── Payload Validator (dry-run mode) ─────────────────────────────────────
   // Generates a Node.js ESM script that validates all basePayload_* functions
   // against the Zod schemas — no HTTP requests needed.
@@ -1716,18 +1043,11 @@ main().catch(err => {
     "helpers/browser.ts": browserTs,
     "playwright.config.ts": playwrightConfig,
     "package.json": packageJson,
-    "stryker.config.json": strykerConfig,
     ".github/workflows/testforge.yml": githubAction,
     "tsconfig.json": tsconfigJson,
     "README.md": readmeMd,
     ".env.example": envExample,
     "validate-payloads.mjs": validatePayloadsMjs,
-    "heal.mjs": healMjs,
-    "analyze-flakiness.mjs": analyzeFlakinessMjs,
-    "visual-diff-report.mjs": visualDiffReportMjs,
-    "codegen-wrapper.mjs": codegenWrapperMjs,
-    "mutation-sandbox.mjs": mutationSandboxMjs,
-    "mock-server.mjs": mockServerMjs,
   };
 }
 

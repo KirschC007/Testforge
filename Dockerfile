@@ -4,6 +4,7 @@
 FROM node:22-alpine
 
 WORKDIR /app
+RUN apk add --no-cache wget
 
 # Install pnpm
 RUN npm install -g pnpm
@@ -20,6 +21,10 @@ COPY . .
 
 # Build: vite → dist/public, esbuild → dist/index.js
 RUN pnpm build
+
+RUN addgroup -S testforge && adduser -S testforge -G testforge
+RUN chown -R testforge:testforge /app
+USER testforge
 
 # Expose port
 EXPOSE 3000

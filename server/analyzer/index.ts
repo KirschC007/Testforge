@@ -45,6 +45,10 @@ export type {
   FlowDefinition,
   CronJobDef,
   FeatureGate,
+  SupportedScopeAssessment,
+  EvidenceLevel,
+  EvidenceSignal,
+  ExecutionProfile,
 } from "./types";
 
 // ─── LLM Parser ───────────────────────────────────────────────────────────────
@@ -84,12 +88,44 @@ export {
   generateFeatureGateTest,
   generateProofs,
 } from "./proof-generator";
+export { getProofGenerationProfile } from "./proof-planning";
 
 // ─── Validator ────────────────────────────────────────────────────────────────
 export { validateProofs, runIndependentChecker, mergeProofsToFile } from "./validator";
 
 // ─── Report ───────────────────────────────────────────────────────────────────
 export { generateReport } from "./report";
+export { buildExecutionProfile } from "./execution-profile";
+export { runEvalCase, summarizeEvalResults } from "./eval-harness";
+export { buildEvalScoreboard } from "./evals/scoreboard";
+export { renderEvalScoreboardMarkdown } from "./evals/scoreboard-report";
+export { compareScoreboards, renderScoreDelta } from "./evals/scoreboard-compare";
+export { renderScoreboardComparisonMarkdown } from "./evals/scoreboard-compare-report";
+export {
+  runExternalRepoBenchmarkSuite,
+  runExternalRepoBenchmarkSuiteLive,
+  summarizeExternalRepoBenchmarks,
+  summarizeExternalRepoBenchmarksByProofType,
+  resolveExternalRepoBenchmarkCase,
+} from "./evals/external-repo-benchmarks";
+export {
+  buildLiveRepoHarvest,
+  buildLiveRepoFixtureBacklog,
+  renderLiveRepoHarvestMarkdown,
+  renderLiveRepoFixtureBacklogMarkdown,
+} from "./evals/live-repo-harvest";
+export { runBugZooEval, summarizeBugZoo, summarizeBugZooByCategory, summarizeBugZooByProofType } from "./evals/bug-zoo-eval";
+export { runBugKillReadinessEval, summarizeBugKillReadiness } from "./evals/bug-kill-readiness";
+export { runFalsePositiveEval, summarizeFalsePositiveEval } from "./evals/false-positive-eval";
+export { runOutputExecutionSuite, summarizeOutputExecutionResults } from "./evals/output-execution";
+export { classifyStackAdapter } from "./stack-adapters";
+export { evaluateGeneratedSuiteQuality } from "./generated-suite-gate";
+export { runGoldenBenchmarkSuite, summarizeGoldenBenchmarkResults } from "./evals/golden-benchmark-cases";
+export { runGeneratedSuiteQualitySuite, summarizeGeneratedSuiteQuality } from "./evals/generated-suite-quality";
+export { runSalesProofDemo } from "./evals/sales-proof-demo";
+
+// ─── Supported Scope ──────────────────────────────────────────────────────────
+export { assessSupportedScopeForCodebase, assessSupportedScopeForSpec } from "./supported-scope";
 
 // ─── Job Runner ───────────────────────────────────────────────────────────────
 export type { ProgressCallback } from "./job-runner";

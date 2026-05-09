@@ -1,0 +1,74 @@
+{
+  "label": "2026-04-23 local world-class baseline",
+  "scoreboard": {
+    "bugZoo": {
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "passRate": 100,
+      "averageStaticCoverage": 100,
+      "averageProofCoverage": 100,
+      "totalFailures": 0,
+      "expectedSignals": 25,
+      "matchedSignals": 25,
+      "hallucinations": 0,
+      "recallProxy": 100,
+      "precisionProxy": 100
+    },
+    "falsePositives": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "passRate": 100,
+      "falsePositiveHits": 0
+    },
+    "bugZooCategories": [
+      { "category": "auth", "total": 5, "passed": 5, "failed": 0, "expectedSignals": 11, "matchedSignals": 11, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "data-isolation", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 3, "matchedSignals": 3, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "error-handling", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 1, "matchedSignals": 1, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "file-upload", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 1, "matchedSignals": 1, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "financial", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 1, "matchedSignals": 1, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "governance", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 1, "matchedSignals": 1, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "injection", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 2, "matchedSignals": 2, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "privilege-escalation", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 2, "matchedSignals": 2, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "redirects", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 1, "matchedSignals": 1, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "category": "webhook", "total": 1, "passed": 1, "failed": 0, "expectedSignals": 2, "matchedSignals": 2, "hallucinations": 0, "recallProxy": 100, "precisionProxy": 100 }
+    ],
+    "bugZooProofTypes": [
+      { "proofType": "auth_matrix", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "boundary", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "csrf", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "hardcoded_secret", "fixturesExpecting": 0, "fixturesMatched": 0, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "idor", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "mass_assignment", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "negative_amount", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "rate_limit", "fixturesExpecting": 2, "fixturesMatched": 2, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "sql_injection", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "webhook", "fixturesExpecting": 1, "fixturesMatched": 1, "fixturesMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 }
+    ],
+    "benchmarks": { "total": 4, "passed": 4, "failed": 0, "passRate": 100 },
+    "externalRepos": { "total": 4, "passed": 4, "failed": 0, "passRate": 100 },
+    "externalRepoProofTypes": [
+      { "proofType": "boundary", "reposExpecting": 2, "reposMatched": 2, "reposMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "hardcoded_secret", "reposExpecting": 0, "reposMatched": 0, "reposMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "mass_assignment", "reposExpecting": 1, "reposMatched": 1, "reposMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "negative_amount", "reposExpecting": 1, "reposMatched": 1, "reposMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "rate_limit", "reposExpecting": 1, "reposMatched": 1, "reposMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 },
+      { "proofType": "sql_injection", "reposExpecting": 0, "reposMatched": 0, "reposMissed": 0, "forbiddenHits": 0, "recallProxy": 100, "precisionProxy": 100 }
+    ],
+    "outputSnapshots": { "total": 2, "passed": 2, "failed": 0, "passRate": 100 },
+    "outputExecution": { "total": 2, "passed": 2, "failed": 0, "passRate": 100, "totalSpecs": 37, "totalSecuritySpecs": 5 },
+    "bugKillReadiness": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "passRate": 100,
+      "totalExpectedProofTypes": 10,
+      "missingProofTypes": 0,
+      "totalValidatedProofs": 10,
+      "totalKillCommentProofs": 10,
+      "averageMutationScore": 100
+    },
+    "overall": { "totalSuites": 7, "passedSuites": 7, "failedSuites": 0, "suitePassRate": 100 }
+  }
+}

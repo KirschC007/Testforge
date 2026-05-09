@@ -165,6 +165,32 @@ export interface SpecHealth {
   summary: string;
 }
 
+export type EvidenceLevel = "detected" | "inferred" | "heuristic";
+
+export interface EvidenceSignal {
+  label: string;
+  level: EvidenceLevel;
+  matched: boolean;
+  source: string;
+}
+
+export interface SupportedScopeAssessment {
+  verdict: "supported" | "partial" | "unsupported";
+  tier: "gold" | "supported" | "experimental";
+  evidenceLevel: EvidenceLevel;
+  confidenceScore: number;
+  goldReadinessScore: number;
+  mode: "code" | "hybrid" | "openapi" | "spec";
+  primaryStack: string;
+  summary: string;
+  strengths: string[];
+  blockers: string[];
+  recommendations: string[];
+  matchedGoldSignals: string[];
+  missingGoldSignals: string[];
+  evidenceSignals: EvidenceSignal[];
+}
+
 // ─── Analysis Result ──────────────────────────────────────────────────────────
 
 export interface AnalysisResult {
@@ -172,6 +198,24 @@ export interface AnalysisResult {
   qualityScore: number;
   specType: string;
   specHealth?: SpecHealth;
+  supportedScope?: SupportedScopeAssessment;
+  executionProfile?: ExecutionProfile;
+  operationalStatus?: AnalysisOperationalStatus;
+}
+
+export type AnalysisOperationalMode = "complete" | "degraded";
+
+export interface AnalysisOperationalNotice {
+  component: "llm_code_pass" | "llm_checker" | "api_discovery" | "sanitizer" | "progress_callback";
+  severity: "warning" | "error";
+  message: string;
+  impact: string;
+}
+
+export interface AnalysisOperationalStatus {
+  mode: AnalysisOperationalMode;
+  notices: AnalysisOperationalNotice[];
+  summary: string;
 }
 
 // ─── LLM Checker ──────────────────────────────────────────────────────────────
@@ -242,6 +286,8 @@ export interface ProofTarget {
   behaviorId: string;
   proofType: ProofType;
   riskLevel: RiskLevel;
+  evidenceLevel: EvidenceLevel;
+  evidenceReason: string;
   description: string;
   preconditions: string[];
   assertions: ProofAssertion[];
@@ -260,6 +306,13 @@ export interface ProofTarget {
 export interface RiskModel {
   behaviors: ScoredBehavior[];
   proofTargets: ProofTarget[];
+  skippedProofTargets?: Array<{ id: string; proofType: ProofType; reason: string }>;
+  proofPlanning?: {
+    mode: "gold" | "conservative" | "minimal";
+    keptTargetCount: number;
+    skippedTargetCount: number;
+    summary: string;
+  };
   idorVectors: number;
   csrfEndpoints: number;
 }
@@ -271,9 +324,13 @@ export interface RawProof {
   behaviorId: string;
   proofType: ProofType;
   riskLevel: RiskLevel;
+  evidenceLevel?: EvidenceLevel;
+  evidenceReason?: string;
   filename: string;
   code: string;
   mutationTargets: Array<{ description: string; expectedKill: boolean }>;
+  generationMode?: "gold" | "conservative" | "minimal";
+  qualityNotes?: string[];
 }
 
 export interface ValidatedProof extends RawProof {
@@ -292,6 +349,17 @@ export interface ValidatedProofSuite {
   discardedProofs: DiscardedProof[];
   verdict: { passed: number; failed: number; score: number; summary: string };
   coverage: { totalBehaviors: number; coveredBehaviors: number; coveragePercent: number; uncoveredIds: string[] };
+}
+
+export interface ExecutionProfile {
+  mode: "verified" | "conservative" | "minimal";
+  compileReadinessScore: number;
+  runtimeReadinessScore: number;
+  sandboxReadinessScore: number;
+  summary: string;
+  strengths: string[];
+  blockers: string[];
+  recommendations: string[];
 }
 
 // ─── Helpers & Output ─────────────────────────────────────────────────────────

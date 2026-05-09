@@ -9,14 +9,59 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import multer from "multer";
 import { sdk } from "./sdk";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
-import { writeFile, unlink, readFile } from "fs/promises";
+import { mkdtemp, writeFile, rm, readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import { getConfiguredAppUrl, getRequestAppUrl } from "./app-url";
+import { getAnalysisById, getDb } from "../db";
+import { sql } from "drizzle-orm";
+import { securityHeaders } from "./security-headers";
+import { ENV, assertProductionEnv } from "./env";
+import { buildUserSpecKey } from "./storage-keys";
+import { isLLMConfigured } from "./llm";
+import { storageRead } from "../storage";
+import {
+  allowedHostGuard,
+  fixedWindowRateLimit,
+  requestId,
+  requireHttpsInProduction,
+} from "./runtime-security";
+import {
+  MAX_CODE_FILE_BYTES,
+  MAX_CODE_FILES,
+  MAX_CODE_TOTAL_BYTES,
+  MAX_ZIP_ENTRIES,
+  assertExtractedSpecSize,
+  isAllowedSpecUpload,
+  normalizeZipEntryPath,
+  redactUploadedCode,
+  safeUploadFilename,
+  shouldIncludeCodePath,
+} from "./upload-security";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+function uploadFailure(res: any, err: any, fallback: string) {
+  const message = String(err?.message ?? "");
+  if (/too large|max|unsupported|invalid|readable text|too many/i.test(message)) {
+    return res.status(message.includes("too large") || message.includes("too many") ? 413 : 400).json({ error: message });
+  }
+  return res.status(500).json({ error: fallback });
+}
+
+async function requireApiUser(req: any, res: any) {
+  try {
+    const user = await sdk.authenticateRequest(req);
+    if (user) return user;
+  } catch {
+    // Fall through to the uniform 401 response below.
+  }
+  res.status(401).json({ error: "Unauthorized" });
+  return null;
+}
 
 async function extractTextFromFile(buffer: Buffer, mimetype: string, originalname: string): Promise<string> {
   // Markdown / plain text — read directly
@@ -25,31 +70,41 @@ async function extractTextFromFile(buffer: Buffer, mimetype: string, originalnam
   }
   // PDF — use pdftotext
   if (mimetype === "application/pdf" || originalname.endsWith(".pdf")) {
-    const tmpIn = join(tmpdir(), `tf-${Date.now()}.pdf`);
-    const tmpOut = join(tmpdir(), `tf-${Date.now()}.txt`);
+    const tmpRoot = await mkdtemp(join(tmpdir(), "tf-spec-"));
+    const tmpIn = join(tmpRoot, "input.pdf");
+    const tmpOut = join(tmpRoot, "output.txt");
     try {
       await writeFile(tmpIn, buffer);
-      await execAsync(`pdftotext -layout "${tmpIn}" "${tmpOut}"`);
+      await execFileAsync("pdftotext", ["-layout", tmpIn, tmpOut]);
       const text = await readFile(tmpOut, "utf-8");
+      assertExtractedSpecSize(text);
       return text;
     } finally {
-      await unlink(tmpIn).catch(() => {});
-      await unlink(tmpOut).catch(() => {});
+      await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
     }
   }
   // Word documents — extract raw text (basic)
   if (originalname.endsWith(".docx") || originalname.endsWith(".doc")) {
     // For DOCX: extract as plain text using strings command (rough but functional)
-    const tmpIn = join(tmpdir(), `tf-${Date.now()}.docx`);
+    const tmpRoot = await mkdtemp(join(tmpdir(), "tf-spec-"));
+    const tmpIn = join(tmpRoot, "input.docx");
     try {
       await writeFile(tmpIn, buffer);
-      const { stdout } = await execAsync(`strings "${tmpIn}" | grep -v '^[^a-zA-Z]*$' | head -2000`);
-      return stdout;
+      const { stdout } = await execFileAsync("strings", [tmpIn], { maxBuffer: 2 * 1024 * 1024 });
+      const text = stdout
+        .split(/\r?\n/)
+        .filter((line) => /[a-zA-Z]/.test(line))
+        .slice(0, 2000)
+        .join("\n");
+      assertExtractedSpecSize(text);
+      return text;
     } finally {
-      await unlink(tmpIn).catch(() => {});
+      await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
     }
   }
-  return buffer.toString("utf-8");
+  const text = buffer.toString("utf-8");
+  assertExtractedSpecSize(text);
+  return text;
 }
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -72,84 +127,117 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  assertProductionEnv();
   const app = express();
   const server = createServer(app);
+  app.disable("x-powered-by");
+  app.set("trust proxy", process.env.TRUST_PROXY ?? (ENV.isProduction ? "loopback, linklocal, uniquelocal" : false));
+  app.use(requestId());
+  app.use(allowedHostGuard(ENV.appBaseUrl));
+  app.use(requireHttpsInProduction(ENV.isProduction));
+  app.use(securityHeaders());
+  app.use("/api/", fixedWindowRateLimit({ windowMs: 60_000, max: 240, keyPrefix: "api" }));
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-  // ─── Security headers ──────────────────────────────────────────────────────
-  app.use((_req: any, res: any, next: any) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.setHeader("X-XSS-Protection", "0"); // Modern browsers ignore this; CSP is the answer
-    next();
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      ok: true,
+      service: "testforge",
+      environment: process.env.NODE_ENV || "development",
+      version: process.env.APP_VERSION || process.env.npm_package_version || "dev",
+      appBaseUrl: getConfiguredAppUrl(),
+      timestamp: new Date().toISOString(),
+    });
   });
-
-  // ─── CORS ──────────────────────────────────────────────────────────────────
-  // Allow same-origin always; allow configured ALLOWED_ORIGINS; deny others.
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-  app.use((req: any, res: any, next: any) => {
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      res.setHeader("Vary", "Origin");
+  app.get("/api/ready", async (_req, res) => {
+    try {
+      const db = await getDb();
+      if (!db) {
+        throw new Error("Database not configured");
+      }
+      await db.execute(sql`SELECT 1`);
+      res.json({
+        ok: true,
+        checks: {
+          database: "ok",
+          llm: isLLMConfigured() ? "ok" : "missing",
+          storage: process.env.S3_ENDPOINT || ENV.forgeApiUrl ? "configured" : "missing",
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      res.status(503).json({
+        ok: false,
+        checks: {
+          database: "failed",
+          llm: isLLMConfigured() ? "ok" : "missing",
+          storage: process.env.S3_ENDPOINT || ENV.forgeApiUrl ? "configured" : "missing",
+        },
+        error: error?.message || "Database not ready",
+        timestamp: new Date().toISOString(),
+      });
     }
-    if (req.method === "OPTIONS") return res.status(204).end();
-    next();
   });
-
-  // ─── Rate Limiting (per IP) ────────────────────────────────────────────────
-  // Public upload endpoints are unauthenticated and accept large payloads;
-  // throttle aggressively to prevent S3 bandwidth abuse and DoS.
-  const { createRateLimiter } = await import("./rate-limit");
-  const uploadRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });    // 10/min for spec/code
-  const harRateLimit = createRateLimiter({ max: 5, windowMs: 60_000 });        // 5/min for HAR (heavier)
-
-  // ─── Health Check ──────────────────────────────────────────────────────────
-  // GET /health — used by Docker/k8s health probes. Returns 200 if process is up.
-  // For a deeper readiness check (DB connectivity), add /ready endpoint separately.
-  app.get("/health", (_req: any, res: any) => {
-    res.status(200).json({
-      status: "ok",
-      uptime: process.uptime(),
+  app.get("/api/meta", (req, res) => {
+    res.json({
+      ok: true,
+      service: "testforge",
+      environment: process.env.NODE_ENV || "development",
+      version: process.env.APP_VERSION || process.env.npm_package_version || "dev",
+      appBaseUrl: getConfiguredAppUrl(),
+      requestBaseUrl: getRequestAppUrl(req),
+      commitSha: process.env.GIT_SHA || null,
       timestamp: new Date().toISOString(),
     });
   });
 
-  // GET /ready — checks DB connectivity for readiness probe
-  app.get("/ready", async (_req: any, res: any) => {
+  app.get("/api/analyses/:analysisId/download", fixedWindowRateLimit({ windowMs: 60_000, max: 60, keyPrefix: "download" }), async (req: any, res: any) => {
     try {
-      const { getDb } = await import("../db");
-      const db = await getDb();
-      if (!db) return res.status(503).json({ status: "db_unavailable" });
-      // Lightweight ping using drizzle's sql template
-      const { sql } = await import("drizzle-orm");
-      await (db as any).execute(sql`SELECT 1`);
-      res.status(200).json({ status: "ready" });
+      const user = await requireApiUser(req, res);
+      if (!user) return;
+
+      const analysisId = Number(req.params.analysisId);
+      if (!Number.isInteger(analysisId) || analysisId <= 0) {
+        return res.status(400).json({ error: "Invalid analysis id" });
+      }
+
+      const analysis = await getAnalysisById(analysisId);
+      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+      if (analysis.userId !== user.id) return res.status(403).json({ error: "Forbidden" });
+      if (analysis.status !== "completed") return res.status(409).json({ error: "Analysis is not completed yet" });
+      if (!analysis.outputZipKey) return res.status(404).json({ error: "No ZIP artifact found for this analysis" });
+
+      const artifact = await storageRead(analysis.outputZipKey);
+      res.setHeader("Content-Type", artifact.contentType || "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="testforge-analysis-${analysisId}.zip"`);
+      res.setHeader("Content-Length", String(artifact.data.byteLength));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      return res.send(artifact.data);
     } catch (err: any) {
-      res.status(503).json({ status: "not_ready", reason: err.message });
+      console.error("[download-analysis]", err);
+      return res.status(500).json({ error: "Download failed" });
     }
   });
 
   // File upload endpoint for spec text extraction + S3 storage
   // Supports: .md, .txt, .pdf, .docx, .json (OpenAPI), .yaml/.yml (OpenAPI)
-  app.post("/api/upload-spec", uploadRateLimit, upload.single("file"), async (req: any, res: any) => {
+  app.post("/api/upload-spec", fixedWindowRateLimit({ windowMs: 60_000, max: 20, keyPrefix: "upload-spec" }), upload.single("file"), async (req: any, res: any) => {
     try {
+      const user = await requireApiUser(req, res);
+      if (!user) return;
       if (!req.file) return res.status(400).json({ error: "No file provided" });
-      const originalname: string = req.file.originalname;
+      const originalname = safeUploadFilename(req.file.originalname);
+      if (!isAllowedSpecUpload(originalname)) {
+        return res.status(400).json({ error: "Unsupported file type" });
+      }
       const mimetype: string = req.file.mimetype;
       const isJsonFile = originalname.endsWith(".json") || mimetype === "application/json";
       const isYamlFile = originalname.endsWith(".yaml") || originalname.endsWith(".yml") ||
         mimetype === "application/x-yaml" || mimetype === "text/yaml";
       const text = await extractTextFromFile(req.file.buffer, mimetype, originalname);
+      assertExtractedSpecSize(text);
       if (!text || text.trim().length < 50) {
         return res.status(422).json({ error: "Could not extract readable text from file" });
       }
@@ -162,31 +250,34 @@ async function startServer() {
       }
       // Store raw content in S3 so analyses.create can choose LLM or OpenAPI path
       const { storagePut } = await import("../storage");
-      const key = `specs/${Date.now()}-${originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const key = buildUserSpecKey(user.id, originalname);
       await storagePut(key, Buffer.from(trimmed, "utf-8"), isOpenAPI ? "application/json" : "text/plain");
       res.json({ text: trimmed, filename: originalname, chars: trimmed.length, specKey: key, isOpenAPI });
     } catch (err: any) {
       console.error("[upload-spec]", err);
-      res.status(500).json({ error: err.message || "Extraction failed" });
+      uploadFailure(res, err, "Extraction failed");
     }
   });
 
   // Paste spec text endpoint - stores in S3, returns specKey
-  app.post("/api/upload-spec-text", uploadRateLimit, express.json({ limit: "20mb" }), async (req: any, res: any) => {
+  app.post("/api/upload-spec-text", fixedWindowRateLimit({ windowMs: 60_000, max: 20, keyPrefix: "upload-spec-text" }), express.json({ limit: "20mb" }), async (req: any, res: any) => {
     try {
+      const user = await requireApiUser(req, res);
+      if (!user) return;
       const { text, filename } = req.body || {};
       if (!text || text.trim().length < 100) {
         return res.status(400).json({ error: "Text too short (minimum 100 characters)" });
       }
       const trimmed = text.trim();
+      assertExtractedSpecSize(trimmed);
       const { storagePut } = await import("../storage");
-      const safeName = (filename || "spec.txt").replace(/[^a-zA-Z0-9._-]/g, '_');
-      const key = `specs/${Date.now()}-${safeName}`;
+      const safeName = safeUploadFilename(filename || "spec.txt");
+      const key = buildUserSpecKey(user.id, safeName);
       await storagePut(key, Buffer.from(trimmed, "utf-8"), "text/plain");
       res.json({ specKey: key, chars: trimmed.length, filename: filename || "spec.txt" });
     } catch (err: any) {
       console.error("[upload-spec-text]", err);
-      res.status(500).json({ error: err.message || "Upload failed" });
+      uploadFailure(res, err, "Upload failed");
     }
   });
 
@@ -195,10 +286,12 @@ async function startServer() {
   // Accepts a ZIP file (max 50MB), extracts code files in memory,
   // detects framework, and returns files + framework for code-scan analysis.
   const codeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-  app.post("/api/upload-code", uploadRateLimit, codeUpload.single("file"), async (req: any, res: any) => {
+  app.post("/api/upload-code", fixedWindowRateLimit({ windowMs: 60_000, max: 10, keyPrefix: "upload-code" }), codeUpload.single("file"), async (req: any, res: any) => {
     try {
+      const user = await requireApiUser(req, res);
+      if (!user) return;
       if (!req.file) return res.status(400).json({ error: "No file provided" });
-      const originalname: string = req.file.originalname;
+      const originalname = safeUploadFilename(req.file.originalname);
       if (!originalname.endsWith(".zip")) {
         return res.status(400).json({ error: "Only ZIP files are supported" });
       }
@@ -206,35 +299,24 @@ async function startServer() {
       const { default: AdmZip } = await import("adm-zip");
       const zip = new AdmZip(req.file.buffer);
       const entries = zip.getEntries();
-
-      const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".prisma", ".json", ".env.example"];
-      const IGNORE_DIRS = ["node_modules/", ".git/", "dist/", "build/", ".next/", "coverage/", ".turbo/"];
-      const IGNORE_PATTERNS = [".test.", ".spec.", ".stories."];
+      if (entries.length > MAX_ZIP_ENTRIES) {
+        return res.status(413).json({ error: `ZIP contains too many entries (max ${MAX_ZIP_ENTRIES})` });
+      }
 
       const files: Array<{ path: string; content: string }> = [];
       let totalBytes = 0;
-      const MAX_TOTAL_BYTES = 5 * 1024 * 1024; // 5MB content limit
 
       for (const entry of entries) {
         if (entry.isDirectory) continue;
-        const entryPath = entry.entryName;
-
-        // Skip ignored paths
-        if (IGNORE_DIRS.some(d => entryPath.includes(d))) continue;
-        if (IGNORE_PATTERNS.some(p => entryPath.includes(p))) continue;
-
-        // Only include code files
-        const hasCodeExt = CODE_EXTENSIONS.some(ext =>
-          entryPath.endsWith(ext) || (ext === ".json" && entryPath.endsWith("package.json"))
-        );
-        if (!hasCodeExt) continue;
-        if (totalBytes >= MAX_TOTAL_BYTES) break;
+        const normalizedPath = normalizeZipEntryPath(entry.entryName);
+        if (!normalizedPath || !shouldIncludeCodePath(normalizedPath)) continue;
+        if (files.length >= MAX_CODE_FILES || totalBytes >= MAX_CODE_TOTAL_BYTES) break;
 
         try {
-          const content = entry.getData().toString("utf-8");
+          const raw = entry.getData();
+          if (raw.length > MAX_CODE_FILE_BYTES) continue;
+          const content = redactUploadedCode(normalizedPath, raw.toString("utf-8"));
           totalBytes += content.length;
-          // Normalize path: strip leading zip folder name if present
-          const normalizedPath = entryPath.replace(/^[^/]+\//, "");
           files.push({ path: normalizedPath, content });
         } catch {
           // Skip unreadable files
@@ -252,287 +334,7 @@ async function startServer() {
       res.json({ files, framework, fileCount: files.length });
     } catch (err: any) {
       console.error("[upload-code]", err);
-      res.status(500).json({ error: err.message || "ZIP extraction failed" });
-    }
-  });
-
-  // ─── HAR Traffic Import Endpoint ────────────────────────────────────────────
-  // POST /api/analyze-har
-  // Accepts a HAR file (JSON from browser DevTools / proxy), parses real traffic,
-  // and returns a ZIP containing Playwright tests:
-  //   - tests/traffic/replay-authenticated.spec.ts  — auth endpoint replay
-  //   - tests/traffic/security-authenticated.spec.ts — auth required checks
-  //   - tests/traffic/replay-public.spec.ts          — public endpoint replay
-  //   - tests/traffic/perf-baseline.spec.ts          — response time budgets
-  // No LLM calls — fully deterministic, returns in <2s.
-  const harUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-  app.post("/api/analyze-har", harRateLimit, harUpload.single("file"), async (req: any, res: any) => {
-    try {
-      // ── Auth: require a valid session (HAR files may contain sensitive auth tokens) ──
-      let user: import("../../drizzle/schema").User | null = null;
-      try {
-        user = await sdk.authenticateRequest(req);
-      } catch {
-        return res.status(401).json({ error: "Unauthorized — sign in to analyze HAR files" });
-      }
-      if (!user) return res.status(401).json({ error: "Unauthorized — sign in to analyze HAR files" });
-
-      if (!req.file) return res.status(400).json({ error: "No HAR file provided" });
-
-      // ── SSRF guard on optional baseUrl override ──
-      const rawBaseUrl = typeof req.body?.baseUrl === "string" ? req.body.baseUrl.trim() : "";
-      let baseUrl: string | undefined;
-      if (rawBaseUrl) {
-        const { checkURL } = await import("./ssrf-guard");
-        const ssrf = checkURL(rawBaseUrl);
-        if (!ssrf.allowed) {
-          return res.status(400).json({ error: `Invalid baseUrl: ${ssrf.reason}` });
-        }
-        baseUrl = rawBaseUrl;
-      }
-
-      // Parse HAR JSON
-      let har: unknown;
-      try {
-        har = JSON.parse(req.file.buffer.toString("utf-8"));
-      } catch {
-        return res.status(422).json({ error: "Invalid JSON — upload a .har file exported from browser DevTools or a proxy tool" });
-      }
-
-      // Validate HAR structure
-      const { validateHAR, parseHAR } = await import("../analyzer/har-parser");
-      const validation = validateHAR(har);
-      if (!validation.valid) {
-        return res.status(422).json({ error: `Invalid HAR: ${validation.error}` });
-      }
-
-      // Parse and generate test files
-      const suite = parseHAR(har as any, { baseUrl });
-
-      if (suite.endpoints.length === 0) {
-        return res.status(422).json({
-          error: "No API calls found in HAR. Make sure to capture /api/ traffic and export from Chrome DevTools → Network → Export HAR.",
-        });
-      }
-
-      // Bundle test files into ZIP
-      const archiver = await import("archiver");
-      const chunks: Buffer[] = [];
-      const archive = archiver.default("zip", { zlib: { level: 1 } });
-      archive.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-      await new Promise<void>((resolve, reject) => {
-        archive.on("end", resolve);
-        archive.on("error", reject);
-
-        for (const f of suite.testFiles) {
-          archive.append(Buffer.from(f.content, "utf-8"), { name: f.filename });
-        }
-
-        // Include a summary JSON
-        archive.append(Buffer.from(JSON.stringify(suite.summary, null, 2), "utf-8"), {
-          name: "har-analysis-summary.json",
-        });
-
-        archive.finalize();
-      });
-
-      const zipBuffer = Buffer.concat(chunks);
-      const filename = `testforge-har-${Date.now()}.zip`;
-
-      res.setHeader("Content-Type", "application/zip");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.setHeader("X-HAR-Summary", JSON.stringify(suite.summary));
-      res.send(zipBuffer);
-    } catch (err: any) {
-      console.error("[analyze-har]", err);
-      res.status(500).json({ error: err.message || "HAR analysis failed" });
-    }
-  });
-
-  // ─── Phase A: Active Security Scanner ──────────────────────────────────────
-  // POST /api/security-scan
-  // Body: { analysisId: number, targetUrl: string, authCookie?: string }
-  // Runs the analysis's security probes against the target URL with SSRF
-  // protection, time-bounding, and rate-limiting between probes. Authenticated.
-  const scanRateLimit = createRateLimiter({ max: 3, windowMs: 60_000 }); // active scans are heavy
-  app.post("/api/security-scan", scanRateLimit, express.json({ limit: "100kb" }), async (req: any, res: any) => {
-    try {
-      // Auth required — active scans hit a real server, must be opt-in
-      let user: import("../../drizzle/schema").User | null = null;
-      try {
-        user = await sdk.authenticateRequest(req);
-      } catch {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-      const { analysisId, targetUrl, authCookie, maxProbes, maxDurationMs } = req.body || {};
-      if (typeof analysisId !== "number") return res.status(400).json({ error: "analysisId (number) required" });
-      if (typeof targetUrl !== "string" || !targetUrl) return res.status(400).json({ error: "targetUrl (string) required" });
-
-      // SSRF guard — defense in depth (active-scanner also checks)
-      const { checkURL } = await import("./ssrf-guard");
-      const ssrf = checkURL(targetUrl);
-      if (!ssrf.allowed) return res.status(400).json({ error: `Invalid targetUrl: ${ssrf.reason}` });
-
-      // Load the analysis (authorize: must belong to caller)
-      const { getAnalysisById } = await import("../db");
-      const analysis = await getAnalysisById(analysisId);
-      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
-      if (analysis.userId !== user.id && user.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-
-      const resultJson = analysis.resultJson as any;
-      const analysisResult = resultJson?.analysisResult;
-      if (!analysisResult) return res.status(400).json({ error: "Analysis has no completed analysisResult — wait for it to finish" });
-
-      // Run scan
-      const { runActiveScan } = await import("../analyzer/active-scanner");
-      const report = await runActiveScan(analysisResult, {
-        targetUrl,
-        authCookie: typeof authCookie === "string" ? authCookie : undefined,
-        maxProbes: typeof maxProbes === "number" ? Math.min(maxProbes, 200) : 100,
-        maxDurationMs: typeof maxDurationMs === "number" ? Math.min(maxDurationMs, 10 * 60 * 1000) : 5 * 60 * 1000,
-      });
-
-      res.json(report);
-    } catch (err: any) {
-      console.error("[security-scan]", err);
-      res.status(500).json({ error: err.message || "Active scan failed" });
-    }
-  });
-
-  // ─── WOW #1: Compliance Certification Report ───────────────────────────────
-  // GET /api/compliance/:framework/:analysisId
-  // Returns audit-ready Markdown report mapping the analysis's tests to
-  // SOC 2 / HIPAA / PCI-DSS / GDPR criteria with evidence per requirement.
-  // Authenticated. Authorization: must own the analysis.
-  app.get("/api/compliance/:framework/:analysisId", async (req: any, res: any) => {
-    try {
-      let user: import("../../drizzle/schema").User | null = null;
-      try { user = await sdk.authenticateRequest(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
-      if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-      const framework = req.params.framework as string;
-      const analysisId = parseInt(req.params.analysisId, 10);
-      if (!["soc2", "hipaa", "pci_dss", "gdpr"].includes(framework)) {
-        return res.status(400).json({ error: "framework must be one of: soc2, hipaa, pci_dss, gdpr" });
-      }
-      if (!Number.isFinite(analysisId)) {
-        return res.status(400).json({ error: "analysisId must be a number" });
-      }
-
-      const { getAnalysisById } = await import("../db");
-      const analysis = await getAnalysisById(analysisId);
-      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
-      if (analysis.userId !== user.id && user.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-
-      const resultJson = analysis.resultJson as any;
-      const analysisResult = resultJson?.analysisResult;
-      const validatedSuite = resultJson?.validatedSuite;
-      if (!analysisResult || !validatedSuite) {
-        return res.status(400).json({ error: "Analysis incomplete — wait for it to finish" });
-      }
-
-      const { evaluateCompliance, renderComplianceReport } = await import("../analyzer/compliance-packs");
-      const report = evaluateCompliance(framework as any, validatedSuite);
-
-      // Format negotiation: ?format=markdown for raw Markdown, default JSON
-      if (req.query.format === "markdown") {
-        const md = renderComplianceReport(report, analysisResult);
-        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-        res.setHeader("Content-Disposition", `attachment; filename="${framework}-compliance-${analysisId}.md"`);
-        return res.send(md);
-      }
-      res.json(report);
-    } catch (err: any) {
-      console.error("[compliance]", err);
-      res.status(500).json({ error: err.message || "Compliance evaluation failed" });
-    }
-  });
-
-  // ─── WOW #2: AI-Native Conversational Test Refinement ─────────────────────
-  // POST /api/refine-test
-  // Body: { testCode: string, refinementRequest: string, specSnippet?: string, proofType?: string }
-  // Returns: { refinedCode, diffSummary, changes[], warnings[] }
-  // Authenticated. Uses LLM with 30s timeout.
-  const refineRateLimit = createRateLimiter({ max: 30, windowMs: 60_000 }); // LLM calls — throttle
-  app.post("/api/refine-test", refineRateLimit, express.json({ limit: "150kb" }), async (req: any, res: any) => {
-    try {
-      let user: import("../../drizzle/schema").User | null = null;
-      try { user = await sdk.authenticateRequest(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
-      if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-      const body = req.body || {};
-      if (typeof body.testCode !== "string") return res.status(400).json({ error: "testCode (string) required" });
-      if (typeof body.refinementRequest !== "string") return res.status(400).json({ error: "refinementRequest (string) required" });
-
-      const { refineTest } = await import("../analyzer/test-refiner");
-      const result = await refineTest({
-        testCode: body.testCode,
-        refinementRequest: body.refinementRequest,
-        specSnippet: typeof body.specSnippet === "string" ? body.specSnippet : undefined,
-        proofType: typeof body.proofType === "string" ? body.proofType : undefined,
-      });
-      res.json(result);
-    } catch (err: any) {
-      console.error("[refine-test]", err);
-      res.status(err.message?.includes("required") || err.message?.includes("too large") ? 400 : 500)
-        .json({ error: err.message || "Refinement failed" });
-    }
-  });
-
-  // ─── WOW #3: Test Failure → Auto-Fix Suggester ────────────────────────────
-  // POST /api/analyze-failure
-  // Body: { testCode, failureLog, specSnippet?, expectedStatus?, actualStatus?, expectedBody?, actualBody? }
-  // Returns: { diagnosis, confidence, reasoning, suggestedFix, alternatives, isLikelyFlaky }
-  // Authenticated. Hybrid: deterministic heuristic first, LLM fallback for ambiguous cases.
-  app.post("/api/analyze-failure", refineRateLimit, express.json({ limit: "150kb" }), async (req: any, res: any) => {
-    try {
-      let user: import("../../drizzle/schema").User | null = null;
-      try { user = await sdk.authenticateRequest(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
-      if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-      const body = req.body || {};
-      if (typeof body.testCode !== "string") return res.status(400).json({ error: "testCode (string) required" });
-      if (typeof body.failureLog !== "string") return res.status(400).json({ error: "failureLog (string) required" });
-
-      const { analyzeFailure } = await import("../analyzer/failure-analyzer");
-      const result = await analyzeFailure({
-        testCode: body.testCode,
-        failureLog: body.failureLog,
-        specSnippet: typeof body.specSnippet === "string" ? body.specSnippet : undefined,
-        expectedStatus: typeof body.expectedStatus === "number" ? body.expectedStatus : undefined,
-        actualStatus: typeof body.actualStatus === "number" ? body.actualStatus : undefined,
-        expectedBody: body.expectedBody,
-        actualBody: body.actualBody,
-      });
-      res.json(result);
-    } catch (err: any) {
-      console.error("[analyze-failure]", err);
-      res.status(err.message?.includes("required") ? 400 : 500).json({ error: err.message || "Analysis failed" });
-    }
-  });
-
-  // GET /api/compliance/packs — list all available compliance packs (public, no auth)
-  app.get("/api/compliance/packs", async (_req: any, res: any) => {
-    try {
-      const { listPacks } = await import("../analyzer/compliance-packs");
-      res.json(listPacks().map(p => ({
-        framework: p.framework,
-        fullName: p.fullName,
-        version: p.version,
-        description: p.description,
-        url: p.url,
-        criteriaCount: p.criteria.length,
-        mustCount: p.criteria.filter(c => c.severity === "must").length,
-      })));
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      uploadFailure(res, err, "ZIP extraction failed");
     }
   });
 
@@ -543,7 +345,7 @@ async function startServer() {
   //   { type: "run_complete", summary }
   //   { type: "run_error", error }
   // Auth: session cookie required (same as tRPC)
-  app.get("/api/test-runs/:runId/stream", async (req: any, res: any) => {
+  app.get("/api/test-runs/:runId/stream", fixedWindowRateLimit({ windowMs: 60_000, max: 30, keyPrefix: "sse" }), async (req: any, res: any) => {
     const { runId } = req.params;
     if (!runId || typeof runId !== "string") {
       return res.status(400).json({ error: "runId required" });

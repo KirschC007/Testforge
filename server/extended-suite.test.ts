@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
+  generateHelpers,
   generateExtendedTestSuite,
   type AnalysisResult,
   type Behavior,
@@ -770,15 +771,145 @@ describe("generateExtendedTestSuite — Edge Cases", () => {
     expect(() => generateExtendedTestSuite(analysis, [])).not.toThrow();
   });
 
-  it("uses fallback tenant values when tenantModel is null", () => {
-    const analysis = makeAnalysisResult({ tenantModel: null });
+  it("does not invent tenant values when tenantModel is null", () => {
+    const analysis = makeAnalysisResult({
+      tenantModel: null,
+      apiEndpoints: [
+        {
+          name: "settings.models",
+          method: "GET /api/settings/models",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [],
+          outputFields: ["models"],
+        },
+        {
+          name: "settings.updateModels",
+          method: "POST /api/settings/models",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [{ name: "provider", type: "string", required: true }],
+          outputFields: ["ok"],
+        },
+      ],
+      userFlows: [],
+      statusMachine: null,
+    });
     const suite = generateExtendedTestSuite(analysis, []);
 
-    // Should still generate files
     expect(suite.files.length).toBeGreaterThan(0);
-    // Should use fallback "tenantId"
     const allContent = suite.files.map((f: ExtendedTestFile) => f.content).join("\n");
-    expect(allContent).toContain("tenantId");
+    expect(allContent).not.toMatch(/\{\s*tenantId\s*:/);
+    expect(allContent).not.toMatch(/TEST_TENANT_ID\s*[,:=]/);
+  });
+
+  it("preserves REST route targets and does not rewrite them into fake tRPC procedures", () => {
+    const analysis = makeAnalysisResult({
+      tenantModel: null,
+      apiEndpoints: [
+        {
+          name: "GET /api/settings/models",
+          method: "GET /api/settings/models",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [],
+          outputFields: ["models"],
+        },
+        {
+          name: "POST /api/executor/tasks/[id]/approve",
+          method: "POST /api/executor/tasks/[id]/approve",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [{ name: "id", type: "string", required: true }],
+          outputFields: ["ok"],
+        },
+      ],
+      userFlows: [],
+      statusMachine: null,
+    });
+
+    const suite = generateExtendedTestSuite(analysis, []);
+    const allContent = suite.files.map((f: ExtendedTestFile) => f.content).join("\n");
+
+    expect(allContent).toContain("GET /api/settings/models");
+    expect(allContent).toContain("/api/executor/tasks/[id]/approve");
+    expect(allContent).not.toContain("/api/trpc/executor.create");
+    expect(allContent).not.toContain("/executor/new");
+  });
+
+  it("sanitizes hyphenated resource names into valid helper identifiers", () => {
+    const analysis = makeAnalysisResult({
+      tenantModel: null,
+      apiEndpoints: [
+        {
+          name: "llm-visibility.create",
+          method: "POST /api/llm-visibility",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [{ name: "targetDomain", type: "string", required: true }],
+          outputFields: ["id"],
+        },
+      ],
+      userFlows: [],
+      statusMachine: null,
+    });
+
+    const suite = generateExtendedTestSuite(analysis, []);
+    const allContent = suite.files.map((f: ExtendedTestFile) => f.content).join("\n");
+
+    expect(allContent).toContain("function makeValidLlmVisibilityInput");
+    expect(allContent).not.toContain("makeValidLlm-visibilityInput");
+  });
+
+  it("generates single-tenant helpers without tenantId fixtures", () => {
+    const analysis = makeAnalysisResult({
+      tenantModel: null,
+      apiEndpoints: [
+        {
+          name: "settings.updateModels",
+          method: "POST /api/settings/models",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [{ name: "provider", type: "string", required: true }],
+          outputFields: ["ok"],
+        },
+      ],
+    });
+    const helpers = generateHelpers(analysis);
+    const relevantHelpers = [
+      helpers["helpers/api.ts"],
+      helpers["helpers/factories.ts"],
+      helpers["helpers/reset.ts"],
+      helpers["helpers/schemas.ts"],
+    ].join("\n");
+
+    expect(relevantHelpers).not.toMatch(/\{\s*tenantId\s*:/);
+    expect(relevantHelpers).not.toMatch(/TEST_TENANT_ID\s*[,:=]/);
+  });
+
+  it("emits valid REST-method regex syntax in helpers/api.ts", () => {
+    const helpers = generateHelpers(makeAnalysisResult());
+    expect(helpers["helpers/api.ts"]).toContain("procedure.match(/^(GET|POST|PUT|PATCH|DELETE)\\s+(\\/.*)/i)");
+    expect(helpers["helpers/api.ts"]).not.toContain("procedure.match(/^(GET|POST|PUT|PATCH|DELETE)s+(/.*)/i)");
+  });
+
+  it("sanitizes REST paths into valid Zod schema export names", () => {
+    const helpers = generateHelpers(makeAnalysisResult({
+      tenantModel: null,
+      apiEndpoints: [
+        {
+          name: "POST /api/executor/tasks/[id]/approve",
+          method: "POST /api/executor/tasks/[id]/approve",
+          auth: "requireAuth",
+          relatedBehaviors: ["B003"],
+          inputFields: [{ name: "id", type: "string", required: true }],
+          outputFields: ["ok"],
+        },
+      ],
+    }));
+
+    expect(helpers["helpers/schemas.ts"]).toContain("export const executorTasksIdApproveSchema");
+    expect(helpers["helpers/schemas.ts"]).not.toContain("export const POST /api");
   });
 
   it("uses fallback role when authModel is null", () => {

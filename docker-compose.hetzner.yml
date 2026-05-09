@@ -1,14 +1,15 @@
 version: "3.9"
 
 # TestForge Hetzner Deployment
-# Runs on port 3001 alongside other apps on the same server
+# Public production stack with automatic HTTPS via Caddy.
 #
 # Usage:
-#   cp .env.hetzner .env
+#   cp docker/env-template.txt .env
 #   docker compose -f docker-compose.hetzner.yml up -d --build
 #
 # Services:
-#   app     — TestForge Node.js server (port 3001)
+#   caddy   — public HTTPS reverse proxy on ports 80/443
+#   app     — TestForge Node.js server (internal only)
 #   db      — MySQL 8 database (internal only)
 #   minio   — S3-compatible object storage (internal only)
 
@@ -19,16 +20,18 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "3003:3000"
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
+      AUTH_MODE: local
+      APP_BASE_URL: ${APP_BASE_URL}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, linklocal, uniquelocal}
       DATABASE_URL: mysql://testforge:${MYSQL_PASSWORD}@db:3306/testforge
       JWT_SECRET: ${JWT_SECRET}
       BUILT_IN_FORGE_API_KEY: ${LLM_API_KEY}
       BUILT_IN_FORGE_API_URL: ${LLM_API_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
-      VITE_FRONTEND_FORGE_API_KEY: ${LLM_API_KEY}
-      VITE_FRONTEND_FORGE_API_URL: ${LLM_API_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-testforge}
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:-testforge}
@@ -44,6 +47,25 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    networks:
+      - testforge
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SERVER_NAME: ${SERVER_NAME}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - testforge_caddy_data:/data
+      - testforge_caddy_config:/config
+    depends_on:
+      - app
     networks:
       - testforge
 
@@ -74,6 +96,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - testforge_minio_data:/data
+    ports:
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -85,6 +109,8 @@ services:
 volumes:
   testforge_db_data:
   testforge_minio_data:
+  testforge_caddy_data:
+  testforge_caddy_config:
 
 networks:
   testforge:

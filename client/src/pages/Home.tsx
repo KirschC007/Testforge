@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import PublicFooter from "@/components/PublicFooter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import {
@@ -93,6 +94,9 @@ export default function Home() {
             <Link href="/demo">
               <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Demo</span>
             </Link>
+            <Link href="/evidence">
+              <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Evidence</span>
+            </Link>
             <Link href="/pricing">
               <span className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer hidden sm:inline">Pricing</span>
             </Link>
@@ -181,6 +185,11 @@ export default function Home() {
                     <Terminal className="w-4 h-4" /> Demo
                   </Button>
                 </Link>
+                <Link href="/evidence">
+                  <Button size="lg" variant="outline" className="gap-2">
+                    <Shield className="w-4 h-4" /> Evidence
+                  </Button>
+                </Link>
               </>
             ) : (
               <>
@@ -192,6 +201,11 @@ export default function Home() {
                 <Link href="/demo">
                   <Button size="lg" variant="outline" className="gap-2">
                     <Terminal className="w-4 h-4" /> See Demo
+                  </Button>
+                </Link>
+                <Link href="/evidence">
+                  <Button size="lg" variant="outline" className="gap-2">
+                    <Shield className="w-4 h-4" /> Proof Wall
                   </Button>
                 </Link>
               </>
@@ -708,7 +722,7 @@ export default function Home() {
           <h2 className="text-3xl font-black mb-4">Ready to forge your tests?</h2>
           <p className="text-muted-foreground mb-8 max-w-md mx-auto">
             Upload your first spec and get a proof-grade test suite in minutes.
-            Free plan includes 3 analyses per day.
+            Your first full-strength analysis is free. After that, pay only when the result is worth running again.
           </p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
             {isAuthenticated ? (
@@ -736,18 +750,7 @@ export default function Home() {
       </section>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
-      <footer className="border-t border-border/50 py-6">
-        <div className="container flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Shield className="w-3.5 h-3.5" />
-            <span>TestForge</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link href="/pricing"><span className="hover:text-foreground transition-colors cursor-pointer">Pricing</span></Link>
-            <span>TestForge</span>
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

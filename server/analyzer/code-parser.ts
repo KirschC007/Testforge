@@ -13,6 +13,7 @@
  * - Drizzle ORM (mysqlTable, pgTable, sqliteTable)
  * - Zod schemas (z.object, z.string, z.number, z.enum, z.array)
  * - Express routes (router.get, router.post, etc.)
+ * - FastAPI decorators (@app.get, @router.post, etc.)
  * - Prisma schema (.prisma files)
  * - package.json (framework detection)
  */
@@ -27,6 +28,7 @@ import type {
   AuthRole,
   DataModel,
 } from "./types";
+import { assessSupportedScopeForCodebase } from "./supported-scope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -331,6 +333,7 @@ interface ParsedProcedure {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   isProtected: boolean;
   inputFields: EndpointField[];
+  outputFields?: string[];
   authMiddleware: string;
   detectedTenantKey?: string | null;  // e.g. 'orgId' from req.user.orgId
   detectedRoles?: string[];           // e.g. ['admin', 'doctor'] from user.role === 'admin'
@@ -346,6 +349,10 @@ function parseZodObject(zodBody: string): EndpointField[] {
     const fieldName = match[1];
     const zodType = match[2];
     const rest = match[3];
+    const afterFieldStart = zodBody.slice(match.index + 1);
+    const nextFieldOffset = afterFieldStart.search(/,\s*\w+:\s*z\./);
+    const snippetEnd = nextFieldOffset >= 0 ? match.index + 1 + nextFieldOffset : match.index + 500;
+    const snippet = zodBody.slice(match.index, snippetEnd);
 
     let type: EndpointField["type"] = "string";
     let enumValues: string[] | undefined;
@@ -353,13 +360,13 @@ function parseZodObject(zodBody: string): EndpointField[] {
     let max: number | undefined;
     let isTenantKey = false;
 
-    if (zodType === "number") type = "number";
+    if (zodType === "number" || snippet.includes("z.coerce.number")) type = "number";
     else if (zodType === "boolean") type = "boolean";
     else if (zodType === "date") type = "date";
     else if (zodType === "array") type = "array";
     else if (zodType === "enum") {
       type = "enum";
-      const enumMatch = rest.match(/\[([^\]]+)\]/);
+      const enumMatch = snippet.match(/\[([^\]]+)\]/);
       if (enumMatch) {
         enumValues = enumMatch[1]
           .split(",")
@@ -369,12 +376,12 @@ function parseZodObject(zodBody: string): EndpointField[] {
     }
 
     // Extract min/max
-    const minMatch = rest.match(/\.min\((\d+)\)/);
-    const maxMatch = rest.match(/\.max\((\d+)\)/);
-    if (minMatch) min = parseInt(minMatch[1]);
-    if (maxMatch) max = parseInt(maxMatch[1]);
+    const minMatch = snippet.match(/\.min\((\d+(?:\.\d+)?)\)/);
+    const maxMatch = snippet.match(/\.max\((\d+(?:\.\d+)?)\)/);
+    if (minMatch) min = Number(minMatch[1]);
+    if (maxMatch) max = Number(maxMatch[1]);
 
-    const isRequired = !rest.includes(".optional()") && !rest.includes(".nullish()");
+    const isRequired = !snippet.includes(".optional()") && !snippet.includes(".nullish()");
 
     if (TENANT_KEY_NAMES.has(fieldName)) isTenantKey = true;
 
@@ -382,6 +389,82 @@ function parseZodObject(zodBody: string): EndpointField[] {
   }
 
   return fields;
+}
+
+function extractBalancedBlock(content: string, openIndex: number, openChar = "{", closeChar = "}"): string {
+  let depth = 0;
+  let inString: string | null = null;
+  let escaped = false;
+  for (let i = openIndex; i < content.length; i++) {
+    const char = content[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      inString = char;
+      continue;
+    }
+    if (char === openChar) depth++;
+    if (char === closeChar) {
+      depth--;
+      if (depth === 0) return content.slice(openIndex + 1, i);
+    }
+  }
+  return "";
+}
+
+function extractNamedZodObjectSchemas(content: string): Map<string, EndpointField[]> {
+  const schemas = new Map<string, EndpointField[]>();
+  const schemaRegex = /(?:const|let|var|export\s+const)\s+(\w+)\s*=\s*z\.object\s*\(\s*\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = schemaRegex.exec(content)) !== null) {
+    const openBraceIndex = content.indexOf("{", match.index);
+    if (openBraceIndex === -1) continue;
+    const body = extractBalancedBlock(content, openBraceIndex);
+    const fields = parseZodObject(body);
+    if (fields.length > 0) schemas.set(match[1], fields);
+  }
+  return schemas;
+}
+
+function extractZodFieldsFromContent(content: string): EndpointField[] {
+  const inlineMatch = content.match(/z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)/);
+  if (inlineMatch) return parseZodObject(inlineMatch[1]);
+
+  const schemas = extractNamedZodObjectSchemas(content);
+  const schemaUseMatch = content.match(/(\w+)\.(?:safeParse|parse)\s*\(/);
+  if (schemaUseMatch && schemas.has(schemaUseMatch[1])) {
+    return schemas.get(schemaUseMatch[1]) ?? [];
+  }
+
+  return schemas.values().next().value ?? [];
+}
+
+function extractResponseJsonFields(content: string): string[] {
+  const fields = new Set<string>();
+  const responseRegex = /(?:Response\.json|NextResponse\.json|res\.json)\s*\(\s*\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = responseRegex.exec(content)) !== null) {
+    const openBraceIndex = content.indexOf("{", match.index);
+    if (openBraceIndex === -1) continue;
+    const body = extractBalancedBlock(content, openBraceIndex);
+    for (const fieldMatch of Array.from(body.matchAll(/(?:^|[,{\s])([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g))) {
+      const field = fieldMatch[1];
+      if (!["data", "error", "ok", "success"].includes(field)) fields.add(field);
+    }
+    for (const shorthandMatch of Array.from(body.matchAll(/(?:^|[,{\s])([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:,|$)/g))) {
+      const field = shorthandMatch[1];
+      if (!["return", "await", "data", "error", "ok", "success"].includes(field)) fields.add(field);
+    }
+  }
+  return Array.from(fields).slice(0, 12);
 }
 
 function parseTRPCRouters(files: CodeFile[], routerPrefix?: string): ParsedProcedure[] {
@@ -544,9 +627,8 @@ function extractHandlerBlock(content: string, fromIndex: number): string {
  * Extract Zod/Joi validation fields from a handler body string.
  */
 function extractValidationFields(handlerBody: string): import("./types").EndpointField[] {
-  // Try to find z.object({...}) in the handler
-  const zodMatch = handlerBody.match(/z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)/);
-  if (zodMatch) return parseZodObject(zodMatch[1]);
+  const zodFields = extractZodFieldsFromContent(handlerBody);
+  if (zodFields.length > 0) return zodFields;
   // Try req.body destructuring: const { name, email } = req.body
   const bodyMatch = handlerBody.match(/const\s*\{([^}]+)\}\s*=\s*req\.body/);
   if (bodyMatch) {
@@ -586,6 +668,7 @@ function parseExpressRoutes(files: CodeFile[]): ParsedProcedure[] {
     if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx") && !file.path.endsWith(".js")) continue;
     const content = file.content;
     if (!content.includes("router.") && !content.includes("app.")) continue;
+    const fileSchemas = extractNamedZodObjectSchemas(content);
 
     // Pattern: router.get/post/put/patch/delete('/path', ...handlers)
     //          app.get/post/put/patch/delete('/path', ...handlers)
@@ -600,7 +683,13 @@ function parseExpressRoutes(files: CodeFile[]): ParsedProcedure[] {
 
       // Extract handler body for field/auth detection
       const handlerBlock = extractHandlerBlock(content, match.index);
-      const inputFields = extractValidationFields(handlerBlock);
+      let inputFields = extractValidationFields(handlerBlock);
+      if (inputFields.length === 0) {
+        const schemaUseMatch = handlerBlock.match(/(\w+)\.(?:safeParse|parse)\s*\(/);
+        if (schemaUseMatch && fileSchemas.has(schemaUseMatch[1])) {
+          inputFields = fileSchemas.get(schemaUseMatch[1]) ?? [];
+        }
+      }
 
       // Auth detection: check for common middleware names
       const isProtected = handlerBlock.includes("requireAuth") ||
@@ -666,28 +755,40 @@ function extractNextAppRoutes(files: CodeFile[]): ParsedProcedure[] {
     const segments = apiPath.split("/").filter(s => !s.startsWith("["));
     const resource = segments[0] || "resource";
     const hasId = file.path.includes("[");
+    const fileSchemas = extractNamedZodObjectSchemas(file.content);
 
     // Check which HTTP methods are exported
     for (const verb of ["GET", "POST", "PUT", "PATCH", "DELETE"] as const) {
-      const hasExport =
-        file.content.includes(`export async function ${verb}`) ||
-        file.content.includes(`export function ${verb}`) ||
-        file.content.includes(`export const ${verb}`);
-      if (!hasExport) continue;
+      const exportRegex = new RegExp(`export\\s+(?:async\\s+)?function\\s+${verb}\\b|export\\s+const\\s+${verb}\\b`, "g");
+      const exportMatch = exportRegex.exec(file.content);
+      if (!exportMatch) continue;
+      const handlerBlock = extractHandlerBlock(file.content, exportMatch.index);
 
       const action = segments.length > 1
         ? segments[segments.length - 1]
         : httpVerbToAction(verb, hasId);
 
-      // Extract Zod validation if present
-      const zodMatch = file.content.match(/z\.object\s*\(\s*\{([\s\S]*?)\}\s*\)/);
-      const inputFields = zodMatch ? parseZodObject(zodMatch[1]) : [];
+      let inputFields = extractZodFieldsFromContent(handlerBlock);
+      if (inputFields.length === 0) {
+        const schemaUseMatch = handlerBlock.match(/(\w+)\.(?:safeParse|parse)\s*\(/);
+        if (schemaUseMatch && fileSchemas.has(schemaUseMatch[1])) {
+          inputFields = fileSchemas.get(schemaUseMatch[1]) ?? [];
+        }
+      }
+      if (inputFields.length === 0 && ["POST", "PUT", "PATCH", "DELETE"].includes(verb) && fileSchemas.size === 1) {
+        inputFields = Array.from(fileSchemas.values())[0] ?? [];
+      }
+
+      const detectedTenantKey = inputFields.find(field => field.isTenantKey)?.name ?? null;
+      const outputFields = extractResponseJsonFields(handlerBlock);
 
       const isProtected =
-        file.content.includes("getServerSession") ||
-        file.content.includes("auth(") ||
-        file.content.includes("requireAuth") ||
-        file.content.includes("withAuth");
+        handlerBlock.includes("getServerSession") ||
+        handlerBlock.includes("auth(") ||
+        handlerBlock.includes("requireAuth") ||
+        handlerBlock.includes("withAuth") ||
+        /headers\.get\(["']authorization["']\)|authorization/i.test(handlerBlock) ||
+        file.content.includes("middleware");
 
       procedures.push({
         name: `${resource}.${action}`,
@@ -695,7 +796,9 @@ function extractNextAppRoutes(files: CodeFile[]): ParsedProcedure[] {
         method: verb,
         isProtected,
         inputFields,
-        authMiddleware: "requireAuth",
+        outputFields,
+        authMiddleware: isProtected ? "requireAuth" : "publicProcedure",
+        detectedTenantKey,
       });
     }
   }
@@ -776,7 +879,59 @@ function parseNestJSControllers(files: CodeFile[]): ParsedProcedure[] {
   return procedures;
 }
 
+function parseFastAPIRoutes(files: CodeFile[]): ParsedProcedure[] {
+  const procedures: ParsedProcedure[] = [];
+  const pyFiles = files.filter((file) => file.path.endsWith(".py"));
+
+  for (const file of pyFiles) {
+    const routeRegex = /@(?:app|router)\.(get|post|put|patch|delete)\(\s*["']([^"']+)["'][^)]*\)\s*(?:async\s+)?def\s+([a-zA-Z_][\w]*)\s*\(([^)]*)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = routeRegex.exec(file.content)) !== null) {
+      const method = match[1].toUpperCase() as ParsedProcedure["method"];
+      const routePath = match[2].startsWith("/") ? match[2] : `/${match[2]}`;
+      const handlerName = match[3];
+      const params = match[4] || "";
+      const inputFields: EndpointField[] = [];
+
+      for (const param of params.split(",").map((part) => part.trim()).filter(Boolean)) {
+        const [rawName, rawType] = param.split(":").map((part) => part.trim());
+        if (!rawName || rawName === "self" || rawName === "request") continue;
+        const loweredType = (rawType || "").toLowerCase();
+        inputFields.push({
+          name: rawName.replace(/=.*/, "").trim(),
+          type: loweredType.includes("int") || loweredType.includes("float") || loweredType.includes("decimal") ? "number" :
+            loweredType.includes("bool") ? "boolean" :
+              "string",
+          required: !param.includes("="),
+          isTenantKey: /tenantId|organizationId|shopId|workspaceId|companyId/i.test(rawName),
+          isBoundaryField: false,
+        });
+      }
+
+      procedures.push({
+        name: pathToResourceAction(routePath, method),
+        fullName: `${method} ${routePath}`,
+        method,
+        isProtected: /Depends\s*\(|OAuth2|Authorization|Bearer|current_user|require_user/i.test(match[0] + file.content.slice(match.index, match.index + 600)),
+        inputFields,
+        outputFields: [],
+        authMiddleware: /Depends\s*\(|OAuth2|Authorization|Bearer|current_user|require_user/i.test(match[0] + file.content.slice(match.index, match.index + 600)) ? "requireAuth" : "publicProcedure",
+      });
+    }
+  }
+
+  return procedures;
+}
+
 // ─── IR Builder ───────────────────────────────────────────────────────────────
+
+function detectAuthJs(files: CodeFile[]): boolean {
+  return files.some(file =>
+    /\[\.\.\.nextauth\]|auth\.ts$|auth\.config\.ts$/.test(file.path) ||
+    /\bNextAuth\s*\(|next-auth|CredentialsProvider|signIn\s*\(/.test(file.content)
+  );
+}
+
 function buildIRFromCode(
   tables: ParsedTable[],
   procedures: ParsedProcedure[],
@@ -786,6 +941,7 @@ function buildIRFromCode(
   const behaviors: Behavior[] = [];
   const apiEndpoints: APIEndpoint[] = [];
   const dataModels: DataModel[] = [];
+  const usesAuthJs = detectAuthJs(codeFiles);
 
   // Detect global tenant key from tables
   // First: check known TENANT_KEY_NAMES list
@@ -821,6 +977,11 @@ function buildIRFromCode(
     for (const proc of procedures) {
       if (proc.detectedTenantKey) {
         tenantKeyCounts[proc.detectedTenantKey] = (tenantKeyCounts[proc.detectedTenantKey] || 0) + 1;
+      }
+      for (const field of proc.inputFields) {
+        if (field.isTenantKey || TENANT_KEY_NAMES.has(field.name)) {
+          tenantKeyCounts[field.name] = (tenantKeyCounts[field.name] || 0) + 1;
+        }
       }
     }
     const mostCommon = Object.entries(tenantKeyCounts).sort((a, b) => b[1] - a[1])[0];
@@ -886,12 +1047,6 @@ function buildIRFromCode(
       riskHints.push("Auth: verify role-based access control");
     }
 
-    // CSRF for mutations
-    if (proc.method !== "GET") {
-      tags.push("csrf");
-      riskHints.push("CSRF: state-changing endpoint requires token validation");
-    }
-
     // Concurrency for financial/critical operations
     if (proc.name.toLowerCase().includes("transfer") || proc.name.toLowerCase().includes("payment") ||
         proc.name.toLowerCase().includes("debit") || proc.name.toLowerCase().includes("credit") ||
@@ -952,6 +1107,7 @@ function buildIRFromCode(
       auth: proc.authMiddleware,
       relatedBehaviors: [id],
       inputFields: proc.inputFields,
+      outputFields: proc.outputFields ?? [],
     });
   }
 
@@ -1007,9 +1163,19 @@ function buildIRFromCode(
     }
   }
 
-  // Ensure admin and user are always present as fallback
-  allDetectedRoles.add("admin");
-  allDetectedRoles.add("user");
+  const loginProc = procedures.find(p =>
+    p.name === "login" || p.name === "signin" || p.name === "authenticate" ||
+    p.fullName.includes("auth.login") || p.fullName.includes("auth.signin")
+  );
+  const expressLogin = procedures.find(p =>
+    p.method === "POST" && (p.fullName.includes("/login") || p.fullName.includes("/signin"))
+  );
+  const hasAuthEvidence = usesAuthJs || Boolean(loginProc) || Boolean(expressLogin) ||
+    procedures.some(p => p.isProtected || p.authMiddleware === "requireAuth");
+  if (hasAuthEvidence && allDetectedRoles.size === 0) {
+    allDetectedRoles.add("admin");
+    allDetectedRoles.add("user");
+  }
   const authRoles: AuthRole[] = Array.from(allDetectedRoles).map(roleName => ({
     name: roleName,
     envUserVar: `E2E_${roleName.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_USER`,
@@ -1017,18 +1183,12 @@ function buildIRFromCode(
     defaultUser: `${roleName}@test.com`,
     defaultPass: "password",
   }));
-  const authModel: AuthModel = {
+  const authModel: AuthModel | null = hasAuthEvidence ? {
     loginEndpoint: (() => {
-      const loginProc = procedures.find(p =>
-        p.name === "login" || p.name === "signin" || p.name === "authenticate" ||
-        p.fullName.includes("auth.login") || p.fullName.includes("auth.signin")
-      );
       if (loginProc) return `/api/trpc/${loginProc.fullName}`;
-      const expressLogin = procedures.find(p =>
-        p.method === "POST" && (p.fullName.includes("/login") || p.fullName.includes("/signin"))
-      );
       if (expressLogin) return expressLogin.fullName;
-      return "/api/auth/login";
+      if (usesAuthJs) return "POST /api/auth/callback/credentials";
+      return "";
     })(),
     csrfEndpoint: (() => {
       const csrfProc = procedures.find(p =>
@@ -1039,7 +1199,7 @@ function buildIRFromCode(
       return ""; // No CSRF endpoint detected — skip CSRF tests
     })(),
     roles: authRoles,
-  };
+  } : null;
 
   // Build resources from tables
   const resources = tables.map(t => ({
@@ -1088,12 +1248,17 @@ function buildIRFromCode(
 
   // Build status machine from first table with status enum (after back-propagation)
   const statusTable = tables.find(t => t.statusEnum);
-  const statusMachine = statusTable?.statusEnum ? {
-    states: statusTable.statusEnum,
-    transitions: buildStatusTransitions(statusTable.statusEnum),
+  const endpointStatusEnum = apiEndpoints
+    .flatMap(ep => ep.inputFields)
+    .find(field => field.name === "status" && field.type === "enum" && field.enumValues?.length)
+    ?.enumValues;
+  const statusStates = statusTable?.statusEnum ?? endpointStatusEnum;
+  const statusMachine = statusStates ? {
+    states: statusStates,
+    transitions: buildStatusTransitions(statusStates),
     forbidden: [] as [string, string][],
-    initialState: statusTable.statusEnum[0],
-    terminalStates: [statusTable.statusEnum[statusTable.statusEnum.length - 1]],
+    initialState: statusStates[0],
+    terminalStates: [statusStates[statusStates.length - 1]],
   } : null;
 
   // DSGVO behaviors for PII tables
@@ -1166,6 +1331,7 @@ function buildStatusTransitions(states: string[]): [string, string][] {
  * This is the main entry point for the Code-Scan path.
  */
 export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult: CodeParseResult } {
+  const supportedScope = assessSupportedScopeForCodebase(files);
   // 1. Detect framework
   const framework = detectFramework(files);
 
@@ -1179,10 +1345,19 @@ export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult
   const expressProcedures = parseExpressRoutes(files);
   const nextProcedures = extractNextAppRoutes(files);
   const nestProcedures = parseNestJSControllers(files);
-  const allProcedures = [...trpcProcedures, ...expressProcedures, ...nextProcedures, ...nestProcedures];
+  const fastApiProcedures = parseFastAPIRoutes(files);
+  const allProcedures = [...trpcProcedures, ...expressProcedures, ...nextProcedures, ...nestProcedures, ...fastApiProcedures];
 
   // 4. Build IR
   const ir = buildIRFromCode(allTables, allProcedures, framework, files);
+  if (supportedScope.verdict !== "supported") {
+    ir.ambiguities.push({
+      behaviorId: "GLOBAL",
+      problem: supportedScope.summary,
+      question: supportedScope.blockers[0] || "Welche Teile des Stacks sollen in den strengen Scope gebracht werden?",
+      impact: supportedScope.verdict === "unsupported" ? "blocks_test" : "reduces_confidence",
+    });
+  }
 
   // 5. Collect metadata
   // The buildIRFromCode call above already applied the 60%-threshold heuristic and mutated allTables
@@ -1223,6 +1398,7 @@ export function parseCodeToIR(files: CodeFile[]): AnalysisResult & { parseResult
       (authRoles.length > 0 ? 10 : 0)
     )),
     specType: `code:${framework}`,
+    supportedScope,
     parseResult,
   };
 }

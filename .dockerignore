@@ -1,0 +1,17 @@
+.git
+.github
+artifacts
+dist
+node_modules
+scenario-outputs
+generated-tests
+archived
+*.zip
+.env
+.env.*
+!.env.example
+docker/certs
+nginx/certs
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store

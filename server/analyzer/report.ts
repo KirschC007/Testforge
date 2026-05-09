@@ -3,6 +3,11 @@ import type { StaticFinding } from "./static-analyzer";
 
 // ─── Report Generator ─────────────────────────────────────────────────────────
 
+function formatQualityScore(score: number): string {
+  if (score > 10) return `${score.toFixed(0)}/100`;
+  return `${score.toFixed(1)}/10.0`;
+}
+
 export function generateReport(
   analysis: AnalysisResult,
   riskModel: RiskModel,
@@ -15,7 +20,7 @@ export function generateReport(
   const lines: string[] = [];
 
   lines.push(`# TestForge Report v3.0 — ${projectName}`);
-  lines.push(`\nGenerated: ${now} | Spec Type: ${analysis.specType} | Quality Score: ${analysis.qualityScore.toFixed(1)}/10.0\n`);
+  lines.push(`\nGenerated: ${now} | Spec Type: ${analysis.specType} | Quality Score: ${formatQualityScore(analysis.qualityScore)}\n`);
 
   lines.push("## Verdict\n");
   lines.push(`**${suite.verdict.summary}**\n`);
@@ -29,6 +34,74 @@ export function generateReport(
   lines.push(`| Discarded Proofs | ${suite.verdict.failed} |`);
   lines.push(`| IDOR Attack Vectors | ${riskModel.idorVectors} |`);
   lines.push(`| CSRF Endpoints | ${riskModel.csrfEndpoints} |\n`);
+
+  if (analysis.supportedScope) {
+    lines.push("## Supported Scope\n");
+    lines.push(`- **Verdict:** ${analysis.supportedScope.verdict}`);
+    lines.push(`- **Tier:** ${analysis.supportedScope.tier}`);
+    lines.push(`- **Evidence Level:** ${analysis.supportedScope.evidenceLevel}`);
+    lines.push(`- **Confidence:** ${analysis.supportedScope.confidenceScore}/100`);
+    lines.push(`- **Gold Readiness:** ${analysis.supportedScope.goldReadinessScore}/100`);
+    lines.push(`- **Mode:** ${analysis.supportedScope.mode}`);
+    lines.push(`- **Primary Stack:** ${analysis.supportedScope.primaryStack}`);
+    lines.push(`- **Summary:** ${analysis.supportedScope.summary}`);
+    if (analysis.supportedScope.matchedGoldSignals.length > 0) {
+      lines.push(`- **Matched Gold Signals:** ${analysis.supportedScope.matchedGoldSignals.join(" | ")}`);
+    }
+    if (analysis.supportedScope.missingGoldSignals.length > 0) {
+      lines.push(`- **Missing Gold Signals:** ${analysis.supportedScope.missingGoldSignals.join(" | ")}`);
+    }
+    if (analysis.supportedScope.evidenceSignals.length > 0) {
+      lines.push(`- **Evidence Signals:** ${analysis.supportedScope.evidenceSignals.map(signal => `${signal.label} [${signal.level}] via ${signal.source}`).join(" | ")}`);
+    }
+    if (analysis.supportedScope.blockers.length > 0) {
+      lines.push(`- **Blockers:** ${analysis.supportedScope.blockers.join(" | ")}`);
+    }
+    if (analysis.supportedScope.recommendations.length > 0) {
+      lines.push(`- **Recommendations:** ${analysis.supportedScope.recommendations.join(" | ")}`);
+    }
+    lines.push("");
+  }
+
+  if (riskModel.proofPlanning) {
+    lines.push("## Proof Planning\n");
+    lines.push(`- **Mode:** ${riskModel.proofPlanning.mode}`);
+    lines.push(`- **Kept Targets:** ${riskModel.proofPlanning.keptTargetCount}`);
+    lines.push(`- **Skipped Targets:** ${riskModel.proofPlanning.skippedTargetCount}`);
+    lines.push(`- **Summary:** ${riskModel.proofPlanning.summary}`);
+    if ((riskModel.skippedProofTargets?.length || 0) > 0) {
+      lines.push(`- **Skipped Proof Types:** ${riskModel.skippedProofTargets!.map(target => `${target.proofType} (${target.reason})`).join(" | ")}`);
+    }
+    lines.push("");
+  }
+
+  if (analysis.executionProfile) {
+    lines.push("## Execution Profile\n");
+    lines.push(`- **Mode:** ${analysis.executionProfile.mode}`);
+    lines.push(`- **Compile Readiness:** ${analysis.executionProfile.compileReadinessScore}/100`);
+    lines.push(`- **Runtime Readiness:** ${analysis.executionProfile.runtimeReadinessScore}/100`);
+    lines.push(`- **Sandbox Readiness:** ${analysis.executionProfile.sandboxReadinessScore}/100`);
+    lines.push(`- **Summary:** ${analysis.executionProfile.summary}`);
+    if (analysis.executionProfile.blockers.length > 0) {
+      lines.push(`- **Blockers:** ${analysis.executionProfile.blockers.join(" | ")}`);
+    }
+    if (analysis.executionProfile.recommendations.length > 0) {
+      lines.push(`- **Recommendations:** ${analysis.executionProfile.recommendations.join(" | ")}`);
+    }
+    lines.push("");
+  }
+
+  if (analysis.operationalStatus) {
+    lines.push("## Operational Status\n");
+    lines.push(`- **Mode:** ${analysis.operationalStatus.mode}`);
+    lines.push(`- **Summary:** ${analysis.operationalStatus.summary}`);
+    if (analysis.operationalStatus.notices.length > 0) {
+      for (const notice of analysis.operationalStatus.notices) {
+        lines.push(`- **${notice.component} (${notice.severity}):** ${notice.message} Impact: ${notice.impact}`);
+      }
+    }
+    lines.push("");
+  }
 
   if (llmCheckerStats) {
     lines.push("## LLM Checker Results\n");
@@ -59,47 +132,15 @@ export function generateReport(
     }
   }
 
-  // Proof-Type Coverage Summary
-  const proofTypeCounts = new Map<string, number>();
-  for (const p of suite.proofs) proofTypeCounts.set(p.proofType, (proofTypeCounts.get(p.proofType) || 0) + 1);
-  lines.push("## Proof Type Coverage\n");
-  lines.push(`| Type | Count | Avg Mutation Score |`);
-  lines.push(`|---|---|---|`);
-  const typeEntries = Array.from(proofTypeCounts.entries()).sort((a, b) => b[1] - a[1]);
-  for (const [type, count] of typeEntries) {
-    const typeProofs = suite.proofs.filter(p => p.proofType === type);
-    const avgMut = typeProofs.reduce((s, p) => s + p.mutationScore, 0) / typeProofs.length;
-    const mutBar = avgMut >= 0.9 ? "🟢" : avgMut >= 0.6 ? "🟡" : "🔴";
-    lines.push(`| \`${type}\` | ${count} | ${mutBar} ${(avgMut * 100).toFixed(0)}% |`);
-  }
-  lines.push("");
-
-  // Flakiness Risk Section
-  const flakyProofs = suite.proofs.filter(p => {
-    const code = p.code || "";
-    return (p.proofType === "webhook" || p.proofType === "cron_job") ||
-      /expect\([^)]*Date\.now\(\)/.test(code);
-  });
-  if (flakyProofs.length > 0) {
-    lines.push("## Flakiness Risk\n");
-    lines.push(`> ${flakyProofs.length} proof(s) have elevated flakiness risk and use retries or poll() guards.\n`);
-    lines.push(`| Proof | Type | Risk Reason |`);
-    lines.push(`|---|---|---|`);
-    for (const p of flakyProofs) {
-      const reason = (p.proofType === "webhook" || p.proofType === "cron_job")
-        ? "Async delivery — uses pollUntil()" : "Timing-sensitive assertion";
-      lines.push(`| \`${p.id}\` | \`${p.proofType}\` | ${reason} |`);
-    }
-    lines.push("");
-  }
-
   lines.push("## Validated Proofs\n");
   for (const p of suite.proofs) {
-    const flakyFlag = flakyProofs.includes(p) ? " ⚡ flaky-guarded" : "";
     lines.push(`### ${p.id} — ${p.proofType.toUpperCase()}`);
     lines.push(`- **File:** \`${p.filename}\``);
     lines.push(`- **Risk:** ${p.riskLevel}`);
-    lines.push(`- **Mutation Score:** ${(p.mutationScore * 100).toFixed(0)}%${flakyFlag}`);
+    lines.push(`- **Evidence Level:** ${p.evidenceLevel || "heuristic"}`);
+    if (p.evidenceReason) lines.push(`- **Evidence Reason:** ${p.evidenceReason}`);
+    if (p.generationMode) lines.push(`- **Generation Mode:** ${p.generationMode}`);
+    lines.push(`- **Mutation Score:** ${(p.mutationScore * 100).toFixed(0)}%`);
     lines.push(`- **Validation:** ${p.validationNotes.join(", ")}\n`);
   }
 
@@ -108,6 +149,7 @@ export function generateReport(
     for (const dp of suite.discardedProofs) {
       lines.push(`### ${dp.rawProof.id} — DISCARDED`);
       lines.push(`- **Reason:** \`${dp.reason}\``);
+      if (dp.rawProof.evidenceLevel) lines.push(`- **Evidence Level:** ${dp.rawProof.evidenceLevel}`);
       lines.push(`- **Details:** ${dp.details}\n`);
     }
   }
@@ -178,15 +220,6 @@ export function generateHTMLReport(
     rate_limit: "Rate Limiting", webhook: "Webhook Security", feature_gate: "Feature Gates",
     cron_job: "Cron Jobs", risk_scoring: "Risk Scoring", flow: "User Flows",
     e2e_flow: "E2E Flows", spec_drift: "Spec Drift",
-    // World-class additions
-    db_transaction: "DB Transactions / Atomicity",
-    audit_log: "Audit Log Validation",
-    graphql: "GraphQL Security",
-    accessibility: "Accessibility (WCAG 2.1 AA)",
-    sql_injection: "SQL Injection", hardcoded_secret: "Hardcoded Secrets",
-    negative_amount: "Negative Amount / Financial", aml_bypass: "AML Bypass",
-    cross_tenant_chain: "Cross-Tenant Chain", concurrent_write: "Concurrent Write",
-    mass_assignment: "Mass Assignment",
   };
 
   const proofTypeIcons: Record<string, string> = {
@@ -194,10 +227,6 @@ export function generateHTMLReport(
     boundary: "📏", dsgvo: "🇪🇺", business_logic: "⚙️", concurrency: "⚡",
     idempotency: "🔁", rate_limit: "🚦", webhook: "🪝", feature_gate: "🚪",
     cron_job: "⏰", risk_scoring: "📊", flow: "🔀", e2e_flow: "🖥️", spec_drift: "📐",
-    db_transaction: "🗄️", audit_log: "📋", graphql: "◈", accessibility: "♿",
-    sql_injection: "💉", hardcoded_secret: "🔑", negative_amount: "💸",
-    aml_bypass: "🏦", cross_tenant_chain: "⛓️", concurrent_write: "✍️",
-    mass_assignment: "📦",
   };
 
   const scoreColor = suite.verdict.score >= 7 ? "#22c55e" : suite.verdict.score >= 4 ? "#f59e0b" : "#ef4444";
@@ -306,6 +335,15 @@ ${llmCheckerStats ? `<div class="stats">
   <div class="stat"><div class="val">${llmCheckerStats.rejected}</div><div class="lbl">Hallucinated</div></div>
   <div class="stat"><div class="val">${(llmCheckerStats.avgConfidence * 100).toFixed(0)}%</div><div class="lbl">Avg Confidence</div></div>
 </div>` : ""}
+
+${analysis.operationalStatus ? `<section>
+  <h2>Operational Status</h2>
+  <div class="alert">
+    <div class="title">${escapeHtml(analysis.operationalStatus.mode.toUpperCase())}</div>
+    <div class="body">${escapeHtml(analysis.operationalStatus.summary)}</div>
+    ${analysis.operationalStatus.notices.length > 0 ? `<ul>${analysis.operationalStatus.notices.map(notice => `<li><strong>${escapeHtml(notice.component)}:</strong> ${escapeHtml(notice.message)} <em>${escapeHtml(notice.impact)}</em></li>`).join("")}</ul>` : ""}
+  </div>
+</section>` : ""}
 
 ${analysis.ir.ambiguities.length > 0 ? `<section>
   <h2>⚠️ Spec Ambiguities Found</h2>
