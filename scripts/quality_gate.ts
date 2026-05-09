@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { releaseTestFiles } from "./release_test_files";
 
 type GateStep = {
   name: string;
@@ -14,27 +15,7 @@ const steps: GateStep[] = [
     args: [
       "vitest",
       "run",
-      "server/analyzer/static-analyzer.test.ts",
-      "server/analyzer/evals/bug-zoo-eval.test.ts",
-      "server/analyzer/evals/bug-kill-readiness.test.ts",
-      "server/analyzer/evals/scoreboard.test.ts",
-      "server/analyzer/evals/world-class-phases.test.ts",
-      "server/analyzer/evals/scoreboard-compare.test.ts",
-      "server/analyzer/stack-adapters.test.ts",
-      "server/analyzer/buggy-system-smoke.test.ts",
-      "server/analyzer/report.test.ts",
-      "server/analyzer/risk-model-proof-types.test.ts",
-      "server/analyzer/world-class-regressions.test.ts",
-      "server/_core/customer-validation.test.ts",
-      "server/_core/product-readiness.test.ts",
-      "server/_core/world-class-readiness.test.ts",
-      "server/_core/cookies.test.ts",
-      "server/_core/env.test.ts",
-      "server/_core/runtime-security.test.ts",
-      "server/_core/security-headers.test.ts",
-      "server/_core/storage-keys.test.ts",
-      "server/_core/upload-security.test.ts",
-      "server/_core/url-safety.test.ts",
+      ...releaseTestFiles,
     ],
   },
   { name: "Bug Zoo eval", command: "npm", args: ["run", "eval:bug-zoo", "--", "--json"] },

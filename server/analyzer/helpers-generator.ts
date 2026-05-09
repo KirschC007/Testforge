@@ -115,7 +115,7 @@ export const TEST_TENANT_B_ID = TEST_${tenantEntity.toUpperCase()}_B_ID;` : ""}`
   const listResourceInput = hasTenantModel ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, ...extra }` : `{ ...extra }`;
   const identifierInput = hasTenantModel ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID, id: identifier }` : `{ id: identifier }`;
   const resetConstant = hasTenantModel
-    ? `export const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");`
+    ? `const TEST_${tenantEntity.toUpperCase()}_ID = parseInt(process.env.TEST_${tenantEntity.toUpperCase()}_ID || process.env.TEST_TENANT_ID || "99001");`
     : "// Single-tenant app detected: reset payload does not include tenantId.";
   const resetPayload = hasTenantModel ? `{ ${tenantField}: TEST_${tenantEntity.toUpperCase()}_ID }` : "{}";
 
@@ -204,7 +204,7 @@ export async function trpcMutation(
   input: Record<string, unknown>,
   cookieHeader?: string,
   extraHeaders?: Record<string, string>
-): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
+): Promise<{ response: any; data: any; error: any; status: number }> {
   procedure = resolveProcedure(procedure, "mutation");
   const headers: Record<string, string> = { "Content-Type": "application/json", ...extraHeaders };
   if (cookieHeader) {
@@ -253,7 +253,7 @@ export async function trpcQuery(
   procedure: string,
   input: Record<string, unknown> = {},
   cookieHeader?: string
-): Promise<{ response: any; data: unknown; error: unknown; status: number }> {
+): Promise<{ response: any; data: any; error: any; status: number }> {
   procedure = resolveProcedure(procedure, "query");
   const headers: Record<string, string> = {};
   if (cookieHeader) {
