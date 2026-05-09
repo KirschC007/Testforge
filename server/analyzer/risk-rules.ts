@@ -646,7 +646,19 @@ export function evaluateRiskRules(
         || "";
       const hasWriteMethod = !method || method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
       const hasStatusEvidence = /status|state|transition|workflow|approve|reject|cancel|complete|archive|publish|unpublish|activate|suspend|freeze|unfreeze|ship/.test(`${combined} ${route}`);
-      if (!hasWriteMethod || !hasStatusEvidence) matched = false;
+      const hasStatusInputField = (endpoint?.inputFields || []).some((field) => {
+        const name = field.name.toLowerCase();
+        return /^(status|state|workflowState)$/.test(name) || (/(status|state)/.test(name) && field.type === "enum");
+      });
+      const hasBehaviorStatusMachineEvidence = Boolean(
+        behavior.tags?.some((tag) => /status_transition|state-machine|transition/i.test(tag)) ||
+        behavior.riskHints?.some((hint) => /status_transition|state-machine|transition/i.test(hint)),
+      );
+
+      // Approve/complete/reject endpoints are often workflow-ish, but without a
+      // status/state field or an explicit status-machine they should get business
+      // tests, not fabricated active/suspended/pending transition payloads.
+      if (!hasWriteMethod || !hasStatusEvidence || (!hasBehaviorStatusMachineEvidence && !hasStatusInputField)) matched = false;
     }
 
     if (matched && rule.proofType === "boundary") {

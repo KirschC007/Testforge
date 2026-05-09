@@ -87,6 +87,41 @@ describe("buildRiskModel — risk level assignment", () => {
     const model = buildRiskModel(analysis);
     expect(model.proofTargets.length).toBeGreaterThan(0);
   });
+
+  it("does not generate status-transition targets for approve endpoints without status input", () => {
+    const analysis = makeAnalysis({
+      statusMachine: {
+        states: ["active", "cancelled", "suspended"],
+        transitions: [["active", "cancelled"]],
+        forbidden: [],
+        initialState: "active",
+        terminalStates: ["cancelled"],
+      },
+      behaviors: [{
+        ...baseBehavior,
+        id: "B_APPROVE",
+        title: "Approve number request",
+        action: "Approve",
+        object: "number request",
+        tags: ["auth_matrix", "boundary"],
+        riskHints: ["Auth: verify role-based access control"],
+      }],
+      apiEndpoints: [{
+        name: "numberrequests.approve",
+        method: "POST /api/trpc/numberrequests.approve",
+        auth: "adminProcedure",
+        relatedBehaviors: ["B_APPROVE"],
+        inputFields: [
+          { name: "id", type: "number", required: true },
+          { name: "phoneNumberId", type: "number", required: false },
+          { name: "adminNote", type: "string", required: false, max: 500 },
+        ] as EndpointField[],
+      }],
+    });
+
+    const model = buildRiskModel(analysis);
+    expect(model.proofTargets.some((target) => target.proofType === "status_transition")).toBe(false);
+  });
 });
 
 describe("buildRiskModel — counters", () => {

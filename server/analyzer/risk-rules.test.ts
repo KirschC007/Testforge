@@ -110,7 +110,7 @@ describe("Risk Rules — Boundary detection", () => {
   it("triggers boundary on 'must not exceed' keyword", () => {
     const types = evaluateRiskRules(
       makeBehavior({ title: "Party size must not exceed 20" }),
-      makeEndpoint(),
+      makeEndpoint({ inputFields: [{ name: "partySize", type: "number", required: true }] }),
     );
     expect(types.has("boundary")).toBe(true);
   });
@@ -214,7 +214,11 @@ describe("Risk Rules — Status Transition detection", () => {
   it("triggers status_transition on POST to updateStatus", () => {
     const types = evaluateRiskRules(
       makeBehavior(),
-      makeEndpoint({ name: "orders.updateStatus", method: "POST" }),
+      makeEndpoint({
+        name: "orders.updateStatus",
+        method: "POST",
+        inputFields: [{ name: "status", type: "enum", required: true, enumValues: ["pending", "shipped"] }],
+      }),
     );
     expect(types.has("status_transition")).toBe(true);
   });
@@ -222,8 +226,38 @@ describe("Risk Rules — Status Transition detection", () => {
   it("triggers status_transition on PATCH endpoints", () => {
     const types = evaluateRiskRules(
       makeBehavior(),
-      makeEndpoint({ name: "orders.updateStatus", method: "PATCH" }),
+      makeEndpoint({
+        name: "orders.updateStatus",
+        method: "PATCH",
+        inputFields: [{ name: "state", type: "enum", required: true, enumValues: ["draft", "approved"] }],
+      }),
     );
+    expect(types.has("status_transition")).toBe(true);
+  });
+
+  it("does not invent status transitions for approve endpoints without status fields", () => {
+    const types = evaluateRiskRules(
+      makeBehavior({ title: "Approve number request" }),
+      makeEndpoint({
+        name: "numberrequests.approve",
+        method: "POST",
+        inputFields: [
+          { name: "id", type: "number", required: true },
+          { name: "phoneNumberId", type: "number", required: true },
+          { name: "adminNote", type: "string", required: false },
+        ],
+      }),
+    );
+
+    expect(types.has("status_transition")).toBe(false);
+  });
+
+  it("allows explicit state-machine evidence even when transition fields are implicit", () => {
+    const types = evaluateRiskRules(
+      makeBehavior({ title: "Approve number request", tags: ["state-machine"] }),
+      makeEndpoint({ name: "numberrequests.approve", method: "POST", inputFields: [{ name: "id", type: "number", required: true }] }),
+    );
+
     expect(types.has("status_transition")).toBe(true);
   });
 });
