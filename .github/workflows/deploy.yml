@@ -16,13 +16,13 @@ jobs:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -39,15 +39,22 @@ jobs:
       - name: DNS preflight
         run: node --import tsx scripts/verify_dns_ready.ts
 
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
-
-      - name: Add deploy host
+      - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.HETZNER_HOST }}" >> ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'SSH_CONFIG'
+          Host testforge-deploy
+            HostName ${{ secrets.HETZNER_HOST }}
+            User ${{ secrets.HETZNER_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
 
       - name: Sync repository
         run: |
@@ -57,11 +64,11 @@ jobs:
             --exclude '.env.*' \
             --exclude 'node_modules' \
             --exclude 'artifacts' \
-            ./ "${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}:${APP_DIR}/"
+            ./ "testforge-deploy:${APP_DIR}/"
 
       - name: Deploy on server
         run: |
-          ssh "${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}" "
+          ssh testforge-deploy "
             set -e
             cd ${APP_DIR}
             test -f .env

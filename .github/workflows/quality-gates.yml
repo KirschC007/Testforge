@@ -13,13 +13,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -27,44 +27,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm run check
-
-      - name: Analyzer regression tests
-        run: pnpm exec vitest run server/analyzer/static-analyzer.test.ts server/analyzer/evals/bug-zoo-eval.test.ts server/analyzer/evals/bug-kill-readiness.test.ts server/analyzer/evals/scoreboard.test.ts server/analyzer/evals/scoreboard-compare.test.ts server/analyzer/buggy-system-smoke.test.ts server/analyzer/report.test.ts server/analyzer/risk-model-proof-types.test.ts server/analyzer/world-class-regressions.test.ts server/_core/product-readiness.test.ts server/_core/security-headers.test.ts server/_core/upload-security.test.ts server/_core/url-safety.test.ts
-
-      - name: Bug zoo evaluation
-        run: pnpm run eval:bug-zoo -- --json
-
-      - name: Bug-kill readiness evaluation
-        run: pnpm run eval:bug-kill-readiness -- --json
-
-      - name: False positive evaluation
-        run: pnpm run eval:false-positives -- --json
-
-      - name: External repo benchmarks
-        run: pnpm run eval:external-repos -- --json
-
-      - name: Output execution readiness
-        run: pnpm run eval:output-execution -- --json
-
-      - name: Quality scoreboard
-        run: pnpm run eval:scoreboard -- --json
-
-      - name: Compare against quality baseline
-        run: pnpm run eval:compare-baseline -- --json
-
-      - name: Verify launch readiness
-        run: pnpm run verify:launch
-
-      - name: Production build
-        run: pnpm run build
-
-      - name: Verify build artifacts
-        run: pnpm run verify:build-artifacts
+      - name: Canonical release quality gate
+        run: pnpm run quality:gate
 
       - name: Upload quality artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testforge-quality-report
           path: artifacts/quality
