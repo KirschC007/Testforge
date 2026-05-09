@@ -16,21 +16,28 @@ async function check(path: string) {
   return { url, response, body };
 }
 
+async function waitForOk(path: string, label: string) {
+  const deadline = Date.now() + Number(process.env.SMOKE_TIMEOUT_MS || 120_000);
+  let lastError = "";
+
+  while (Date.now() < deadline) {
+    try {
+      const result = await check(path);
+      if (result.response.ok) return result;
+      lastError = `${label} check failed (${result.response.status}) at ${result.url}: ${result.body.slice(0, 300)}`;
+    } catch (error) {
+      lastError = `${label} check failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+
+  throw new Error(lastError || `${label} check did not become healthy before timeout`);
+}
+
 async function main() {
-  const health = await check("/api/health");
-  if (!health.response.ok) {
-    throw new Error(`Health check failed (${health.response.status}) at ${health.url}: ${health.body.slice(0, 300)}`);
-  }
-
-  const ready = await check("/api/ready");
-  if (!ready.response.ok) {
-    throw new Error(`Readiness check failed (${ready.response.status}) at ${ready.url}: ${ready.body.slice(0, 300)}`);
-  }
-
-  const meta = await check("/api/meta");
-  if (!meta.response.ok) {
-    throw new Error(`Meta check failed (${meta.response.status}) at ${meta.url}: ${meta.body.slice(0, 300)}`);
-  }
+  const health = await waitForOk("/api/health", "Health");
+  const ready = await waitForOk("/api/ready", "Readiness");
+  const meta = await waitForOk("/api/meta", "Meta");
 
   console.log(JSON.stringify({
     ok: true,
